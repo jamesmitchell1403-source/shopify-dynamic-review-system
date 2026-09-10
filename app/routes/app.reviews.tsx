@@ -1,5 +1,5 @@
 import { json, LoaderFunctionArgs, ActionFunctionArgs } from "@remix-run/node";
-import { useLoaderData, useSubmit, useNavigation } from "@remix-run/react";
+import { useLoaderData, useSubmit, useNavigation, useNavigate } from "@remix-run/react";
 import { useState, useCallback } from "react";
 import {
   Page,
@@ -223,14 +223,15 @@ export default function ReviewsPage() {
     });
   }, []);
 
+  const navigate = useNavigate();
+
   const updateFilters = (newParams: Record<string, string>) => {
     const params = new URLSearchParams(window.location.search);
     Object.entries(newParams).forEach(([k, v]) => {
       if (v) params.set(k, v);
       else params.delete(k);
     });
-    if (!newParams.page) params.set("page", "1");
-    window.location.search = params.toString();
+    navigate(`/app/reviews?${params.toString()}`);
   };
 
   const handleSourceChange = (val: string) => updateFilters({ source: val });

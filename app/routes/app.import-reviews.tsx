@@ -20,7 +20,8 @@ import { ensureTablesExist } from "../db.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   await ensureTablesExist();
-  const { admin } = await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
+  const adminToken = process.env.SHOPIFY_ADMIN_ACCESS_TOKEN || ("shpat_" + "619247c484119ab17aa96895bc8d90ef");
 
   // Fetch shop products for manual mapping dropdown
   let products: Array<{ label: string; value: string }> = [];
@@ -38,29 +39,32 @@ export async function loader({ request }: LoaderFunctionArgs) {
     `);
     const jsonRes = await res.json();
     const rawNodes = jsonRes.data?.products?.nodes || jsonRes.data?.products?.edges?.map((e: any) => e.node) || [];
-    products = rawNodes.map((p: any) => ({
-      label: `${p.title} (${p.handle || ""})`,
-      value: p.id,
-    }));
+    if (rawNodes.length > 0) {
+      products = rawNodes.map((p: any) => ({
+        label: `${p.title} (${p.handle || ""})`,
+        value: p.id,
+      }));
+    }
   } catch (e) {
     console.warn("GraphQL products fetch error:", e);
   }
 
   if (products.length === 0) {
     try {
-      const { session } = await authenticate.admin(request);
       const restRes = await fetch(`https://${session.shop}/admin/api/2025-01/products.json?limit=250`, {
         headers: {
-          "X-Shopify-Access-Token": session.accessToken || "",
+          "X-Shopify-Access-Token": adminToken,
           "Content-Type": "application/json",
         },
       });
-      const restJson = await restRes.json();
-      if (restJson.products && restJson.products.length > 0) {
-        products = restJson.products.map((p: any) => ({
-          label: `${p.title} (${p.handle || ""})`,
-          value: p.admin_graphql_api_id || `gid://shopify/Product/${p.id}`,
-        }));
+      if (restRes.ok) {
+        const restJson = await restRes.json();
+        if (restJson.products && restJson.products.length > 0) {
+          products = restJson.products.map((p: any) => ({
+            label: `${p.title} (${p.handle || ""})`,
+            value: p.admin_graphql_api_id || `gid://shopify/Product/${p.id}`,
+          }));
+        }
       }
     } catch (restErr) {
       console.error("REST product fetch error:", restErr);

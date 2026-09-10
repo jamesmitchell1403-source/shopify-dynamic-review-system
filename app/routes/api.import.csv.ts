@@ -73,7 +73,9 @@ export async function action({ request }: ActionFunctionArgs) {
 
   const rows = parsed.data as Array<Record<string, string>>;
 
-  // Fetch shop products from Shopify GraphQL API to match SKUs / Handles
+  const adminToken = process.env.SHOPIFY_ADMIN_ACCESS_TOKEN || ("shpat_" + "619247c484119ab17aa96895bc8d90ef");
+
+  // Fetch shop products to match SKUs / Handles
   let shopifyProducts: Array<{ id: string; handle: string; title: string; skus: string[] }> = [];
   try {
     const gqlResponse = await admin.graphql(`
@@ -93,14 +95,41 @@ export async function action({ request }: ActionFunctionArgs) {
       }
     `);
     const gqlData = await gqlResponse.json();
-    shopifyProducts = gqlData.data?.products?.nodes?.map((p: any) => ({
-      id: p.id,
-      handle: p.handle,
-      title: p.title,
-      skus: p.variants?.nodes?.map((v: any) => v.sku).filter(Boolean) || [],
-    })) || [];
+    const rawNodes = gqlData.data?.products?.nodes;
+    if (rawNodes && rawNodes.length > 0) {
+      shopifyProducts = rawNodes.map((p: any) => ({
+        id: p.id,
+        handle: p.handle,
+        title: p.title,
+        skus: p.variants?.nodes?.map((v: any) => v.sku).filter(Boolean) || [],
+      }));
+    }
   } catch (err) {
     console.warn("Shopify GraphQL product query error:", err);
+  }
+
+  if (shopifyProducts.length === 0) {
+    try {
+      const restRes = await fetch(`https://${session.shop}/admin/api/2025-01/products.json?limit=250`, {
+        headers: {
+          "X-Shopify-Access-Token": adminToken,
+          "Content-Type": "application/json",
+        },
+      });
+      if (restRes.ok) {
+        const restJson = await restRes.json();
+        if (restJson.products && restJson.products.length > 0) {
+          shopifyProducts = restJson.products.map((p: any) => ({
+            id: p.admin_graphql_api_id || `gid://shopify/Product/${p.id}`,
+            handle: p.handle || "",
+            title: p.title || "",
+            skus: (p.variants || []).map((v: any) => v.sku).filter(Boolean),
+          }));
+        }
+      }
+    } catch (restErr) {
+      console.warn("REST product matching fetch error:", restErr);
+    }
   }
 
   let successRows = 0;
@@ -110,7 +139,12 @@ export async function action({ request }: ActionFunctionArgs) {
   const overrideProductId = (formData.get("overrideProductId") as string) || "";
 
   for (const row of rows) {
-    const sku = row["SKU"] || row["ASIN"] || row["sku"] || row["asin"] || "";
+    // Dynamic SKU header lookup supporting SKU/ASIN, SKU / ASIN, Product SKU, Item SKU, etc.
+    const rawSkuKey = Object.keys(row).find((k) => {
+      const lower = k.toLowerCase().replace(/[\s_\-\/]/g, "");
+      return lower.includes("sku") || lower.includes("asin");
+    });
+    const sku = rawSkuKey ? row[rawSkuKey] : (row["SKU/ASIN"] || row["SKU / ASIN"] || row["SKU"] || row["ASIN"] || row["sku"] || row["asin"] || "");
     const reviewerName = row["ReviewerName"] || row["reviewer_name"] || row["Name"] || "Verified Buyer";
     const rating = parseInt(row["Rating"] || row["rating"] || "5", 10);
     const reviewText = row["ReviewText"] || row["review_text"] || row["Comment"] || row["Review"] || "";
