@@ -47,15 +47,23 @@ export async function loader({ request }: LoaderFunctionArgs) {
     ];
   }
 
-  const totalReviewsCount = await db.review.count({ where: whereClause });
-  const totalPages = Math.ceil(totalReviewsCount / pageSize) || 1;
+  let totalReviewsCount = 0;
+  let totalPages = 1;
+  let reviews: any[] = [];
 
-  const reviews = await db.review.findMany({
-    where: whereClause,
-    orderBy: { createdAt: "desc" },
-    skip: (page - 1) * pageSize,
-    take: pageSize,
-  });
+  try {
+    totalReviewsCount = await db.review.count({ where: whereClause });
+    totalPages = Math.ceil(totalReviewsCount / pageSize) || 1;
+
+    reviews = await db.review.findMany({
+      where: whereClause,
+      orderBy: { createdAt: "desc" },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    });
+  } catch (err) {
+    console.error("Reviews loader DB error:", err);
+  }
 
   return json({
     reviews,

@@ -22,16 +22,29 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const { session } = await authenticate.admin(request);
   const shop = session.shop;
 
-  let settings = await db.shopSettings.findUnique({ where: { shop } });
-  if (!settings) {
-    settings = await db.shopSettings.create({ data: { shop } });
-  }
+  let settings: any = null;
+  let aiJobs: any[] = [];
 
-  const aiJobs = await db.aiGenerationJob.findMany({
-    where: { shop },
-    orderBy: { createdAt: "desc" },
-    take: 20,
-  });
+  try {
+    settings = await db.shopSettings.findUnique({ where: { shop } });
+    if (!settings) {
+      settings = await db.shopSettings.create({ data: { shop } });
+    }
+
+    aiJobs = await db.aiGenerationJob.findMany({
+      where: { shop },
+      orderBy: { createdAt: "desc" },
+      take: 20,
+    });
+  } catch (err) {
+    console.error("AI settings DB loader error:", err);
+    settings = {
+      shop,
+      defaultAiProvider: "claude",
+      anthropicApiKey: "",
+      geminiApiKey: "",
+    };
+  }
 
   return json({ settings, aiJobs });
 }

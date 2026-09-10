@@ -45,10 +45,15 @@ export async function loader({ request }: LoaderFunctionArgs) {
     console.warn("GraphQL products fetch error:", e);
   }
 
-  const qrRecords = await db.qrCodeRecord.findMany({
-    where: { shop },
-    orderBy: { createdAt: "desc" },
-  });
+  let qrRecords: any[] = [];
+  try {
+    qrRecords = await db.qrCodeRecord.findMany({
+      where: { shop },
+      orderBy: { createdAt: "desc" },
+    });
+  } catch (err) {
+    console.error("QR codes loader DB error:", err);
+  }
 
   return json({ products, qrRecords, shop });
 }

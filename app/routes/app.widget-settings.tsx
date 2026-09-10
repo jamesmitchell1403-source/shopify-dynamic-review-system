@@ -23,11 +23,26 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const { session } = await authenticate.admin(request);
   const shop = session.shop;
 
-  let settings = await db.shopSettings.findUnique({ where: { shop } });
-  if (!settings) {
-    settings = await db.shopSettings.create({
-      data: { shop },
-    });
+  let settings: any = null;
+  try {
+    settings = await db.shopSettings.findUnique({ where: { shop } });
+    if (!settings) {
+      settings = await db.shopSettings.create({
+        data: { shop },
+      });
+    }
+  } catch (err) {
+    console.error("Widget settings DB error:", err);
+    settings = {
+      shop,
+      widgetPosition: "bottom-left",
+      widgetLayoutStyle: "layout-1",
+      widgetDelaySeconds: 4,
+      widgetDisplayDuration: 7,
+      widgetRotationInterval: 12,
+      widgetMaxPerSession: 10,
+      widgetEnabled: true,
+    };
   }
 
   return json({ settings });
