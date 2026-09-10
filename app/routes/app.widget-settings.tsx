@@ -312,7 +312,7 @@ export default function WidgetSettingsPage() {
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "11px", color: "#BE185D" }}>
                         <span style={{ fontWeight: 600 }}>✓ Verified Purchase</span>
                         <span style={{ background: "transparent", color: "#FF9900", fontWeight: 700, fontSize: "12px", display: "inline-flex", alignItems: "center", gap: "3px" }}>
-                          By <svg width="20" height="13" viewBox="0 0 40 18" fill="#FF9900"><path d="M 5 8 C 15 17 28 17 35 10 C 35.8 9.2 36.8 10.5 36 11.3 C 28.5 19 14.5 19 4 9.5 C 3.2 8.7 4.2 7.3 5 8 Z"/><path d="M 33 5 L 39 10 L 31 12 Z"/></svg>
+                          By <svg width="20" height="18" viewBox="0 0 100 100" fill="none"><path d="M58.8 35.1c-2-1.7-4.9-2.5-8.8-2.5-5 0-9 1.4-11.8 4.2-2.8 2.8-4.2 6.8-4.2 12.1 0 5 1.3 8.9 4 11.6 2.7 2.7 6.4 4.1 11.2 4.1 4.3 0 7.8-1.2 10.3-3.6v2.6h8V31.7h-8.7v3.4zm-1.1 18.9c-1.8 1.9-4.2 2.8-7.2 2.8-2.7 0-4.8-.8-6.2-2.4-1.4-1.6-2.1-3.9-2.1-6.9 0-3.3.7-5.7 2.1-7.4 1.4-1.7 3.6-2.5 6.4-2.5 2.9 0 5.3.9 7 2.7v13.7z" fill="#FF9900"/><path d="M18 72c18.5 13.5 45.5 14.5 64 2.5 1.5-1 3.5.5 2.5 2-20 13.5-49 12.5-68.5-2.5-1-0.8 0.5-2.8 2-2z" fill="#FF9900"/><path d="M82.5 72.5l6 4-1.5-7.5-4.5 3.5z" fill="#FF9900"/></svg>
                         </span>
                       </div>
                     </div>
