@@ -98,7 +98,7 @@ export default function AiSettingsPage() {
   };
 
   const rows = aiJobs.map((j) => [
-    j.createdAt.substring(0, 19).replace("T", " "),
+    new Date(j.createdAt).toISOString().substring(0, 19).replace("T", " "),
     j.provider.toUpperCase(),
     j.modelUsed || "Default Model",
     j.language.toUpperCase(),

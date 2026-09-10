@@ -14,7 +14,7 @@ const shopify = shopifyApp({
   scopes: process.env.SCOPES?.split(",") || ["read_themes", "write_themes", "read_products", "read_orders"],
   appUrl: process.env.SHOPIFY_APP_URL || process.env.HOST || process.env.RENDER_EXTERNAL_URL || "https://shopify-dynamic-review-system.onrender.com",
   authPathPrefix: "/auth",
-  sessionStorage: new PrismaSessionStorage(prisma),
+  sessionStorage: new PrismaSessionStorage(prisma) as any,
   future: {
     unstable_newEmbeddedAuthStrategy: true,
   },

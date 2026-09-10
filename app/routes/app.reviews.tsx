@@ -338,7 +338,7 @@ export default function ReviewsPage() {
           : r.bodyFull}
       </Text>
       {r.externalUrl && (
-        <Text as="span" variant="bodyXs" tone="info">
+        <Text as="span" variant="bodyXs" tone="subdued">
           🔗 {r.externalUrl}
         </Text>
       )}
@@ -347,7 +347,7 @@ export default function ReviewsPage() {
       )}
     </BlockStack>,
 
-    <Badge key={`s-${r.id}`} tone={r.source.startsWith("IMPORTED") ? "attention" : "info"}>
+    <Badge key={`s-${r.id}`} tone={r.source.startsWith("IMPORTED") ? "attention" : "success"}>
       {r.source.replace("IMPORTED_", "")}
     </Badge>,
 
@@ -416,7 +416,7 @@ export default function ReviewsPage() {
                     loading={isSubmitting}
                     onClick={handleBulkDelete}
                   >
-                    Delete Selected ({selectedIds.size})
+                    {`Delete Selected (${selectedIds.size})`}
                   </Button>
                 )}
                 <Button

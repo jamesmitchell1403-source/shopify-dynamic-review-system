@@ -37,10 +37,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
       }
     `);
     const jsonRes = await res.json();
-    products = jsonRes.data?.products?.nodes?.map((p: any) => ({
+    const rawProducts =
+      jsonRes.data?.products?.nodes ||
+      jsonRes.data?.products?.edges?.map((e: any) => e.node) ||
+      [];
+    products = rawProducts.map((p: any) => ({
       label: p.title,
       value: p.id,
-    })) || [];
+    }));
   } catch (e) {
     console.warn("GraphQL products fetch error:", e);
   }
