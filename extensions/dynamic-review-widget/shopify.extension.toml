@@ -1,0 +1,6 @@
+name = "Dynamic PDP Review Widget"
+type = "theme"
+uid = "390a550a-edb0-9249-8af0-d3b3fd00025c81dbd187"
+
+[options]
+  target = "section"

@@ -1,0 +1,33 @@
+{% comment %}
+  Dynamic Review Widget Liquid Block for PDP
+{% endcomment %}
+
+{{ 'review-widget.css' | asset_url | stylesheet_tag }}
+
+<div
+  id="dynamic-review-widget-root"
+  data-product-id="{{ product.id }}"
+  data-shop="{{ shop.permanent_domain }}"
+></div>
+
+<script src="{{ 'review-widget.js' | asset_url }}" defer="defer"></script>
+
+{% schema %}
+{
+  "name": "Dynamic PDP Reviews",
+  "target": "section",
+  "settings": [
+    {
+      "type": "select",
+      "id": "position_override",
+      "label": "Card Position",
+      "options": [
+        { "value": "default", "label": "Use App Settings" },
+        { "value": "bottom-left", "label": "Bottom Left" },
+        { "value": "bottom-right", "label": "Bottom Right" }
+      ],
+      "default": "default"
+    }
+  ]
+}
+{% endschema %}

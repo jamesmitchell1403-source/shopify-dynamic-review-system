@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: shopify-dynamic-review-system
+    runtime: docker
+    plan: free
+    region: oregon
+    envVars:
+      - key: PORT
+        value: "3000"
+      - key: NODE_ENV
+        value: "production"
+      - key: SHOPIFY_API_KEY
+        sync: false
+      - key: SHOPIFY_API_SECRET
+        sync: false
+      - key: SCOPES
+        sync: false
+      - key: SHOPIFY_APP_URL
+        sync: false

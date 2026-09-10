@@ -1,0 +1,120 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Session {
+  id                  String    @id
+  shop                String
+  state               String
+  isOnline            Boolean   @default(false)
+  scope               String?
+  expires             DateTime?
+  accessToken         String
+  userId              BigInt?
+  firstName           String?
+  lastName            String?
+  email               String?
+  accountOwner        Boolean   @default(false)
+  locale              String?
+  collaborator        Boolean?  @default(false)
+  emailVerified       Boolean?  @default(false)
+  refreshToken        String?
+  refreshTokenExpires DateTime?
+}
+
+model ShopSettings {
+  id                    String   @id @default(cuid())
+  shop                  String   @unique
+  defaultAiProvider     String   @default("claude")
+  anthropicApiKey       String?
+  geminiApiKey          String?
+  widgetPosition        String   @default("bottom-left")
+  widgetLayoutStyle     String   @default("layout-1")
+  widgetDelaySeconds    Int      @default(4)
+  widgetDisplayDuration Int      @default(7)
+  widgetRotationInterval Int     @default(12)
+  widgetMaxPerSession   Int      @default(10)
+  widgetEnabled         Boolean  @default(true)
+  autoApproveImported   Boolean  @default(false)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+}
+
+model Review {
+  id                 String   @id @default(cuid())
+  shop               String
+  productId          String
+  productHandle      String?
+  reviewerName       String?  @default("Verified Customer")
+  rating             Int      @default(5)
+  bodyShort          String
+  bodyFull           String?
+  source             String   @default("MANUAL")
+  externalUrl        String?
+  isAiGenerated      Boolean  @default(false)
+  isPublished        Boolean  @default(false)
+  isVerifiedPurchase Boolean  @default(false)
+  language           String   @default("en")
+  tags               String   @default("[]")
+  orderId            String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+model ImportBatch {
+  id          String   @id @default(cuid())
+  shop        String
+  sourceType  String
+  fileName    String
+  status      String   @default("processing")
+  totalRows   Int      @default(0)
+  successRows Int      @default(0)
+  failedRows  Int      @default(0)
+  unmatched   String   @default("[]")
+  createdAt   DateTime @default(now())
+}
+
+model QrCodeRecord {
+  id          String   @id @default(cuid())
+  shop        String
+  type        String
+  productId   String?
+  orderId     String?
+  targetUrl   String
+  imageUrl    String
+  scans       Int      @default(0)
+  createdAt   DateTime @default(now())
+}
+
+model AiGenerationJob {
+  id               String   @id @default(cuid())
+  shop             String
+  productId        String?
+  inputImageUrl    String?
+  inputDescription String?
+  inputNotes       String?
+  language         String   @default("en")
+  provider         String   @default("claude")
+  modelUsed        String?
+  status           String   @default("completed")
+  resultCount      Int      @default(0)
+  createdAt        DateTime @default(now())
+}
+
+model CustomerPreference {
+  id          String   @id @default(cuid())
+  shop        String
+  customerId  String?
+  quizAnswers String   @default("{}")
+  derivedTags String   @default("[]")
+  createdAt   DateTime @default(now())
+}
+

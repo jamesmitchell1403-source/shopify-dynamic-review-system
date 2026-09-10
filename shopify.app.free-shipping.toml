@@ -1,0 +1,30 @@
+# Shopify App Configuration for Free Shipping Progress Bar
+client_id = "4f0669a49f76c557e79caf4c20b5bad5"
+name = "Free Shipping Progress Bar"
+application_url = "https://shopify-free-shipping-bar.onrender.com"
+embedded = true
+
+[build]
+automatically_update_urls_on_dev = true
+dev_store_url = "james-practice-tiwriyta.myshopify.com"
+
+[webhooks]
+api_version = "2026-10"
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/app/scopes_update"
+  topics = [ "app/scopes_update" ]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/app/uninstalled"
+  topics = [ "app/uninstalled" ]
+
+[access_scopes]
+scopes = "read_themes,write_themes,read_products,read_orders"
+
+[auth]
+redirect_urls = [
+  "https://shopify-free-shipping-bar.onrender.com/auth/callback",
+  "https://shopify-free-shipping-bar.onrender.com/auth/shopify/callback",
+  "https://shopify-free-shipping-bar.onrender.com/api/auth"
+]

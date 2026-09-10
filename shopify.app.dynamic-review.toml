@@ -1,0 +1,35 @@
+# Shopify App Configuration for AI Dynamic Review System
+client_id = "28fbf0094946ed287e3db764e52796e5"
+name = "AI Dynamic Review System"
+application_url = "https://shopify-dynamic-review-system.onrender.com"
+embedded = true
+
+[build]
+automatically_update_urls_on_dev = true
+dev_store_url = "james-practice-tiwriyta.myshopify.com"
+
+[webhooks]
+api_version = "2026-10"
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/app/scopes_update"
+  topics = [ "app/scopes_update" ]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/app/uninstalled"
+  topics = [ "app/uninstalled" ]
+
+[access_scopes]
+scopes = "read_themes,write_themes,read_products,read_orders"
+
+[app_proxy]
+url = "https://shopify-dynamic-review-system.onrender.com/apps/reviews"
+subpath = "reviews"
+prefix = "apps"
+
+[auth]
+redirect_urls = [
+  "https://shopify-dynamic-review-system.onrender.com/auth/callback",
+  "https://shopify-dynamic-review-system.onrender.com/auth/shopify/callback",
+  "https://shopify-dynamic-review-system.onrender.com/api/auth"
+]
