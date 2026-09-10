@@ -138,10 +138,8 @@ export async function ensureTablesExist() {
           );
         `);
 
-        // Automatically purge any stale session missing read_products scope
-        await prisma.$executeRawUnsafe(`
-          DELETE FROM Session WHERE scope IS NULL OR scope NOT LIKE '%read_products%';
-        `);
+        // Automatically purge all sessions on startup to guarantee fresh App Bridge token exchange with latest scopes
+        await prisma.$executeRawUnsafe(`DELETE FROM Session;`);
       } catch (err) {
         console.error("Auto table init warning:", err);
       }
