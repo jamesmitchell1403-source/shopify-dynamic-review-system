@@ -37,12 +37,34 @@ export async function loader({ request }: LoaderFunctionArgs) {
       }
     `);
     const jsonRes = await res.json();
-    products = jsonRes.data?.products?.nodes?.map((p: any) => ({
-      label: `${p.title} (${p.handle})`,
+    const rawNodes = jsonRes.data?.products?.nodes || jsonRes.data?.products?.edges?.map((e: any) => e.node) || [];
+    products = rawNodes.map((p: any) => ({
+      label: `${p.title} (${p.handle || ""})`,
       value: p.id,
-    })) || [];
+    }));
   } catch (e) {
     console.warn("GraphQL products fetch error:", e);
+  }
+
+  if (products.length === 0) {
+    try {
+      const { session } = await authenticate.admin(request);
+      const restRes = await fetch(`https://${session.shop}/admin/api/2025-01/products.json?limit=250`, {
+        headers: {
+          "X-Shopify-Access-Token": session.accessToken || "",
+          "Content-Type": "application/json",
+        },
+      });
+      const restJson = await restRes.json();
+      if (restJson.products && restJson.products.length > 0) {
+        products = restJson.products.map((p: any) => ({
+          label: `${p.title} (${p.handle || ""})`,
+          value: p.admin_graphql_api_id || `gid://shopify/Product/${p.id}`,
+        }));
+      }
+    } catch (restErr) {
+      console.error("REST product fetch error:", restErr);
+    }
   }
 
   return json({ products });

@@ -25,7 +25,7 @@ import { ensureTablesExist } from "../db.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   await ensureTablesExist();
-  const { admin } = await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
 
   let products: Array<{ label: string; value: string; description: string; imageUrl: string | null }> = [];
   try {
@@ -41,32 +41,23 @@ export async function loader({ request }: LoaderFunctionArgs) {
               url
             }
           }
+          edges {
+            node {
+              id
+              title
+              description
+              featuredImage {
+                url
+              }
+            }
+          }
         }
       }
     `);
     const jsonRes = await res.json();
-    let rawNodes = jsonRes.data?.products?.nodes || [];
-
+    let rawNodes = jsonRes.data?.products?.nodes;
     if (!rawNodes || rawNodes.length === 0) {
       rawNodes = jsonRes.data?.products?.edges?.map((e: any) => e.node) || [];
-    }
-
-    // Secondary fallback query if featuredImage field caused an issue
-    if (!rawNodes || rawNodes.length === 0) {
-      const simpleRes = await admin.graphql(`
-        #graphql
-        query getSimpleProducts {
-          products(first: 250) {
-            nodes {
-              id
-              title
-              description
-            }
-          }
-        }
-      `);
-      const simpleJson = await simpleRes.json();
-      rawNodes = simpleJson.data?.products?.nodes || [];
     }
 
     if (rawNodes.length > 0) {
@@ -79,6 +70,29 @@ export async function loader({ request }: LoaderFunctionArgs) {
     }
   } catch (err) {
     console.error("GraphQL product fetch error:", err);
+  }
+
+  // REST API Fallback if GraphQL returns 0 items
+  if (products.length === 0) {
+    try {
+      const restRes = await fetch(`https://${session.shop}/admin/api/2025-01/products.json?limit=250`, {
+        headers: {
+          "X-Shopify-Access-Token": session.accessToken || "",
+          "Content-Type": "application/json",
+        },
+      });
+      const restJson = await restRes.json();
+      if (restJson.products && restJson.products.length > 0) {
+        products = restJson.products.map((p: any) => ({
+          label: p.title,
+          value: p.admin_graphql_api_id || `gid://shopify/Product/${p.id}`,
+          description: p.body_html ? p.body_html.replace(/<[^>]*>?/gm, "") : p.title,
+          imageUrl: p.image?.src || p.images?.[0]?.src || null,
+        }));
+      }
+    } catch (restErr) {
+      console.error("REST product fetch error:", restErr);
+    }
   }
 
   return json({ products });

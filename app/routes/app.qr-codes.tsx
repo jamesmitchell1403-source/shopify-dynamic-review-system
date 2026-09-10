@@ -50,6 +50,26 @@ export async function loader({ request }: LoaderFunctionArgs) {
     console.warn("GraphQL products fetch error:", e);
   }
 
+  if (products.length === 0) {
+    try {
+      const restRes = await fetch(`https://${session.shop}/admin/api/2025-01/products.json?limit=250`, {
+        headers: {
+          "X-Shopify-Access-Token": session.accessToken || "",
+          "Content-Type": "application/json",
+        },
+      });
+      const restJson = await restRes.json();
+      if (restJson.products && restJson.products.length > 0) {
+        products = restJson.products.map((p: any) => ({
+          label: p.title,
+          value: p.admin_graphql_api_id || `gid://shopify/Product/${p.id}`,
+        }));
+      }
+    } catch (restErr) {
+      console.error("REST product fetch error:", restErr);
+    }
+  }
+
   let qrRecords: any[] = [];
   try {
     qrRecords = await db.qrCodeRecord.findMany({
