@@ -21,11 +21,12 @@ import {
 } from "@shopify/polaris";
 import { MagicIcon, ClipboardIcon, PlusIcon, EditIcon, CheckIcon } from "@shopify/polaris-icons";
 import { authenticate } from "../shopify.server";
+import { ensureTablesExist } from "../db.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
+  await ensureTablesExist();
   const { admin } = await authenticate.admin(request);
 
-  // Fetch shop products WITH featured image for AI vision generation
   let products: Array<{ label: string; value: string; description: string; imageUrl: string | null }> = [];
   try {
     const res = await admin.graphql(`
@@ -44,7 +45,29 @@ export async function loader({ request }: LoaderFunctionArgs) {
       }
     `);
     const jsonRes = await res.json();
-    const rawNodes = jsonRes.data?.products?.nodes || [];
+    let rawNodes = jsonRes.data?.products?.nodes || [];
+
+    if (!rawNodes || rawNodes.length === 0) {
+      rawNodes = jsonRes.data?.products?.edges?.map((e: any) => e.node) || [];
+    }
+
+    // Secondary fallback query if featuredImage field caused an issue
+    if (!rawNodes || rawNodes.length === 0) {
+      const simpleRes = await admin.graphql(`
+        #graphql
+        query getSimpleProducts {
+          products(first: 250) {
+            nodes {
+              id
+              title
+              description
+            }
+          }
+        }
+      `);
+      const simpleJson = await simpleRes.json();
+      rawNodes = simpleJson.data?.products?.nodes || [];
+    }
 
     if (rawNodes.length > 0) {
       products = rawNodes.map((p: any) => ({
@@ -55,31 +78,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       }));
     }
   } catch (err) {
-    console.warn("GraphQL product fetch error:", err);
-  }
-
-  // Fallback demo products if store has 0 products or query fails
-  if (products.length === 0) {
-    products = [
-      {
-        label: "Premium All-Mountain Snowboard Wax",
-        value: "gid://shopify/Product/demo-1",
-        description: "All-temperature high performance glide wax for skis and snowboards. Formulated for maximum durability and fast acceleration.",
-        imageUrl: null,
-      },
-      {
-        label: "Ultra-Soft Organic Cotton Hoodie",
-        value: "gid://shopify/Product/demo-2",
-        description: "Heavyweight 100% organic cotton fleece hoodie with double-lined hood and reinforced stitching. Premium relaxed fit.",
-        imageUrl: null,
-      },
-      {
-        label: "Hydrating Facial Serum",
-        value: "gid://shopify/Product/demo-3",
-        description: "Deep hydration serum enriched with hyaluronic acid, niacinamide, and botanical extracts. Fast-absorbing non-greasy formula.",
-        imageUrl: null,
-      },
-    ];
+    console.error("GraphQL product fetch error:", err);
   }
 
   return json({ products });
