@@ -80,7 +80,7 @@ const shopify = shopifyApp({
     authPathPrefix: "/auth",
     sessionStorage: autoSessionStorage as any,
     future: {
-        expiringOfflineAccessTokens: true,
+        unstable_newEmbeddedAuthStrategy: true,
     },
     ...(process.env.SHOP_CUSTOM_DOMAIN
         ? { customShopDomains: [process.env.SHOP_CUSTOM_DOMAIN] }

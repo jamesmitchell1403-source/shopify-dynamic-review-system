@@ -38,9 +38,9 @@ export default function App() {
     <div className={styles.index}>
       <div className={styles.content}>
         <div className={styles.badge}>🛒 Shopify App Install Portal</div>
-        <h1 className={styles.heading}>Free Shipping Progress Bar</h1>
+        <h1 className={styles.heading}>AI Dynamic Review System</h1>
         <p className={styles.text}>
-          Increase your average order value with customizable dynamic shipping bars.
+          Surfacing high-converting PDP floating reviews, multi-provider AI draft generation (Claude + Gemini), marketplace imports, and QR post-purchase collection.
         </p>
 
         <form className={styles.cardForm} onSubmit={handleSubmit}>

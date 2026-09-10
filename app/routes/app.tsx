@@ -1,4 +1,4 @@
-import { type HeadersFunction, type LoaderFunctionArgs } from "@remix-run/node";
+import { json, type HeadersFunction, type LoaderFunctionArgs } from "@remix-run/node";
 import { Link, Outlet, useLoaderData, useRouteError } from "@remix-run/react";
 import { boundary } from "@shopify/shopify-app-remix/server";
 import { AppProvider } from "@shopify/shopify-app-remix/react";
@@ -12,7 +12,7 @@ export const links = () => [{ rel: "stylesheet", href: polarisStyles }];
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   await authenticate.admin(request);
 
-  return { apiKey: process.env.SHOPIFY_API_KEY || "28fbf0094946ed287e3db764e52796e5" };
+  return json({ apiKey: process.env.SHOPIFY_API_KEY || "28fbf0094946ed287e3db764e52796e5" });
 };
 
 export default function App() {
