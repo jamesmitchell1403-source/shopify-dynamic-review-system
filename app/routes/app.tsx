@@ -6,10 +6,12 @@ import { NavMenu } from "@shopify/app-bridge-react";
 import polarisStyles from "@shopify/polaris/build/esm/styles.css?url";
 
 import { authenticate } from "../shopify.server";
+import { ensureTablesExist } from "../db.server";
 
 export const links = () => [{ rel: "stylesheet", href: polarisStyles }];
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
+  await ensureTablesExist();
   await authenticate.admin(request);
 
   return json({ apiKey: process.env.SHOPIFY_API_KEY || "28fbf0094946ed287e3db764e52796e5" });

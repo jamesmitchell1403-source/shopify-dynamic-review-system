@@ -16,8 +16,10 @@ import {
 } from "@shopify/polaris";
 import { ImportIcon, ExportIcon } from "@shopify/polaris-icons";
 import { authenticate } from "../shopify.server";
+import { ensureTablesExist } from "../db.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
+  await ensureTablesExist();
   const { admin } = await authenticate.admin(request);
 
   // Fetch shop products for manual mapping dropdown

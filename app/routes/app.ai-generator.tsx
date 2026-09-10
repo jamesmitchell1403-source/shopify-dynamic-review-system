@@ -32,16 +32,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
       #graphql
       query getProductsForAI {
         products(first: 250) {
-          edges {
-            node {
-              id
-              title
-              description
-              featuredImage {
-                url
-              }
-            }
-          }
           nodes {
             id
             title
@@ -54,9 +44,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       }
     `);
     const jsonRes = await res.json();
-    const rawNodes = jsonRes.data?.products?.nodes?.length > 0 
-      ? jsonRes.data.products.nodes 
-      : jsonRes.data?.products?.edges?.map((e: any) => e.node) || [];
+    const rawNodes = jsonRes.data?.products?.nodes || [];
 
     if (rawNodes.length > 0) {
       products = rawNodes.map((p: any) => ({

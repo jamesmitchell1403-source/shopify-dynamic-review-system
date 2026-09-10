@@ -21,9 +21,10 @@ import {
 } from "@shopify/polaris";
 import { SearchIcon, CheckIcon, DeleteIcon, EditIcon } from "@shopify/polaris-icons";
 import { authenticate } from "../shopify.server";
-import db from "../db.server";
+import db, { ensureTablesExist } from "../db.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
+  await ensureTablesExist();
   const { session } = await authenticate.admin(request);
   const shop = session.shop;
 
