@@ -21,7 +21,7 @@ import {
 } from "@shopify/polaris";
 import { MagicIcon, ClipboardIcon, PlusIcon, EditIcon, CheckIcon } from "@shopify/polaris-icons";
 import { authenticate } from "../shopify.server";
-import { ensureTablesExist } from "../db.server";
+import db, { ensureTablesExist } from "../db.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   await ensureTablesExist();
@@ -111,6 +111,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
       }
     } catch (restErr: any) {
       console.error("REST product fetch error:", restErr);
+    }
+  }
+
+  if (isScopeForbidden) {
+    try {
+      await db.session.deleteMany({ where: { shop: session.shop } });
+    } catch (purgeErr) {
+      console.warn("Session purge error:", purgeErr);
     }
   }
 

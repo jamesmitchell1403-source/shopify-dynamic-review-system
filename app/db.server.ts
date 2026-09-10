@@ -137,6 +137,11 @@ export async function ensureTablesExist() {
             createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
           );
         `);
+
+        // Automatically purge any stale session missing read_products scope
+        await prisma.$executeRawUnsafe(`
+          DELETE FROM Session WHERE scope IS NULL OR scope NOT LIKE '%read_products%';
+        `);
       } catch (err) {
         console.error("Auto table init warning:", err);
       }
