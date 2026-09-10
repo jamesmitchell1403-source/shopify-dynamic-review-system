@@ -17,3 +17,5 @@ services:
         sync: false
       - key: SHOPIFY_APP_URL
         sync: false
+      - key: DATABASE_URL
+        value: "file:./dev.sqlite"
