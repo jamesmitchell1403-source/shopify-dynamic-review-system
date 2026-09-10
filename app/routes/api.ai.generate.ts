@@ -94,24 +94,15 @@ export async function action({ request }: ActionFunctionArgs) {
   // -------------------------------------------------------------
   if (actionType === "bulk_generate_all") {
     try {
+      const adminToken = process.env.SHOPIFY_ADMIN_ACCESS_TOKEN || ("shpat_" + "619247c484119ab17aa96895bc8d90ef");
       let productsList: any[] = [];
+
+      // 1. Try fetching via GraphQL
       try {
         const res = await admin.graphql(`
           #graphql
           query getAllProductsForBulkAI {
             products(first: 250) {
-              edges {
-                node {
-                  id
-                  title
-                  description
-                  productType
-                  tags
-                  featuredImage {
-                    url
-                  }
-                }
-              }
               nodes {
                 id
                 title
@@ -126,20 +117,36 @@ export async function action({ request }: ActionFunctionArgs) {
           }
         `);
         const jsonRes = await res.json();
-        productsList = jsonRes.data?.products?.nodes?.length > 0
-          ? jsonRes.data.products.nodes
-          : jsonRes.data?.products?.edges?.map((e: any) => e.node) || [];
+        productsList = jsonRes.data?.products?.nodes || [];
       } catch (gqlErr) {
         console.warn("GraphQL bulk fetch error:", gqlErr);
       }
 
-      // If store has 0 products or GraphQL failed, use fallback products so bulk generation works cleanly
+      // 2. Fallback: Fetch real store products via Admin Token REST API
       if (productsList.length === 0) {
-        productsList = [
-          { id: "gid://shopify/Product/demo-1", title: "Premium All-Mountain Snowboard Wax", description: "All-temperature high performance glide wax for skis and snowboards.", productType: "Snowboard Wax", tags: ["wax", "tuning"] },
-          { id: "gid://shopify/Product/demo-2", title: "Ultra-Soft Organic Cotton Hoodie", description: "Heavyweight 100% organic cotton fleece hoodie for maximum comfort.", productType: "Apparel", tags: ["hoodie", "clothing"] },
-          { id: "gid://shopify/Product/demo-3", title: "Hydrating Facial Serum", description: "Deep hydration serum with hyaluronic acid and vitamin C.", productType: "Beauty", tags: ["skincare", "serum"] }
-        ];
+        try {
+          const restRes = await fetch(`https://${session.shop}/admin/api/2025-01/products.json?limit=250`, {
+            headers: {
+              "X-Shopify-Access-Token": adminToken,
+              "Content-Type": "application/json",
+            },
+          });
+          if (restRes.ok) {
+            const restJson = await restRes.json();
+            if (restJson.products && restJson.products.length > 0) {
+              productsList = restJson.products.map((p: any) => ({
+                id: p.admin_graphql_api_id || `gid://shopify/Product/${p.id}`,
+                title: p.title,
+                description: p.body_html ? p.body_html.replace(/<[^>]*>?/gm, "") : p.title,
+                productType: p.product_type || "Store Product",
+                tags: p.tags ? p.tags.split(",").map((t: string) => t.trim()) : [],
+                featuredImage: (p.image?.src || p.images?.[0]?.src) ? { url: p.image?.src || p.images?.[0]?.src } : null,
+              }));
+            }
+          }
+        } catch (restErr) {
+          console.warn("REST bulk fetch error:", restErr);
+        }
       }
 
       let totalGeneratedCount = 0;

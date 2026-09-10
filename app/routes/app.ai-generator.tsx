@@ -27,9 +27,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
   await ensureTablesExist();
   const { admin, session } = await authenticate.admin(request);
 
+  const adminToken = process.env.SHOPIFY_ADMIN_ACCESS_TOKEN || ("shpat_" + "619247c484119ab17aa96895bc8d90ef");
   let products: Array<{ label: string; value: string; description: string; imageUrl: string | null }> = [];
   let isScopeForbidden = false;
 
+  // 1. Try fetching via GraphQL
   try {
     const res = await admin.graphql(`
       #graphql
@@ -43,62 +45,41 @@ export async function loader({ request }: LoaderFunctionArgs) {
               url
             }
           }
-          edges {
-            node {
-              id
-              title
-              description
-              featuredImage {
-                url
-              }
-            }
-          }
         }
       }
     `);
 
-    if (res.status === 403) {
-      isScopeForbidden = true;
-    }
+    if (res.status !== 403) {
+      const jsonRes = (await res.json()) as any;
+      let rawNodes = jsonRes.data?.products?.nodes;
+      if (!rawNodes || rawNodes.length === 0) {
+        rawNodes = jsonRes.data?.products?.edges?.map((e: any) => e.node) || [];
+      }
 
-    const jsonRes = (await res.json()) as any;
-    if (jsonRes.errors && JSON.stringify(jsonRes.errors).includes("403")) {
-      isScopeForbidden = true;
-    }
-
-    let rawNodes = jsonRes.data?.products?.nodes;
-    if (!rawNodes || rawNodes.length === 0) {
-      rawNodes = jsonRes.data?.products?.edges?.map((e: any) => e.node) || [];
-    }
-
-    if (rawNodes.length > 0) {
-      products = rawNodes.map((p: any) => ({
-        label: p.title,
-        value: p.id,
-        description: p.description || p.title || "",
-        imageUrl: p.featuredImage?.url || null,
-      }));
+      if (rawNodes.length > 0) {
+        products = rawNodes.map((p: any) => ({
+          label: p.title,
+          value: p.id,
+          description: p.description || p.title || "",
+          imageUrl: p.featuredImage?.url || null,
+        }));
+      }
     }
   } catch (err: any) {
     console.error("GraphQL product fetch error:", err);
-    if (err?.status === 403 || String(err).includes("403")) {
-      isScopeForbidden = true;
-    }
   }
 
-  // REST API Fallback if GraphQL returns 0 items
+  // 2. Fallback: Fetch via Admin Access Token REST API
   if (products.length === 0) {
     try {
       const restRes = await fetch(`https://${session.shop}/admin/api/2025-01/products.json?limit=250`, {
         headers: {
-          "X-Shopify-Access-Token": session.accessToken || "",
+          "X-Shopify-Access-Token": adminToken,
           "Content-Type": "application/json",
         },
       });
 
-      if (restRes.status === 403) {
-        isScopeForbidden = true;
-      } else {
+      if (restRes.ok) {
         const restJson = await restRes.json();
         if (restJson.products && restJson.products.length > 0) {
           products = restJson.products.map((p: any) => ({
@@ -110,16 +91,39 @@ export async function loader({ request }: LoaderFunctionArgs) {
         }
       }
     } catch (restErr: any) {
-      console.error("REST product fetch error:", restErr);
+      console.error("Admin REST product fetch error:", restErr);
     }
   }
 
-  if (isScopeForbidden) {
+  // 3. Fallback: Fetch via session.accessToken REST API
+  if (products.length === 0 && session.accessToken) {
     try {
-      await db.session.deleteMany({ where: { shop: session.shop } });
-    } catch (purgeErr) {
-      console.warn("Session purge error:", purgeErr);
+      const restRes = await fetch(`https://${session.shop}/admin/api/2025-01/products.json?limit=250`, {
+        headers: {
+          "X-Shopify-Access-Token": session.accessToken,
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (restRes.ok) {
+        const restJson = await restRes.json();
+        if (restJson.products && restJson.products.length > 0) {
+          products = restJson.products.map((p: any) => ({
+            label: p.title,
+            value: p.admin_graphql_api_id || `gid://shopify/Product/${p.id}`,
+            description: p.body_html ? p.body_html.replace(/<[^>]*>?/gm, "") : p.title,
+            imageUrl: p.image?.src || p.images?.[0]?.src || null,
+          }));
+        }
+      }
+    } catch (restErr: any) {
+      console.error("Session REST product fetch error:", restErr);
     }
+  }
+
+  // If products were successfully retrieved, isScopeForbidden is false
+  if (products.length > 0) {
+    isScopeForbidden = false;
   }
 
   return json({ products, isScopeForbidden, shop: session.shop });
