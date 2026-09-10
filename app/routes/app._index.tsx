@@ -28,28 +28,40 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const { session } = await authenticate.admin(request);
   const shop = session.shop;
 
-  const totalReviews = await db.review.count({ where: { shop } });
-  const publishedReviews = await db.review.count({ where: { shop, isPublished: true } });
-  const pendingReviews = await db.review.count({ where: { shop, isPublished: false } });
-  const aiGeneratedCount = await db.review.count({ where: { shop, isAiGenerated: true } });
-  const importedCount = await db.review.count({
-    where: {
-      shop,
-      source: { in: ["IMPORTED_AMAZON", "IMPORTED_FLIPKART", "IMPORTED_ALIBABA"] },
-    },
-  });
+  let totalReviews = 0;
+  let publishedReviews = 0;
+  let pendingReviews = 0;
+  let aiGeneratedCount = 0;
+  let importedCount = 0;
+  let totalQrScans = 0;
+  let recentReviews: any[] = [];
 
-  const qrScansResult = await db.qrCodeRecord.aggregate({
-    where: { shop },
-    _sum: { scans: true },
-  });
-  const totalQrScans = qrScansResult._sum.scans || 0;
+  try {
+    totalReviews = await db.review.count({ where: { shop } });
+    publishedReviews = await db.review.count({ where: { shop, isPublished: true } });
+    pendingReviews = await db.review.count({ where: { shop, isPublished: false } });
+    aiGeneratedCount = await db.review.count({ where: { shop, isAiGenerated: true } });
+    importedCount = await db.review.count({
+      where: {
+        shop,
+        source: { in: ["IMPORTED_AMAZON", "IMPORTED_FLIPKART", "IMPORTED_ALIBABA"] },
+      },
+    });
 
-  const recentReviews = await db.review.findMany({
-    where: { shop },
-    orderBy: { createdAt: "desc" },
-    take: 5,
-  });
+    const qrScansResult = await db.qrCodeRecord.aggregate({
+      where: { shop },
+      _sum: { scans: true },
+    });
+    totalQrScans = qrScansResult._sum.scans || 0;
+
+    recentReviews = await db.review.findMany({
+      where: { shop },
+      orderBy: { createdAt: "desc" },
+      take: 5,
+    });
+  } catch (err) {
+    console.error("Dashboard DB fetch error:", err);
+  }
 
   return json({
     totalReviews,

@@ -76,7 +76,7 @@ const shopify = shopifyApp({
     apiSecretKey: process.env.SHOPIFY_API_SECRET || "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",
     apiVersion: ApiVersion.January25,
     scopes: process.env.SCOPES?.split(",") || ["read_themes", "write_themes", "read_products", "read_orders"],
-    appUrl: process.env.SHOPIFY_APP_URL || process.env.HOST || process.env.RENDER_EXTERNAL_URL || "https://shopify-free-shipping-bar.onrender.com",
+    appUrl: process.env.SHOPIFY_APP_URL || process.env.HOST || process.env.RENDER_EXTERNAL_URL || "https://shopify-dynamic-review-system.onrender.com",
     authPathPrefix: "/auth",
     sessionStorage: autoSessionStorage as any,
     future: {

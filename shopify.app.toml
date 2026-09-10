@@ -6,7 +6,7 @@ application_url = "https://shopify-dynamic-review-system.onrender.com"
 embedded = true
 
 [build]
-automatically_update_urls_on_dev = true
+automatically_update_urls_on_dev = false
 dev_store_url = "james-practice-tiwriyta.myshopify.com"
 
 [webhooks]
