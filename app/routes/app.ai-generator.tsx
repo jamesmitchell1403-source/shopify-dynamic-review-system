@@ -28,6 +28,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const { admin, session } = await authenticate.admin(request);
 
   let products: Array<{ label: string; value: string; description: string; imageUrl: string | null }> = [];
+  let isScopeForbidden = false;
+
   try {
     const res = await admin.graphql(`
       #graphql
@@ -54,7 +56,16 @@ export async function loader({ request }: LoaderFunctionArgs) {
         }
       }
     `);
-    const jsonRes = await res.json();
+
+    if (res.status === 403) {
+      isScopeForbidden = true;
+    }
+
+    const jsonRes = (await res.json()) as any;
+    if (jsonRes.errors && JSON.stringify(jsonRes.errors).includes("403")) {
+      isScopeForbidden = true;
+    }
+
     let rawNodes = jsonRes.data?.products?.nodes;
     if (!rawNodes || rawNodes.length === 0) {
       rawNodes = jsonRes.data?.products?.edges?.map((e: any) => e.node) || [];
@@ -68,8 +79,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
         imageUrl: p.featuredImage?.url || null,
       }));
     }
-  } catch (err) {
+  } catch (err: any) {
     console.error("GraphQL product fetch error:", err);
+    if (err?.status === 403 || String(err).includes("403")) {
+      isScopeForbidden = true;
+    }
   }
 
   // REST API Fallback if GraphQL returns 0 items
@@ -81,25 +95,30 @@ export async function loader({ request }: LoaderFunctionArgs) {
           "Content-Type": "application/json",
         },
       });
-      const restJson = await restRes.json();
-      if (restJson.products && restJson.products.length > 0) {
-        products = restJson.products.map((p: any) => ({
-          label: p.title,
-          value: p.admin_graphql_api_id || `gid://shopify/Product/${p.id}`,
-          description: p.body_html ? p.body_html.replace(/<[^>]*>?/gm, "") : p.title,
-          imageUrl: p.image?.src || p.images?.[0]?.src || null,
-        }));
+
+      if (restRes.status === 403) {
+        isScopeForbidden = true;
+      } else {
+        const restJson = await restRes.json();
+        if (restJson.products && restJson.products.length > 0) {
+          products = restJson.products.map((p: any) => ({
+            label: p.title,
+            value: p.admin_graphql_api_id || `gid://shopify/Product/${p.id}`,
+            description: p.body_html ? p.body_html.replace(/<[^>]*>?/gm, "") : p.title,
+            imageUrl: p.image?.src || p.images?.[0]?.src || null,
+          }));
+        }
       }
-    } catch (restErr) {
+    } catch (restErr: any) {
       console.error("REST product fetch error:", restErr);
     }
   }
 
-  return json({ products });
+  return json({ products, isScopeForbidden, shop: session.shop });
 }
 
 export default function AiGeneratorPage() {
-  const { products } = useLoaderData<typeof loader>();
+  const { products, isScopeForbidden, shop } = useLoaderData<typeof loader>();
   const [selectedTab, setSelectedTab] = useState<number>(0);
 
   // --- STATE FOR BULK GENERATION FOR ALL PRODUCTS ---
@@ -329,6 +348,22 @@ export default function AiGeneratorPage() {
   return (
     <Page title="AI & Custom Review Generator (Module B)">
       <BlockStack gap="500">
+        {isScopeForbidden && (
+          <Banner
+            title="Updated Product Access Permission Required"
+            tone="warning"
+            action={{
+              content: "Click Here to Re-Authorize App Permissions (1-Click)",
+              url: `/auth?shop=${shop}`,
+              target: "_top",
+            }}
+          >
+            <p>
+              Shopify returned <strong>403 Forbidden</strong> because your app needs updated product access permissions. Click the button above to re-authorize product access scopes for your store in 1 click.
+            </p>
+          </Banner>
+        )}
+
         <Banner title="Mandatory FTC & Legal Compliance Notice" tone="info">
           <p>
             Generated drafts are saved internally for merchant review. Always ensure customer reviews reflect genuine product features and verified customer experiences before publishing.
