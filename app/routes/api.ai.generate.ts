@@ -97,8 +97,21 @@ export async function action({ request }: ActionFunctionArgs) {
       let productsList: any[] = [];
       try {
         const res = await admin.graphql(`
+          #graphql
           query getAllProductsForBulkAI {
             products(first: 250) {
+              edges {
+                node {
+                  id
+                  title
+                  description
+                  productType
+                  tags
+                  featuredImage {
+                    url
+                  }
+                }
+              }
               nodes {
                 id
                 title
@@ -113,7 +126,9 @@ export async function action({ request }: ActionFunctionArgs) {
           }
         `);
         const jsonRes = await res.json();
-        productsList = jsonRes.data?.products?.nodes || [];
+        productsList = jsonRes.data?.products?.nodes?.length > 0
+          ? jsonRes.data.products.nodes
+          : jsonRes.data?.products?.edges?.map((e: any) => e.node) || [];
       } catch (gqlErr) {
         console.warn("GraphQL bulk fetch error:", gqlErr);
       }
