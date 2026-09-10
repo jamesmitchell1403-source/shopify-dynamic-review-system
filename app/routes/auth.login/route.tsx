@@ -1,6 +1,4 @@
 import { redirect, type ActionFunctionArgs, type LoaderFunctionArgs } from "@remix-run/node";
-import { login } from "../../shopify.server";
-import { loginErrorMessage } from "./error.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const url = new URL(request.url);
@@ -14,35 +12,36 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     } else {
       shop = "james-practice-tiwriyta.myshopify.com";
     }
-    return redirect(`/auth?shop=${shop}`);
   }
 
-  const loginResult = await login(request);
-  if (loginResult instanceof Response) {
-    return loginResult;
-  }
+  const apiKey = process.env.SHOPIFY_API_KEY || "28fbf0094946ed287e3db764e52796e5";
+  const scopes = process.env.SCOPES || "read_themes,write_themes,read_products,read_orders";
+  const appUrl = process.env.SHOPIFY_APP_URL || "https://shopify-dynamic-review-system.onrender.com";
+  const redirectUri = encodeURIComponent(`${appUrl}/auth/callback`);
 
-  // If login helper returned errors, force redirect to OAuth with target shop
-  return redirect(`/auth?shop=${shop}`);
+  const oauthUrl = `https://${shop}/admin/oauth/authorize?client_id=${apiKey}&scope=${scopes}&redirect_uri=${redirectUri}`;
+
+  return redirect(oauthUrl);
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
   const url = new URL(request.url);
   const shop = url.searchParams.get("shop") || "james-practice-tiwriyta.myshopify.com";
-  return redirect(`/auth?shop=${shop}`);
+
+  const apiKey = process.env.SHOPIFY_API_KEY || "28fbf0094946ed287e3db764e52796e5";
+  const scopes = process.env.SCOPES || "read_themes,write_themes,read_products,read_orders";
+  const appUrl = process.env.SHOPIFY_APP_URL || "https://shopify-dynamic-review-system.onrender.com";
+  const redirectUri = encodeURIComponent(`${appUrl}/auth/callback`);
+
+  const oauthUrl = `https://${shop}/admin/oauth/authorize?client_id=${apiKey}&scope=${scopes}&redirect_uri=${redirectUri}`;
+
+  return redirect(oauthUrl);
 };
 
 export default function Auth() {
-  // If component somehow renders, client-side redirect immediately to OAuth
-  if (typeof window !== "undefined") {
-    const params = new URLSearchParams(window.location.search);
-    const shop = params.get("shop") || "james-practice-tiwriyta.myshopify.com";
-    window.location.href = `/auth?shop=${shop}`;
-  }
-
   return (
     <div style={{ padding: "40px", textAlign: "center", fontFamily: "sans-serif" }}>
-      <p>Authenticating with Shopify... Please wait.</p>
+      <p>Redirecting to Shopify App Authorization...</p>
     </div>
   );
 }

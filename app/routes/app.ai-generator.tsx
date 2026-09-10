@@ -362,7 +362,7 @@ export default function AiGeneratorPage() {
             tone="warning"
             action={{
               content: "Click Here to Re-Authorize App Permissions (1-Click)",
-              url: `/auth?shop=${shop}`,
+              url: `/auth/login?shop=${shop}`,
               target: "_top",
             }}
           >
