@@ -362,7 +362,7 @@ export default function AiGeneratorPage() {
             tone="warning"
             action={{
               content: "Click Here to Re-Authorize App Permissions (1-Click)",
-              url: `/auth/login?shop=${shop}`,
+              url: `https://${shop}/admin/oauth/authorize?client_id=28fbf0094946ed287e3db764e52796e5&scope=read_themes,write_themes,read_products,read_orders&redirect_uri=${encodeURIComponent("https://shopify-dynamic-review-system.onrender.com/auth/callback")}`,
               target: "_top",
             }}
           >
