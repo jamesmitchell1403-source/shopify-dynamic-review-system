@@ -311,8 +311,8 @@ export default function WidgetSettingsPage() {
                       </div>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "11px", color: "#BE185D" }}>
                         <span style={{ fontWeight: 600 }}>✓ Verified Purchase</span>
-                        <span style={{ background: "#FF9900", color: "#000000", fontWeight: 700, fontSize: "11px", padding: "4px 8px", borderRadius: "5px", display: "inline-flex", alignItems: "center", gap: "4px" }}>
-                          By <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M15.93 17.09c-2.83 2.09-6.97 3.21-10.54 1.83-1.67-.64-3.14-1.74-4.22-3.18-.32-.43.08-.94.57-.69 3.65 1.84 8.16 2.37 12.08 1.05.65-.22 1.34.42.89.87zM17.42 15.68c-.28-.36-1.85-.17-2.55-.09-.21.02-.25-.17-.06-.3 1.25-.85 3.23-.61 3.48-.3.26.31-.08 2.29-1.25 3.24-.18.15-.35.07-.27-.14.28-.68.93-2.05.65-2.41z"/></svg> Amazon
+                        <span style={{ background: "transparent", color: "#FF9900", fontWeight: 700, fontSize: "12px", display: "inline-flex", alignItems: "center", gap: "3px" }}>
+                          By <svg width="20" height="13" viewBox="0 0 40 18" fill="#FF9900"><path d="M 5 8 C 15 17 28 17 35 10 C 35.8 9.2 36.8 10.5 36 11.3 C 28.5 19 14.5 19 4 9.5 C 3.2 8.7 4.2 7.3 5 8 Z"/><path d="M 33 5 L 39 10 L 31 12 Z"/></svg>
                         </span>
                       </div>
                     </div>
