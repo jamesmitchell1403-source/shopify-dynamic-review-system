@@ -29,6 +29,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   let products: Array<{ label: string; value: string; description: string; imageUrl: string | null }> = [];
   try {
     const res = await admin.graphql(`
+      #graphql
       query getProductsForAI {
         products(first: 250) {
           nodes {
@@ -329,7 +330,7 @@ export default function AiGeneratorPage() {
                 <BlockStack gap="400">
                   <Text as="h2" variant="headingMd">🤖 Automatic Bulk Review Generator (All Store Products)</Text>
                   <Text as="p" tone="subdued">
-                    Automatically scans your Shopify catalog ({products.length} products found) and generates distinct, product-specific authentic customer reviews for every single product in your store.
+                    Automatically scans your live Shopify catalog ({products.length} products found). To generate reviews for more items, add products in your Shopify Admin (Products → Add product) and they will automatically appear here.
                   </Text>
 
                   {bulkErrorMessage && (
