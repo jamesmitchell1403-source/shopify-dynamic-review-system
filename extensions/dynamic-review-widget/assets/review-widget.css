@@ -110,10 +110,10 @@
 .rw-body-container {
   position: relative;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  align-items: flex-start;
+  justify-content: flex-start;
   margin-bottom: 14px;
-  padding: 0 16px;
+  padding: 0;
 }
 
 .rw-accent-ray {
@@ -135,8 +135,9 @@
   font-size: 13px;
   color: #334155;
   line-height: 1.45;
-  text-align: center;
+  text-align: left !important;
   font-weight: 400;
+  width: 100%;
 }
 
 /* Card Footer */

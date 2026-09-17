@@ -80,7 +80,7 @@
       return `<span class="rw-customer-type">Verified Customer</span>`;
     }
 
-    const badgeContent = `<span style="background: transparent; color: #ffffff; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8), 0 0 1px #000; font-weight: 700; font-size: 12px; padding: 0; display: inline-flex; align-items: center; gap: 3px; cursor: ${externalUrl ? 'pointer' : 'default'};">${brandText}${externalUrl ? ' ↗' : ''}</span>`;
+    const badgeContent = `<span style="background: #000000; color: #ffffff; font-weight: 600; font-size: 11px; padding: 3px 8px; border-radius: 6px; display: inline-flex; align-items: center; gap: 3px; cursor: ${externalUrl ? 'pointer' : 'default'};">${brandText}${externalUrl ? ' ↗' : ''}</span>`;
 
     if (externalUrl) {
       return `<a href="${escapeHtml(externalUrl)}" target="_blank" rel="noopener noreferrer" style="text-decoration: none;" onclick="event.stopPropagation();">${badgeContent}</a>`;

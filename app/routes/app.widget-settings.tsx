@@ -329,7 +329,7 @@ export default function WidgetSettingsPage() {
                       </div>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "11px", color: "#BE185D" }}>
                         <span style={{ fontWeight: 600 }}>✓ Verified Purchase</span>
-                        <span style={{ background: "transparent", color: "#ffffff", textShadow: "0 1px 2px rgba(0, 0, 0, 0.8)", fontWeight: 700, fontSize: "12px" }}>
+                        <span style={{ background: "#000000", color: "#ffffff", fontWeight: 600, fontSize: "11px", padding: "3px 8px", borderRadius: "6px" }}>
                           By Amazon
                         </span>
                       </div>
