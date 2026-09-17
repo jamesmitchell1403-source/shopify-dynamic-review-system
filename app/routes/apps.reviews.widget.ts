@@ -105,12 +105,12 @@ export async function loader({ request }: LoaderFunctionArgs) {
   }
 
   const widgetConfig = {
-    position: settings?.widgetPosition || "bottom-left",
+    position: settings?.widgetPosition || "bottom-right",
     layoutStyle: settings?.widgetLayoutStyle || "layout-1",
-    delaySeconds: settings?.widgetDelaySeconds ?? 4,
-    displayDuration: settings?.widgetDisplayDuration ?? 7,
-    rotationInterval: settings?.widgetRotationInterval ?? 12,
-    maxPerSession: settings?.widgetMaxPerSession ?? 10,
+    delaySeconds: settings?.widgetDelaySeconds ?? 1,
+    displayDuration: settings?.widgetDisplayDuration ?? 10,
+    rotationInterval: settings?.widgetRotationInterval ?? 2,
+    maxPerSession: settings?.widgetMaxPerSession ?? 20,
     enabled: settings?.widgetEnabled ?? true,
   };
 

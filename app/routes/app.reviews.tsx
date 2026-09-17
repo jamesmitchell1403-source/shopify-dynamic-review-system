@@ -22,11 +22,14 @@ import {
 import { SearchIcon, CheckIcon, DeleteIcon, EditIcon } from "@shopify/polaris-icons";
 import { authenticate } from "../shopify.server";
 import db, { ensureTablesExist } from "../db.server";
+import { ensureReviewsAndSettingsRestored, syncReviewsToShopify } from "../services/reviewPersistence.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   await ensureTablesExist();
-  const { session } = await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
   const shop = session.shop;
+
+  await ensureReviewsAndSettingsRestored(admin, shop);
 
   const url = new URL(request.url);
   const sourceFilter = url.searchParams.get("source") || "ALL";
@@ -138,6 +141,8 @@ export async function action({ request }: ActionFunctionArgs) {
       },
     });
   }
+
+  await syncReviewsToShopify(admin, shop);
 
   return json({ success: true });
 }

@@ -36,12 +36,12 @@ model ShopSettings {
   defaultAiProvider     String   @default("claude")
   anthropicApiKey       String?
   geminiApiKey          String?
-  widgetPosition        String   @default("bottom-left")
+  widgetPosition        String   @default("bottom-right")
   widgetLayoutStyle     String   @default("layout-1")
-  widgetDelaySeconds    Int      @default(4)
-  widgetDisplayDuration Int      @default(7)
-  widgetRotationInterval Int     @default(12)
-  widgetMaxPerSession   Int      @default(10)
+  widgetDelaySeconds    Int      @default(1)
+  widgetDisplayDuration Int      @default(10)
+  widgetRotationInterval Int     @default(2)
+  widgetMaxPerSession   Int      @default(20)
   widgetEnabled         Boolean  @default(true)
   autoApproveImported   Boolean  @default(false)
   createdAt             DateTime @default(now())

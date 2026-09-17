@@ -18,30 +18,42 @@ import {
 } from "@shopify/polaris";
 import { authenticate } from "../shopify.server";
 import db, { ensureTablesExist } from "../db.server";
+import { ensureReviewsAndSettingsRestored, syncSettingsToShopify } from "../services/reviewPersistence.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   await ensureTablesExist();
-  const { session } = await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
   const shop = session.shop;
+
+  await ensureReviewsAndSettingsRestored(admin, shop);
 
   let settings: any = null;
   try {
     settings = await db.shopSettings.findUnique({ where: { shop } });
     if (!settings) {
       settings = await db.shopSettings.create({
-        data: { shop },
+        data: {
+          shop,
+          widgetPosition: "bottom-right",
+          widgetLayoutStyle: "layout-1",
+          widgetDelaySeconds: 1,
+          widgetDisplayDuration: 10,
+          widgetRotationInterval: 2,
+          widgetMaxPerSession: 20,
+          widgetEnabled: true,
+        },
       });
     }
   } catch (err) {
     console.error("Widget settings DB error:", err);
     settings = {
       shop,
-      widgetPosition: "bottom-left",
+      widgetPosition: "bottom-right",
       widgetLayoutStyle: "layout-1",
-      widgetDelaySeconds: 4,
-      widgetDisplayDuration: 7,
-      widgetRotationInterval: 12,
-      widgetMaxPerSession: 10,
+      widgetDelaySeconds: 1,
+      widgetDisplayDuration: 10,
+      widgetRotationInterval: 2,
+      widgetMaxPerSession: 20,
       widgetEnabled: true,
     };
   }
@@ -50,19 +62,19 @@ export async function loader({ request }: LoaderFunctionArgs) {
 }
 
 export async function action({ request }: ActionFunctionArgs) {
-  const { session } = await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
   const shop = session.shop;
 
   const formData = await request.formData();
-  const widgetPosition = formData.get("widgetPosition") as string;
+  const widgetPosition = (formData.get("widgetPosition") as string) || "bottom-right";
   const widgetLayoutStyle = (formData.get("widgetLayoutStyle") as string) || "layout-1";
-  const widgetDelaySeconds = parseInt((formData.get("widgetDelaySeconds") as string) || "4", 10);
-  const widgetDisplayDuration = parseInt((formData.get("widgetDisplayDuration") as string) || "7", 10);
-  const widgetRotationInterval = parseInt((formData.get("widgetRotationInterval") as string) || "12", 10);
-  const widgetMaxPerSession = parseInt((formData.get("widgetMaxPerSession") as string) || "10", 10);
+  const widgetDelaySeconds = parseInt((formData.get("widgetDelaySeconds") as string) || "1", 10);
+  const widgetDisplayDuration = parseInt((formData.get("widgetDisplayDuration") as string) || "10", 10);
+  const widgetRotationInterval = parseInt((formData.get("widgetRotationInterval") as string) || "2", 10);
+  const widgetMaxPerSession = parseInt((formData.get("widgetMaxPerSession") as string) || "20", 10);
   const widgetEnabled = formData.get("widgetEnabled") === "true";
 
-  await db.shopSettings.upsert({
+  const updatedSettings = await db.shopSettings.upsert({
     where: { shop },
     update: {
       widgetPosition,
@@ -85,6 +97,8 @@ export async function action({ request }: ActionFunctionArgs) {
     },
   });
 
+  await syncSettingsToShopify(admin, shop, updatedSettings);
+
   return json({ success: true });
 }
 
@@ -93,12 +107,12 @@ export default function WidgetSettingsPage() {
   const submit = useSubmit();
   const navigation = useNavigation();
 
-  const [position, setPosition] = useState<string>(settings.widgetPosition || "bottom-left");
+  const [position, setPosition] = useState<string>(settings.widgetPosition || "bottom-right");
   const [layoutStyle, setLayoutStyle] = useState<string>(settings.widgetLayoutStyle || "layout-1");
-  const [delay, setDelay] = useState<string>(String(settings.widgetDelaySeconds ?? 4));
-  const [duration, setDuration] = useState<string>(String(settings.widgetDisplayDuration ?? 7));
-  const [rotation, setRotation] = useState<string>(String(settings.widgetRotationInterval ?? 12));
-  const [maxPerSession, setMaxPerSession] = useState<string>(String(settings.widgetMaxPerSession ?? 10));
+  const [delay, setDelay] = useState<string>(String(settings.widgetDelaySeconds ?? 1));
+  const [duration, setDuration] = useState<string>(String(settings.widgetDisplayDuration ?? 10));
+  const [rotation, setRotation] = useState<string>(String(settings.widgetRotationInterval ?? 2));
+  const [maxPerSession, setMaxPerSession] = useState<string>(String(settings.widgetMaxPerSession ?? 20));
   const [enabled, setEnabled] = useState<boolean>(settings.widgetEnabled ?? true);
 
   const [savedSuccess, setSavedSuccess] = useState<boolean>(false);

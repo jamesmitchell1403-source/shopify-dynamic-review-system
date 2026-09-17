@@ -23,11 +23,14 @@ import {
 } from "@shopify/polaris-icons";
 import { authenticate } from "../shopify.server";
 import db, { ensureTablesExist } from "../db.server";
+import { ensureReviewsAndSettingsRestored } from "../services/reviewPersistence.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   await ensureTablesExist();
-  const { session } = await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
   const shop = session.shop;
+
+  await ensureReviewsAndSettingsRestored(admin, shop);
 
   let totalReviews = 0;
   let publishedReviews = 0;

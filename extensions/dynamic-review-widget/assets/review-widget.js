@@ -97,11 +97,11 @@
   }
 
   function initWidget(reviews, settings) {
-    const position = settings.position || 'bottom-left';
+    const position = settings.position || 'bottom-right';
     const layoutStyle = settings.layoutStyle || 'layout-1';
-    const delayMs = (settings.delaySeconds || 4) * 1000;
-    const durationMs = (settings.displayDuration || 7) * 1000;
-    const rotationMs = (settings.rotationInterval || 12) * 1000;
+    const delayMs = (settings.delaySeconds !== undefined ? settings.delaySeconds : 1) * 1000;
+    const durationMs = (settings.displayDuration || 10) * 1000;
+    const rotationMs = (settings.rotationInterval || 2) * 1000;
 
     let currentIndex = 0;
     let isFirstShow = true;
