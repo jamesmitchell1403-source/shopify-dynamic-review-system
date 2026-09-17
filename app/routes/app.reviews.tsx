@@ -146,7 +146,7 @@ export async function action({ request }: ActionFunctionArgs) {
     });
   }
 
-  await syncReviewsToShopify(admin, shop);
+  await syncReviewsToShopify(admin, shop, intent === "deleteAll");
 
   return json({ success: true });
 }

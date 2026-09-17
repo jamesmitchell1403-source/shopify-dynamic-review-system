@@ -114,13 +114,41 @@ export async function ensureReviewsAndSettingsRestored(admin: any, shop: string)
   }
 }
 
-export async function syncReviewsToShopify(admin: any, shop: string) {
+export async function syncReviewsToShopify(admin: any, shop: string, allowEmptySync: boolean = false) {
   if (!admin || !shop) return;
   try {
     const allReviews = await db.review.findMany({
       where: { shop },
       orderBy: { createdAt: "desc" },
     });
+
+    // Safety guard: If DB has 0 reviews and allowEmptySync is false, do not overwrite a valid Shopify Metafield backup!
+    if (allReviews.length === 0 && !allowEmptySync) {
+      try {
+        const existingBackupRes = await admin.graphql(
+          `#graphql
+          query checkExistingBackup {
+            shop {
+              metafield(namespace: "ai_review_system", key: "reviews_backup") {
+                value
+              }
+            }
+          }`
+        );
+        const backupJson = await existingBackupRes.json();
+        const existingVal = backupJson.data?.shop?.metafield?.value;
+        if (existingVal) {
+          const parsedExisting = JSON.parse(existingVal);
+          if (Array.isArray(parsedExisting) && parsedExisting.length > 0) {
+            console.log(`[Persistence] DB is empty but Shopify Metafield has ${parsedExisting.length} reviews. Restoring reviews instead of overwriting with empty array!`);
+            await ensureReviewsAndSettingsRestored(admin, shop);
+            return;
+          }
+        }
+      } catch (e) {
+        console.error("[Persistence] Error checking existing backup before sync:", e);
+      }
+    }
 
     const shopRes = await admin.graphql(
       `#graphql

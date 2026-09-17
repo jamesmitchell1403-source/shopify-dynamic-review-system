@@ -137,9 +137,6 @@ export async function ensureTablesExist() {
             createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
           );
         `);
-
-        // Automatically purge all sessions on startup to guarantee fresh App Bridge token exchange with latest scopes
-        await prisma.$executeRawUnsafe(`DELETE FROM Session;`);
       } catch (err) {
         console.error("Auto table init warning:", err);
       }
