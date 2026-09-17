@@ -68,27 +68,19 @@
     });
 
   function getMarketplaceBadgeHtml(source, externalUrl) {
-    let logoColor = "#FF9900";
-    let brandIcon = "";
-
-    const amazonIcon = `<svg width="20" height="18" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" style="display:inline-block; vertical-align:-4px; margin-left:2px;"><path d="M58.8 35.1c-2-1.7-4.9-2.5-8.8-2.5-5 0-9 1.4-11.8 4.2-2.8 2.8-4.2 6.8-4.2 12.1 0 5 1.3 8.9 4 11.6 2.7 2.7 6.4 4.1 11.2 4.1 4.3 0 7.8-1.2 10.3-3.6v2.6h8V31.7h-8.7v3.4zm-1.1 18.9c-1.8 1.9-4.2 2.8-7.2 2.8-2.7 0-4.8-.8-6.2-2.4-1.4-1.6-2.1-3.9-2.1-6.9 0-3.3.7-5.7 2.1-7.4 1.4-1.7 3.6-2.5 6.4-2.5 2.9 0 5.3.9 7 2.7v13.7z" fill="#FF9900"/><path d="M18 72c18.5 13.5 45.5 14.5 64 2.5 1.5-1 3.5.5 2.5 2-20 13.5-49 12.5-68.5-2.5-1-0.8 0.5-2.8 2-2z" fill="#FF9900"/><path d="M82.5 72.5l6 4-1.5-7.5-4.5 3.5z" fill="#FF9900"/></svg>`;
-    const flipkartIcon = `<svg width="18" height="18" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" style="display:inline-block; vertical-align:-4px; margin-left:2px;"><circle cx="50" cy="50" r="48" fill="#2874F0"/><rect x="25" y="30" width="50" height="48" rx="5" fill="#FFE11B"/><path d="M40 30V22a10 10 0 0120 0v8" stroke="#FFE11B" stroke-width="5" fill="none"/><path d="M42 43h22v6H49v7h12v6H49v14h-7V43z" fill="#2874F0"/></svg>`;
-    const alibabaIcon = `<svg width="18" height="18" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" style="display:inline-block; vertical-align:-4px; margin-left:2px;"><path d="M85 30C70 20 40 25 25 45C15 58 10 75 35 85C60 95 80 80 90 60C95 50 90 35 85 30Z" fill="#FF6A00"/><path d="M38 52c4 4 12 4 16 0" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round" fill="none"/></svg>`;
+    let brandText = "";
 
     if (source === "IMPORTED_AMAZON") {
-      brandIcon = amazonIcon;
-      logoColor = "#FF9900";
+      brandText = "By Amazon";
     } else if (source === "IMPORTED_FLIPKART") {
-      brandIcon = flipkartIcon;
-      logoColor = "#2874F0";
+      brandText = "By Flipkart";
     } else if (source === "IMPORTED_ALIBABA") {
-      brandIcon = alibabaIcon;
-      logoColor = "#FF6A00";
+      brandText = "By Alibaba";
     } else {
       return `<span class="rw-customer-type">Verified Customer</span>`;
     }
 
-    const badgeContent = `<span style="background: transparent; color: ${logoColor}; font-weight: 700; font-size: 12px; padding: 0; display: inline-flex; align-items: center; gap: 3px; cursor: ${externalUrl ? 'pointer' : 'default'};">By ${brandIcon}${externalUrl ? ' ↗' : ''}</span>`;
+    const badgeContent = `<span style="background: transparent; color: #ffffff; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8), 0 0 1px #000; font-weight: 700; font-size: 12px; padding: 0; display: inline-flex; align-items: center; gap: 3px; cursor: ${externalUrl ? 'pointer' : 'default'};">${brandText}${externalUrl ? ' ↗' : ''}</span>`;
 
     if (externalUrl) {
       return `<a href="${escapeHtml(externalUrl)}" target="_blank" rel="noopener noreferrer" style="text-decoration: none;" onclick="event.stopPropagation();">${badgeContent}</a>`;
