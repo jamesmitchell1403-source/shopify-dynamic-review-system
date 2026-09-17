@@ -29,7 +29,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const { admin, session } = await authenticate.admin(request);
   const shop = session.shop;
 
-  await ensureReviewsAndSettingsRestored(admin, shop);
+  try {
+    await ensureReviewsAndSettingsRestored(admin, shop);
+  } catch (e) {
+    console.error("Safely caught review restore warning:", e);
+  }
 
   const url = new URL(request.url);
   const sourceFilter = url.searchParams.get("source") || "ALL";
@@ -82,7 +86,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 }
 
 export async function action({ request }: ActionFunctionArgs) {
-  const { session } = await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
   const shop = session.shop;
 
   const formData = await request.formData();

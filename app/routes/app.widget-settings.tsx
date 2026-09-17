@@ -25,7 +25,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const { admin, session } = await authenticate.admin(request);
   const shop = session.shop;
 
-  await ensureReviewsAndSettingsRestored(admin, shop);
+  try {
+    await ensureReviewsAndSettingsRestored(admin, shop);
+  } catch (e) {
+    console.error("Safely caught restore warning in widget settings:", e);
+  }
 
   let settings: any = null;
   try {

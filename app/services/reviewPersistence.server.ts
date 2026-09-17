@@ -1,9 +1,10 @@
 import db from "../db.server";
 
 export async function ensureReviewsAndSettingsRestored(admin: any, shop: string) {
+  if (!admin || !shop) return;
   try {
     // 1. Check/restore shop settings
-    let settings = await db.shopSettings.findUnique({ where: { shop } });
+    let settings = await db.shopSettings.findUnique({ where: { shop } }).catch(() => null);
     if (!settings) {
       try {
         const settingsRes = await admin.graphql(
@@ -31,7 +32,7 @@ export async function ensureReviewsAndSettingsRestored(admin: any, shop: string)
               widgetMaxPerSession: parsed.widgetMaxPerSession ?? 20,
               widgetEnabled: parsed.widgetEnabled ?? true,
             },
-          });
+          }).catch(() => null);
         }
       } catch (e) {
         console.error("[Persistence] Error fetching settings metafield:", e);
@@ -49,52 +50,63 @@ export async function ensureReviewsAndSettingsRestored(admin: any, shop: string)
             widgetMaxPerSession: 20,
             widgetEnabled: true,
           },
-        });
+        }).catch(() => null);
       }
     }
 
     // 2. Check/restore reviews backup
-    const reviewCount = await db.review.count({ where: { shop } });
+    const reviewCount = await db.review.count({ where: { shop } }).catch(() => 0);
     if (reviewCount === 0) {
-      const reviewsRes = await admin.graphql(
-        `#graphql
-        query getShopReviewsBackup {
-          shop {
-            metafield(namespace: "ai_review_system", key: "reviews_backup") {
-              value
+      try {
+        const reviewsRes = await admin.graphql(
+          `#graphql
+          query getShopReviewsBackup {
+            shop {
+              metafield(namespace: "ai_review_system", key: "reviews_backup") {
+                value
+              }
+            }
+          }`
+        );
+        const reviewsJson = await reviewsRes.json();
+        const backupVal = reviewsJson.data?.shop?.metafield?.value;
+        if (backupVal) {
+          const backupList = JSON.parse(backupVal);
+          if (Array.isArray(backupList) && backupList.length > 0) {
+            console.log(`[Persistence] Restoring ${backupList.length} reviews from Shopify Metafield for ${shop}...`);
+            for (const item of backupList) {
+              try {
+                const itemId = item.id || `restored-${Math.random().toString(36).substring(7)}`;
+                await db.review.upsert({
+                  where: { id: itemId },
+                  update: {},
+                  create: {
+                    id: itemId,
+                    shop: shop,
+                    productId: item.productId || "",
+                    productHandle: item.productHandle || null,
+                    reviewerName: item.reviewerName || "Verified Customer",
+                    rating: item.rating || 5,
+                    bodyShort: item.bodyShort || "",
+                    bodyFull: item.bodyFull || null,
+                    source: item.source || "MANUAL",
+                    isAiGenerated: item.isAiGenerated || false,
+                    isPublished: item.isPublished || false,
+                    isVerifiedPurchase: item.isVerifiedPurchase || false,
+                    language: item.language || "en",
+                    tags: item.tags || "[]",
+                    orderId: item.orderId || null,
+                    createdAt: item.createdAt ? new Date(item.createdAt) : new Date(),
+                  },
+                });
+              } catch (singleErr) {
+                console.warn("[Persistence] Single review restore skipped:", singleErr);
+              }
             }
           }
-        }`
-      );
-      const reviewsJson = await reviewsRes.json();
-      const backupVal = reviewsJson.data?.shop?.metafield?.value;
-      if (backupVal) {
-        const backupList = JSON.parse(backupVal);
-        if (Array.isArray(backupList) && backupList.length > 0) {
-          console.log(`[Persistence] Restoring ${backupList.length} reviews from Shopify Metafield for ${shop}...`);
-          for (const item of backupList) {
-            await db.review.create({
-              data: {
-                id: item.id,
-                shop: shop,
-                productId: item.productId || "",
-                productHandle: item.productHandle || null,
-                reviewerName: item.reviewerName || "Verified Customer",
-                rating: item.rating || 5,
-                bodyShort: item.bodyShort || "",
-                bodyFull: item.bodyFull || null,
-                source: item.source || "MANUAL",
-                isAiGenerated: item.isAiGenerated || false,
-                isPublished: item.isPublished || false,
-                isVerifiedPurchase: item.isVerifiedPurchase || false,
-                language: item.language || "en",
-                tags: item.tags || "[]",
-                orderId: item.orderId || null,
-                createdAt: item.createdAt ? new Date(item.createdAt) : new Date(),
-              },
-            });
-          }
         }
+      } catch (e) {
+        console.error("[Persistence] Error querying reviews backup metafield:", e);
       }
     }
   } catch (err) {
@@ -103,6 +115,7 @@ export async function ensureReviewsAndSettingsRestored(admin: any, shop: string)
 }
 
 export async function syncReviewsToShopify(admin: any, shop: string) {
+  if (!admin || !shop) return;
   try {
     const allReviews = await db.review.findMany({
       where: { shop },
@@ -151,6 +164,7 @@ export async function syncReviewsToShopify(admin: any, shop: string) {
 }
 
 export async function syncSettingsToShopify(admin: any, shop: string, settingsData: any) {
+  if (!admin || !shop) return;
   try {
     const shopRes = await admin.graphql(
       `#graphql
