@@ -14,7 +14,19 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   await ensureTablesExist();
   await authenticate.admin(request);
 
-  return json({ apiKey: process.env.SHOPIFY_API_KEY || "28fbf0094946ed287e3db764e52796e5" });
+  const url = new URL(request.url);
+  const shop = url.searchParams.get("shop") || request.headers.get("referer") || "";
+
+  let apiKey = "d97376e1be723a9166b7ec705c55c610";
+  if (shop.includes("james-practice")) {
+    apiKey = "28fbf0094946ed287e3db764e52796e5";
+  } else if (shop.includes("develops-test-store")) {
+    apiKey = "d97376e1be723a9166b7ec705c55c610";
+  } else if (process.env.SHOPIFY_API_KEY) {
+    apiKey = process.env.SHOPIFY_API_KEY;
+  }
+
+  return json({ apiKey });
 };
 
 export default function App() {
