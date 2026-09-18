@@ -10,8 +10,8 @@ import prisma from "./db.server";
 process.env.SCOPES = "read_themes,write_themes,read_products,read_orders";
 
 const shopify = shopifyApp({
-  apiKey: process.env.SHOPIFY_API_KEY || "28fbf0094946ed287e3db764e52796e5",
-  apiSecretKey: process.env.SHOPIFY_API_SECRET || "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",
+  apiKey: process.env.SHOPIFY_API_KEY || "d97376e1be723a9166b7ec705c55c610",
+  apiSecretKey: process.env.SHOPIFY_API_SECRET || process.env.SHOPIFY_APP_SECRET || "",
   apiVersion: ApiVersion.January25,
   scopes: ["read_themes", "write_themes", "read_products", "read_orders"],
   appUrl: process.env.SHOPIFY_APP_URL || process.env.HOST || process.env.RENDER_EXTERNAL_URL || "https://shopify-dynamic-review-system.onrender.com",

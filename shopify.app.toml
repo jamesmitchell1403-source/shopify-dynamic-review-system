@@ -1,6 +1,6 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
-client_id = "28fbf0094946ed287e3db764e52796e5"
+client_id = "d97376e1be723a9166b7ec705c55c610"
 name = "AI Dynamic Review System"
 application_url = "https://shopify-dynamic-review-system.onrender.com"
 embedded = true
