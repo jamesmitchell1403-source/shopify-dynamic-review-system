@@ -1,7 +1,8 @@
 {% comment %}
-  Dynamic Review Widget Liquid Block for Storefront
+  Dynamic Review Widget Liquid Block for Storefront - Product Page Only
 {% endcomment %}
 
+{% if template.name == 'product' or template contains 'product' %}
 {{ 'review-widget.css' | asset_url | stylesheet_tag }}
 
 <div
@@ -11,6 +12,7 @@
 ></div>
 
 <script src="{{ 'review-widget.js' | asset_url }}" defer="defer"></script>
+{% endif %}
 
 {% schema %}
 {

@@ -1,6 +1,16 @@
 (function () {
   'use strict';
 
+  // Strictly restrict popup widget to Product pages (/products/*)
+  const isProductPage = window.location.pathname.includes('/products/') ||
+                        (window.ShopifyAnalytics && window.ShopifyAnalytics.meta && window.ShopifyAnalytics.meta.page && window.ShopifyAnalytics.meta.page.pageType === 'product') ||
+                        (window.meta && window.meta.page && window.meta.page.pageType === 'product') ||
+                        document.getElementById('dynamic-review-widget-root');
+
+  if (!isProductPage) {
+    return; // Exit completely on non-product pages (homepage, collections, cart, etc.)
+  }
+
   let rootEl = document.getElementById('dynamic-review-widget-root') || document.getElementById('dynamic_review_widget_root') || document.querySelector('[data-product-id]');
   if (rootEl) {
     rootEl.style.minHeight = "1px";
