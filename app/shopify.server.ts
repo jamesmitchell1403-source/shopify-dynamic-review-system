@@ -47,6 +47,26 @@ const shopifyInstance2 = shopifyApp({
 
 function getShopifyApp(request?: Request) {
   if (request) {
+    // 1. Check Bearer JWT token in Authorization header
+    const authHeader = request.headers.get("Authorization") || "";
+    if (authHeader.startsWith("Bearer ")) {
+      try {
+        const token = authHeader.substring(7);
+        const payloadJson = Buffer.from(token.split(".")[1], "base64").toString("utf-8");
+        const payload = JSON.parse(payloadJson);
+        const dest = payload.dest || payload.aud || "";
+        if (dest.includes("james-practice") || dest.includes("28fbf0094946ed287e3db764e52796e5")) {
+          return shopifyInstance1;
+        }
+        if (dest.includes("develops-test-store") || dest.includes("d97376e1be723a9166b7ec705c55c610")) {
+          return shopifyInstance2;
+        }
+      } catch {
+        // Fallback to URL inspection
+      }
+    }
+
+    // 2. Check shop query param or referer header
     const url = new URL(request.url);
     const shop = url.searchParams.get("shop") || request.headers.get("referer") || "";
     if (shop.includes("james-practice")) {
