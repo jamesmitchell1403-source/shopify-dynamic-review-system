@@ -20,6 +20,9 @@ export default function App() {
           rel="stylesheet"
           href="https://cdn.shopify.com/static/fonts/inter/v4/styles.css"
         />
+        <link rel="icon" type="image/png" href="/app-icon.png" />
+        <link rel="shortcut icon" href="/app-icon.png" />
+        <link rel="apple-touch-icon" href="/app-icon.png" />
         <Meta />
         <Links />
       </head>

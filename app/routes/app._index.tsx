@@ -94,8 +94,19 @@ export default function Dashboard() {
     r.isPublished ? "Published" : "Pending",
   ]);
 
+  const titleWithIcon = (
+    <InlineStack gap="300" blockAlign="center">
+      <img
+        src="/app-icon.png"
+        alt="AI Dynamic Review System Logo"
+        style={{ width: "36px", height: "36px", borderRadius: "10px", objectFit: "cover", boxShadow: "0 2px 8px rgba(0,0,0,0.12)" }}
+      />
+      <Text as="h1" variant="headingLg">Dynamic Review Ecosystem Dashboard</Text>
+    </InlineStack>
+  );
+
   return (
-    <Page fullWidth title="Dynamic Review Ecosystem Dashboard">
+    <Page fullWidth title={titleWithIcon as any}>
       <BlockStack gap="500">
         <Banner title="AI-Powered Dynamic Review System is active!" tone="success">
           <p>Surfacing high-converting PDP floating reviews, multi-provider AI draft generation (Claude + Gemini), marketplace imports, and QR post-purchase collection.</p>
