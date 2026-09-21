@@ -243,17 +243,141 @@ export default function WidgetSettingsPage() {
                 <div style={{
                   position: "relative",
                   width: "100%",
-                  height: "400px",
-                  backgroundColor: layoutStyle === "layout-3" ? "#0F172A" : "#F8FAFC",
+                  minHeight: "460px",
+                  backgroundColor: layoutStyle === "layout-3" ? "#0F172A" : "#FFFFFF",
                   borderRadius: "16px",
-                  border: "2px dashed #CBD5E1",
+                  border: "1px solid #E2E8F0",
                   overflow: "hidden",
-                  padding: "20px",
+                  padding: "24px",
                   boxSizing: "border-box",
-                  transition: "all 0.3s ease"
+                  transition: "all 0.3s ease",
+                  color: layoutStyle === "layout-3" ? "#F8FAFC" : "#0F172A"
                 }}>
-                  <div style={{ fontSize: "13px", color: layoutStyle === "layout-3" ? "#94A3B8" : "#64748B", fontWeight: 600 }}>
-                    [ Live PDP Storefront Preview — Position: {position} | Style: {layoutStyle} ]
+                  {/* TOP DEMO HEADER */}
+                  <div style={{ 
+                    display: "flex", 
+                    justifyContent: "space-between", 
+                    alignItems: "center",
+                    marginBottom: "16px",
+                    paddingBottom: "10px",
+                    borderBottom: layoutStyle === "layout-3" ? "1px solid #1E293B" : "1px solid #F1F5F9"
+                  }}>
+                    <div style={{ fontSize: "11px", fontWeight: 700, color: layoutStyle === "layout-3" ? "#64748B" : "#94A3B8", letterSpacing: "0.5px" }}>
+                      🛒 LIVE PDP STOREFRONT PREVIEW — POSITION: {position.toUpperCase()} | STYLE: {layoutStyle.toUpperCase()}
+                    </div>
+                  </div>
+
+                  {/* TWO COLUMN SHOPIFY PDP DEMO LAYOUT */}
+                  <div style={{ display: "flex", gap: "24px", opacity: 0.85 }}>
+                    {/* LEFT COLUMN: DEMO PRODUCT IMAGE PLACEHOLDER */}
+                    <div style={{ width: "45%", flexShrink: 0 }}>
+                      <div style={{
+                        width: "100%",
+                        height: "220px",
+                        backgroundColor: layoutStyle === "layout-3" ? "#1E293B" : "#F8FAFC",
+                        borderRadius: "12px",
+                        border: layoutStyle === "layout-3" ? "1px solid #334155" : "1px solid #E2E8F0",
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        color: layoutStyle === "layout-3" ? "#94A3B8" : "#64748B"
+                      }}>
+                        <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                          <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                          <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                          <polyline points="21 15 16 10 5 21"></polyline>
+                        </svg>
+                        <span style={{ fontSize: "12px", marginTop: "8px", fontWeight: 600 }}>Demo Product Image</span>
+                      </div>
+
+                      {/* THUMBNAIL GALLERY */}
+                      <div style={{ display: "flex", gap: "8px", marginTop: "10px" }}>
+                        {[1, 2, 3].map((idx) => (
+                          <div key={idx} style={{
+                            width: "48px",
+                            height: "48px",
+                            borderRadius: "6px",
+                            backgroundColor: layoutStyle === "layout-3" ? "#1E293B" : "#F1F5F9",
+                            border: idx === 1 ? "2px solid #3B82F6" : "1px solid #CBD5E1",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            fontSize: "10px",
+                            color: "#94A3B8"
+                          }}>
+                            Thumb {idx}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* RIGHT COLUMN: DEMO PRODUCT DETAILS */}
+                    <div style={{ width: "55%", display: "flex", flexDirection: "column", gap: "8px" }}>
+                      <div style={{ fontSize: "10px", fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: "1px" }}>
+                        MY STORE
+                      </div>
+                      <div style={{ fontSize: "17px", fontWeight: 800, lineHeight: 1.25 }}>
+                        1000 Thread Count Sheet Set - White
+                      </div>
+                      
+                      {/* RATING & PRICE */}
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <span style={{ color: "#F59E0B", fontSize: "12px", fontWeight: 600 }}>★★★★★</span>
+                        <span style={{ color: layoutStyle === "layout-3" ? "#94A3B8" : "#64748B", fontSize: "11px" }}>(48 reviews)</span>
+                      </div>
+
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px", margin: "4px 0" }}>
+                        <span style={{ fontSize: "15px", fontWeight: 800 }}>$89.99 USD</span>
+                        <span style={{ fontSize: "12px", color: "#94A3B8", textDecoration: "line-through" }}>$99.99 USD</span>
+                        <span style={{ backgroundColor: "#10B981", color: "#FFFFFF", fontSize: "10px", fontWeight: 700, padding: "2px 6px", borderRadius: "4px" }}>Sale</span>
+                      </div>
+
+                      {/* SIZE VARIANTS */}
+                      <div style={{ fontSize: "11px", color: "#64748B", fontWeight: 600 }}>Size:</div>
+                      <div style={{ display: "flex", gap: "6px" }}>
+                        {["Twin", "Queen", "King"].map((size, idx) => (
+                          <div key={size} style={{
+                            padding: "4px 10px",
+                            borderRadius: "6px",
+                            fontSize: "11px",
+                            fontWeight: 600,
+                            border: idx === 1 ? (layoutStyle === "layout-3" ? "2px solid #38BDF8" : "2px solid #0F172A") : "1px solid #CBD5E1",
+                            backgroundColor: idx === 1 ? (layoutStyle === "layout-3" ? "#1E293B" : "#F1F5F9") : "transparent"
+                          }}>
+                            {size}
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* CALL TO ACTION BUTTONS */}
+                      <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginTop: "8px" }}>
+                        <div style={{
+                          width: "100%",
+                          padding: "8px",
+                          textAlign: "center",
+                          borderRadius: "6px",
+                          border: layoutStyle === "layout-3" ? "1px solid #475569" : "1px solid #0F172A",
+                          fontWeight: 700,
+                          fontSize: "12px",
+                          color: layoutStyle === "layout-3" ? "#F8FAFC" : "#0F172A"
+                        }}>
+                          Add to cart
+                        </div>
+                        <div style={{
+                          width: "100%",
+                          padding: "8px",
+                          textAlign: "center",
+                          borderRadius: "6px",
+                          backgroundColor: layoutStyle === "layout-3" ? "#38BDF8" : "#0F172A",
+                          color: layoutStyle === "layout-3" ? "#0F172A" : "#FFFFFF",
+                          fontWeight: 700,
+                          fontSize: "12px"
+                        }}>
+                          Buy it now
+                        </div>
+                      </div>
+                    </div>
                   </div>
 
                   {/* LAYOUT 1: MINIMALIST CLASSIC */}
