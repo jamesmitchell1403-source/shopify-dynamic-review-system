@@ -3,7 +3,7 @@
 {% endcomment %}
 
 {% if template.name == 'product' or template contains 'product' %}
-{{ 'review-widget.css' | asset_url | stylesheet_tag }}
+<link rel="stylesheet" href="/apps/reviews/widget.css?v=3.5" id="rw-widget-style">
 
 <div
   id="dynamic-review-widget-root"
@@ -11,7 +11,7 @@
   data-shop="{{ shop.permanent_domain }}"
 ></div>
 
-<script src="{{ 'review-widget.js' | asset_url }}" defer="defer"></script>
+<script src="/apps/reviews/widget.js?v=3.5" defer="defer"></script>
 {% endif %}
 
 {% schema %}

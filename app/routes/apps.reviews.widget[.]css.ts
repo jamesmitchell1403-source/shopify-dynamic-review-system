@@ -15,7 +15,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
     headers: {
       "Content-Type": "text/css; charset=utf-8",
       "Access-Control-Allow-Origin": "*",
-      "Cache-Control": "public, max-age=300",
+      "Cache-Control": "no-cache, no-store, must-revalidate, max-age=0",
+      "Pragma": "no-cache",
+      "Expires": "0",
     },
   });
 }

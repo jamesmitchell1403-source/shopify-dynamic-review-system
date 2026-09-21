@@ -13,11 +13,12 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   const autoCssInject = `
 (function() {
-  if (!document.getElementById('rw-widget-style')) {
+  const existing = document.getElementById('rw-widget-style');
+  if (!existing) {
     const link = document.createElement('link');
     link.id = 'rw-widget-style';
     link.rel = 'stylesheet';
-    link.href = 'https://shopify-dynamic-review-system.onrender.com/apps/reviews/widget.css';
+    link.href = '/apps/reviews/widget.css?v=3.5';
     document.head.appendChild(link);
   }
 })();
@@ -27,7 +28,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
     headers: {
       "Content-Type": "application/javascript; charset=utf-8",
       "Access-Control-Allow-Origin": "*",
-      "Cache-Control": "public, max-age=300",
+      "Cache-Control": "no-cache, no-store, must-revalidate, max-age=0",
+      "Pragma": "no-cache",
+      "Expires": "0",
     },
   });
 }
