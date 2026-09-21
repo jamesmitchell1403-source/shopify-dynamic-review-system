@@ -358,7 +358,7 @@ export default function AiGeneratorPage() {
   };
 
   return (
-    <Page title="AI & Custom Review Generator (Module B)">
+    <Page fullWidth title="AI & Custom Review Generator (Module B)">
       <BlockStack gap="500">
         {isScopeForbidden && (
           <Banner

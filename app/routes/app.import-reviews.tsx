@@ -171,7 +171,7 @@ export default function ImportReviewsPage() {
   };
 
   return (
-    <Page title="Marketplace Review Import (Module C)">
+    <Page fullWidth title="Marketplace Review Import (Module C)">
       <BlockStack gap="500">
         <Banner title="Consolidate Marketplace Reviews" tone="info">
           <p>Import authentic reviews from Amazon, Flipkart, or Alibaba via CSV. Imported reviews retain a clear marketplace source badge for complete transparency on your storefront.</p>

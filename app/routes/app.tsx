@@ -4,11 +4,15 @@ import { boundary } from "@shopify/shopify-app-remix/server";
 import { AppProvider } from "@shopify/shopify-app-remix/react";
 import { NavMenu } from "@shopify/app-bridge-react";
 import polarisStyles from "@shopify/polaris/build/esm/styles.css?url";
+import customStyles from "../app.css?url";
 
 import { authenticate } from "../shopify.server";
 import { ensureTablesExist } from "../db.server";
 
-export const links = () => [{ rel: "stylesheet", href: polarisStyles }];
+export const links = () => [
+  { rel: "stylesheet", href: polarisStyles },
+  { rel: "stylesheet", href: customStyles },
+];
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   await ensureTablesExist();
@@ -34,6 +38,24 @@ export default function App() {
 
   return (
     <AppProvider isEmbeddedApp apiKey={apiKey}>
+      <style>{`
+        :root {
+          --pg-layout-width-primary-max: 100% !important;
+          --pg-layout-width-secondary-max: 0px !important;
+          --pg-layout-width-inner-spacing-base: 0px !important;
+        }
+        html,
+        body,
+        .Polaris-Page,
+        .Polaris-Page--fullWidth,
+        .Polaris-Page__Content,
+        div.Polaris-Page {
+          max-width: 100% !important;
+          width: 100% !important;
+          margin: 0 !important;
+          box-sizing: border-box !important;
+        }
+      `}</style>
       <NavMenu>
         <Link to="/app" rel="home">
           Dashboard

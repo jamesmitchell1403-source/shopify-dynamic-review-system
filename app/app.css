@@ -1,0 +1,17 @@
+:root {
+  --pg-layout-width-primary-max: 100% !important;
+  --pg-layout-width-secondary-max: 0px !important;
+  --pg-layout-width-inner-spacing-base: 0px !important;
+}
+
+html,
+body,
+.Polaris-Page,
+.Polaris-Page--fullWidth,
+.Polaris-Page__Content,
+div.Polaris-Page {
+  max-width: 100% !important;
+  width: 100% !important;
+  margin: 0 !important;
+  box-sizing: border-box !important;
+}

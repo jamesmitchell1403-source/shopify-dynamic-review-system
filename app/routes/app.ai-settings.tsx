@@ -110,7 +110,7 @@ export default function AiSettingsPage() {
   ]);
 
   return (
-    <Page title="Multi-Provider AI Settings & Audit Logs">
+    <Page fullWidth title="Multi-Provider AI Settings & Audit Logs">
       <BlockStack gap="500">
         <Banner title="Provider-Agnostic AI Service Layer" tone="info">
           <p>

@@ -95,7 +95,7 @@ export default function Dashboard() {
   ]);
 
   return (
-    <Page title="Dynamic Review Ecosystem Dashboard">
+    <Page fullWidth title="Dynamic Review Ecosystem Dashboard">
       <BlockStack gap="500">
         <Banner title="AI-Powered Dynamic Review System is active!" tone="success">
           <p>Surfacing high-converting PDP floating reviews, multi-provider AI draft generation (Claude + Gemini), marketplace imports, and QR post-purchase collection.</p>

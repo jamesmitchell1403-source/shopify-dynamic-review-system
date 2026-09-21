@@ -149,7 +149,7 @@ export default function QrCodesPage() {
   ]);
 
   return (
-    <Page title="QR Code Review Generator (Module E)">
+    <Page fullWidth title="QR Code Review Generator (Module E)">
       <BlockStack gap="500">
         <Banner title="Offline & Post-Purchase Review Touchpoints" tone="info">
           <p>Generate downloadable QR codes for physical product packaging, receipt inserts, or in-store displays. Customers scan the QR code to open a frictionless review submission form.</p>
