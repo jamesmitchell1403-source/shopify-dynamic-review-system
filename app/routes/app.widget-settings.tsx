@@ -318,7 +318,7 @@ export default function WidgetSettingsPage() {
                         MY STORE
                       </div>
                       <div style={{ fontSize: "17px", fontWeight: 800, lineHeight: 1.25 }}>
-                        1000 Thread Count Sheet Set - White
+                        Product Title
                       </div>
                       
                       {/* RATING & PRICE */}
@@ -329,29 +329,10 @@ export default function WidgetSettingsPage() {
 
                       <div style={{ display: "flex", alignItems: "center", gap: "8px", margin: "4px 0" }}>
                         <span style={{ fontSize: "15px", fontWeight: 800 }}>$89.99 USD</span>
-                        <span style={{ fontSize: "12px", color: "#94A3B8", textDecoration: "line-through" }}>$99.99 USD</span>
-                        <span style={{ backgroundColor: "#10B981", color: "#FFFFFF", fontSize: "10px", fontWeight: 700, padding: "2px 6px", borderRadius: "4px" }}>Sale</span>
-                      </div>
-
-                      {/* SIZE VARIANTS */}
-                      <div style={{ fontSize: "11px", color: "#64748B", fontWeight: 600 }}>Size:</div>
-                      <div style={{ display: "flex", gap: "6px" }}>
-                        {["Twin", "Queen", "King"].map((size, idx) => (
-                          <div key={size} style={{
-                            padding: "4px 10px",
-                            borderRadius: "6px",
-                            fontSize: "11px",
-                            fontWeight: 600,
-                            border: idx === 1 ? (layoutStyle === "layout-3" ? "2px solid #38BDF8" : "2px solid #0F172A") : "1px solid #CBD5E1",
-                            backgroundColor: idx === 1 ? (layoutStyle === "layout-3" ? "#1E293B" : "#F1F5F9") : "transparent"
-                          }}>
-                            {size}
-                          </div>
-                        ))}
                       </div>
 
                       {/* CALL TO ACTION BUTTONS */}
-                      <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginTop: "8px" }}>
+                      <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginTop: "12px" }}>
                         <div style={{
                           width: "100%",
                           padding: "8px",
