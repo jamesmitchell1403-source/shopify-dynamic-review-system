@@ -23,8 +23,9 @@ export class GeminiProvider implements AIProvider {
 
     const ai = new GoogleGenAI({ apiKey: key });
 
+    const reqCount = input.count || 5;
     const promptText = `You are generating authentic customer reviews for an online store product.
-Generate a JSON array of 5 realistic customer reviews written by real online shoppers.
+Generate a JSON array of ${reqCount} realistic customer reviews written by real online shoppers.
 
 Product Description:
 ${input.description}
@@ -35,10 +36,10 @@ Target Language: ${input.language || "en"}.
 
 CRITICAL REQUIREMENTS FOR AUTHENTICITY:
 1. Reviewer Names: Use realistic, diverse full or first-name + last-initial customer names (e.g. "Rachel V.", "David Miller", "Priya Sharma", "Marcus T.", "Jessica P.").
-2. Ratings: Natural mix (e.g. four 5-star reviews and one 4-star review with constructive praise).
+2. Ratings: Natural mix (e.g. mostly 5-star reviews and occasional 4-star reviews with constructive praise).
 3. Tone & Style: Write like real customers sharing genuine experiences. Mention real-life context (e.g. delivery time, packaging, daily use, fit/feel, gifting, value for money). Avoid artificial corporate/marketing buzzwords.
 4. Product-Specific Vision: If an image is provided, analyze the product visually (colors, materials, product shape, design) combined with the Product Title to write visual-aware reviews even if text description is minimal.
-5. Output ONLY a JSON array of 5 review objects with exact keys:
+5. Output ONLY a JSON array of ${reqCount} review objects with exact keys:
 - reviewerName (string)
 - rating (integer 1-5)
 - bodyShort (short snippet string under 140 chars)

@@ -281,5 +281,24 @@ function generateSmartDemoReviews(input: ReviewGenInput): GeneratedReview[] {
     ];
   }
 
-  return reviewPool;
+  const targetCount = input.count || 5;
+  let reviews: GeneratedReview[] = [...reviewPool];
+
+  const firstNames = ["Rachel", "Marcus", "Jessica", "Liam", "Sophia", "David", "Priya", "Alex", "Emily", "Brandon", "Chloe", "Tyler", "Noah", "Olivia", "Ethan"];
+  const lastNames = ["Vance", "Thorne", "Patel", "Howard", "Martinez", "Miller", "Sharma", "Rivera", "Clarke", "Dupont", "Sanders", "Wilson", "Taylor", "Brooks"];
+
+  while (reviews.length < targetCount) {
+    const idx = reviews.length;
+    const base = reviewPool[idx % reviewPool.length];
+    const newName = `${firstNames[idx % firstNames.length]} ${lastNames[(idx * 3) % lastNames.length]}`;
+    reviews.push({
+      reviewerName: newName,
+      rating: 5,
+      bodyShort: `${shortName} — exceptional quality, works like a charm!`,
+      bodyFull: `I've been using ${shortName} regularly for a while now. High build quality, super fast shipping, and performs even better than advertised!`,
+      tags: [...base.tags],
+    });
+  }
+
+  return reviews.slice(0, targetCount);
 }

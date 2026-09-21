@@ -7,6 +7,7 @@ export interface GeneratedReview {
 }
 
 export interface ReviewGenInput {
+  count?: number; // number of reviews requested (e.g. 3, 5, 7)
   imageBase64?: string;
   imageMimeType?: string;
   description: string;

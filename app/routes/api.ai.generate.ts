@@ -171,6 +171,7 @@ export async function action({ request }: ActionFunctionArgs) {
         const result = await generateReviewsForShop(
           shop,
           {
+            count: countPerProduct,
             imageBase64: prodImageBase64,
             imageMimeType: prodImageMimeType,
             description: prodDescription,

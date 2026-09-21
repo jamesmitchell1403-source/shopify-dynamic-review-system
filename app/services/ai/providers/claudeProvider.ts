@@ -23,8 +23,9 @@ export class ClaudeProvider implements AIProvider {
 
     const anthropic = new Anthropic({ apiKey: key });
 
+    const reqCount = input.count || 5;
     const systemPrompt = `You are an expert e-commerce assistant generating authentic, natural-sounding customer reviews for an online store product.
-You MUST output ONLY a valid JSON array of exactly 5 review objects matching this structure:
+You MUST output ONLY a valid JSON array of exactly ${reqCount} review objects matching this structure:
 [
   {
     "reviewerName": "Rachel V.",
