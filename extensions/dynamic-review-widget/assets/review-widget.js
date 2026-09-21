@@ -139,42 +139,62 @@
 
       let contentHtml = '';
 
-      if (layoutStyle === 'layout-4') {
-        // ELEGANT QUOTE CARD
+      if (layoutStyle === 'layout-2') {
+        // LAYOUT 2: PASTEL SPOTLIGHT (Warm Pink & Product Icon)
         contentHtml = `
-          <div class="rw-quote-mark">“</div>
           <div class="rw-header">
             <div class="rw-user-info">
-              <span class="rw-reviewer">${escapeHtml(name)}</span>
-              <span class="rw-stars">${stars}</span>
+              <div class="rw-avatar-icon">🛍️</div>
+              <div>
+                <div class="rw-reviewer-title">
+                  <span class="rw-reviewer">${escapeHtml(name)}</span>
+                  <span class="rw-stars">${stars}</span>
+                </div>
+                <div class="rw-sub-verified">Verified Purchase</div>
+              </div>
             </div>
             <button class="rw-close-btn" aria-label="Close review">&times;</button>
           </div>
-          <div class="rw-body rw-quote-body">${escapeHtml(bodyText)}</div>
+          <div class="rw-body">“${escapeHtml(bodyText)}”</div>
           <div class="rw-footer">
             <span class="rw-verified-badge">✓ Verified Purchase</span>
             ${marketplaceBadge}
           </div>
         `;
+      } else if (layoutStyle === 'layout-4') {
+        // LAYOUT 4: ELEGANT QUOTE CARD
+        contentHtml = `
+          <div class="rw-quote-header">
+            <div class="rw-quote-mark">“</div>
+            <button class="rw-close-btn" aria-label="Close review">&times;</button>
+          </div>
+          <div class="rw-header" style="margin-bottom: 6px;">
+            <div class="rw-user-info">
+              <span class="rw-reviewer">${escapeHtml(name)}</span>
+              <span class="rw-stars">${stars}</span>
+            </div>
+          </div>
+          <div class="rw-body rw-quote-body">${escapeHtml(bodyText)}</div>
+          <div class="rw-footer" style="margin-top: 10px;">
+            <span class="rw-verified-badge">✓ Verified Purchase</span>
+            ${marketplaceBadge}
+          </div>
+        `;
       } else {
-        // DEFAULT / OTHER LAYOUTS
+        // LAYOUT 1 (Classic Minimalist), LAYOUT 3 (Dark Mode Modern), LAYOUT 5 (Organic Wave Pill)
         contentHtml = `
           <div class="rw-header">
             <div class="rw-user-info">
               <div class="rw-avatar">${escapeHtml(initials)}</div>
               <div>
-                <span class="rw-reviewer">${escapeHtml(name)}</span>
-                <span class="rw-stars">${stars}</span>
+                <div class="rw-reviewer">${escapeHtml(name)}</div>
+                <div class="rw-stars">${stars}</div>
               </div>
             </div>
             <button class="rw-close-btn" aria-label="Close review">&times;</button>
           </div>
 
-          <div class="rw-body-container">
-            ${layoutStyle === 'layout-2' || layoutStyle === 'layout-5' ? leftRaySvg : ''}
-            <div class="rw-body">“${escapeHtml(bodyText)}”</div>
-            ${layoutStyle === 'layout-2' || layoutStyle === 'layout-5' ? rightRaySvg : ''}
-          </div>
+          <div class="rw-body">“${escapeHtml(bodyText)}”</div>
 
           <div class="rw-footer">
             <span class="rw-verified-badge">✓ Verified Purchase</span>
