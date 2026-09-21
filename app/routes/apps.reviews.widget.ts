@@ -77,12 +77,39 @@ export async function loader({ request }: LoaderFunctionArgs) {
     } catch {
       parsedTags = [];
     }
+
+    let bodyShort = r.bodyShort || "";
+    let bodyFull = r.bodyFull || "";
+
+    // Self-healing check for legacy DB records that were generated with repetitive clothing templates ("super comfortable for daily wear")
+    const isDailyWear = /is super comfortable for daily wear|comfortable for daily wear|relaxed cut for daily wear/gi.test(bodyShort + " " + bodyFull);
+    
+    if (isDailyWear) {
+      const text = (bodyShort + " " + bodyFull).toLowerCase();
+      const isBedding = text.includes("thread count") || text.includes("sheet") || text.includes("pillow") || text.includes("bed");
+      const isTowels = text.includes("towel") || text.includes("washcloth") || text.includes("bath") || text.includes("cotton towel");
+
+      if (isBedding) {
+        bodyShort = bodyShort.replace(/is super comfortable for daily wear.*/gi, "feels silky smooth, highly breathable, and cool for night sleeping.");
+        bodyFull = bodyFull.replace(/is super comfortable for daily wear.*/gi, "The weave feels crisp and luxurious against skin, and deep corners fit our mattress securely.");
+      } else if (isTowels) {
+        bodyShort = bodyShort.replace(/is super comfortable for daily wear.*/gi, "is super absorbent, thick, plush, and quick-drying!");
+        bodyFull = bodyFull.replace(/is super comfortable for daily wear.*/gi, "These towels absorb moisture instantly, feel plush against skin, and dry fast on the towel bar.");
+      }
+
+      // Asynchronously heal database record
+      db.review.update({
+        where: { id: r.id },
+        data: { bodyShort, bodyFull }
+      }).catch(() => {});
+    }
+
     return {
       id: r.id,
       reviewerName: r.reviewerName || "Verified Customer",
       rating: r.rating,
-      bodyShort: r.bodyShort,
-      bodyFull: r.bodyFull,
+      bodyShort,
+      bodyFull,
       isVerifiedPurchase: r.isVerifiedPurchase,
       source: r.source,
       externalUrl: r.externalUrl || null,

@@ -71,232 +71,264 @@ export async function generateReviewsForShop(
 }
 
 function generateSmartDemoReviews(input: ReviewGenInput): GeneratedReview[] {
-  const text = (input.description + " " + (input.notes || "")).toLowerCase();
+  const description = (input.description || "").trim();
+  const notes = (input.notes || "").trim();
+  const text = (description + " " + notes).toLowerCase();
 
-  // Extract product title from notes (format: "Product Title: XYZ.")
-  const titleMatch = (input.notes || "").match(/Product Title:\s*([^.]+)/i);
+  // Extract title
+  const titleMatch = notes.match(/Product Title:\s*([^.]+)/i);
   const productName = titleMatch
     ? titleMatch[1].trim()
-    : input.description.split(/\s+/).slice(0, 4).join(" ") || "this product";
+    : description.split(/\s+/).slice(0, 4).join(" ") || "this item";
 
-  // Short name for inline usage (first 3 words max)
   const shortName = productName.split(/\s+/).slice(0, 3).join(" ");
+  const targetCount = input.count || 5;
 
-  const isWax = text.includes("wax") || text.includes("tuning") || text.includes("glide");
-  const isClothing = text.includes("shirt") || text.includes("jacket") || text.includes("pant") || text.includes("dress") || text.includes("wear") || text.includes("cotton");
-  const isBeauty = text.includes("skin") || text.includes("cream") || text.includes("serum") || text.includes("oil") || text.includes("hair");
-  const isSports = text.includes("snowboard") || text.includes("board") || text.includes("ski") || text.includes("outdoor");
+  // Accurate Category Keyword Detection
+  const isBedding = text.includes("sheet") || text.includes("pillowcase") || text.includes("duvet") || text.includes("comforter") || text.includes("thread count") || text.includes("bedding") || text.includes("bed ");
+  const isTowels = text.includes("towel") || text.includes("washcloth") || text.includes("bath") || text.includes("shower") || text.includes("robe");
+  const isBeauty = text.includes("skin") || text.includes("cream") || text.includes("serum") || text.includes("lotion") || text.includes("cleanser") || text.includes("moisturizer");
+  const isClothing = (text.includes("hoodie") || text.includes("sweatpants") || text.includes("shirt") || text.includes("jacket") || text.includes("pant") || text.includes("suit") || text.includes("dress") || text.includes("wear")) && !isBedding && !isTowels;
+  const isWax = text.includes("wax") || text.includes("tuning") || text.includes("glide") || text.includes("snowboard") || text.includes("ski");
 
-  let reviewPool: GeneratedReview[] = [];
+  // Derive a numeric seed from productName to ensure review variety across products
+  const seed = productName.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0);
 
-  if (isWax) {
-    reviewPool = [
+  const DIVERSE_NAMES = [
+    "Rachel Vance", "David Kim", "Priya Sharma", "Sophia Martinez", "Liam Howard",
+    "Jessica Patel", "Alex Rivera", "Emily Clarke", "Brandon Miller", "Carlos Mendez",
+    "Hannah Wright", "Tyler Sanders", "Chloe Dupont", "Ethan Brooks", "Elena Rostova",
+    "Daniel Smith", "Kavya Menon", "Justin Blake", "Amanda Foster", "Marcus Thorne",
+    "Michael Chang", "Sarah Jenkins", "Olivia Taylor", "Noah Wilson", "Isabelle Chen",
+    "Lucas Meyer", "Zoe Bennett", "Amir Khan", "Nina Rossi", "Julian Vance"
+  ];
+
+  let reviewTemplates: Array<{ rating: number; bodyShort: string; bodyFull: string; tags: string[] }> = [];
+
+  if (isBedding) {
+    reviewTemplates = [
       {
-        reviewerName: "Marcus T.",
         rating: 5,
-        bodyShort: `${shortName} made gliding noticeably faster on all snow conditions!`,
-        bodyFull: `Applied ${shortName} before my weekend session. Application was smooth and easy, and the glide performance was fantastic all day long! Absolutely love this product.`,
-        tags: ["easy-application", "fast-glide", "top-wax"],
+        bodyShort: `${shortName} feels silky smooth, highly breathable, and cool for night sleeping.`,
+        bodyFull: `I bought ${shortName} recently and the quality surprised me. The weave feels crisp and luxurious against skin, deep corners fit our mattress securely, and it washed cleanly without pilling.`,
+        tags: ["silky-smooth", "breathable", "deep-pockets"],
       },
       {
-        reviewerName: "Jessica P.",
         rating: 5,
-        bodyShort: `${shortName} works great for daily ski and snowboard tuning!`,
-        bodyFull: `${shortName} keeps my bases protected, hydrated, and fast all season. Super reliable for varied temperatures. My go-to wax.`,
-        tags: ["reliable-tuning", "all-temp"],
+        bodyShort: `${shortName} retains its soft texture and cool feel night after night.`,
+        bodyFull: `Sleeping on ${shortName} feels like a high-end hotel experience. The fabric is light, breathable, doesn't trap body heat, and stays soft after multiple wash cycles.`,
+        tags: ["hotel-quality", "cool-sleeping", "soft-linen"],
       },
       {
-        reviewerName: "David Miller",
         rating: 4,
-        bodyShort: `${shortName} is a solid everyday glide wax.`,
-        bodyFull: `${shortName} holds up well for multiple runs. Great value and easy maintenance. Would definitely buy again.`,
-        tags: ["great-value", "long-lasting"],
+        bodyShort: `Generous sizing, neat corner elastic, and smooth finish on ${shortName}.`,
+        bodyFull: `${shortName} fits snug around the corners without slipping off overnight. Material weight is comfortable and feels durable for everyday home use.`,
+        tags: ["great-fit", "durable-fabric", "neat-stitching"],
       },
       {
-        reviewerName: "Priya Sharma",
         rating: 5,
-        bodyShort: `${shortName} is my go-to wax for all winter gear!`,
-        bodyFull: `${shortName} gives a noticeable boost in speed and reduces base drag completely. Will definitely keep a supply handy all season.`,
-        tags: ["must-have", "smooth-ride"],
+        bodyShort: `${shortName} washed remarkably well with zero shrinkage or fraying.`,
+        bodyFull: `Ran ${shortName} through the laundry twice already. Still feels soft, smooth, and crisp on the bed. A very practical and comfortable bedding choice.`,
+        tags: ["wash-resilient", "zero-shrinkage", "crisp-finish"],
       },
       {
-        reviewerName: "Rachel V.",
         rating: 5,
-        bodyShort: `${shortName} transformed my dry bases into fast gliders!`,
-        bodyFull: `Restored my dry bases right away with ${shortName}. Smooth application and no sticky spots. Essential for tuning — highly recommend!`,
-        tags: ["base-protection", "essential"],
+        bodyShort: `Extremely comfortable weave and luxury feel for ${shortName}.`,
+        bodyFull: `Upgraded our main bedroom set to ${shortName} and could not be happier. The texture is smooth, cozy, and perfect for all seasons.`,
+        tags: ["luxury-weave", "all-season", "cozy-touch"],
       },
+      {
+        rating: 5,
+        bodyShort: `${shortName} has a soft sateen touch that makes sleeping peaceful.`,
+        bodyFull: `The fabric quality on ${shortName} is top notch. It doesn't wrinkle easily and keeps temperature regulated all night long.`,
+        tags: ["sateen-touch", "temperature-control", "wrinkle-resistant"],
+      },
+      {
+        rating: 4,
+        bodyShort: `Smooth weave and accurate color matching on ${shortName}.`,
+        bodyFull: `${shortName} arrived quickly and packaging was pristine. Color matches online images perfectly and texture feels premium.`,
+        tags: ["accurate-color", "fast-shipping", "pristine-packaging"],
+      }
     ];
-  } else if (isClothing) {
-    reviewPool = [
+  } else if (isTowels) {
+    reviewTemplates = [
       {
-        reviewerName: "Rachel Vance",
         rating: 5,
-        bodyShort: `${shortName} fits perfectly and the fabric quality is top tier!`,
-        bodyFull: `I was skeptical buying online, but ${shortName} blew me away. Super soft material, great stitching, and it washed really well without shrinking.`,
-        tags: ["perfect-fit", "soft-fabric", "high-quality"],
+        bodyShort: `${shortName} is super absorbent, thick, plush, and quick-drying!`,
+        bodyFull: `These towels are fantastic after a shower. ${shortName} absorbs moisture instantly, feels plush against skin, and dries quickly on the towel bar.`,
+        tags: ["super-absorbent", "plush-loops", "quick-drying"],
       },
       {
-        reviewerName: "Marcus Thorne",
         rating: 5,
-        bodyShort: `${shortName} is super comfortable for daily wear.`,
-        bodyFull: `Wore ${shortName} all day. Incredibly comfortable, light on the skin, and looks even better in person. Shipped fast too!`,
-        tags: ["comfortable", "fast-delivery", "true-to-size"],
+        bodyShort: `${shortName} held its fluffiness and rich color after washing.`,
+        bodyFull: `Washed ${shortName} before first use and there was minimal lint. The cotton set feels dense, soft, durable, and looks great hanging in our bathroom.`,
+        tags: ["lint-free", "durable-cotton", "rich-color"],
       },
       {
-        reviewerName: "Jessica Patel",
         rating: 4,
-        bodyShort: `${shortName} is solid quality, true to size.`,
-        bodyFull: `${shortName} arrived in 3 days. Quality is really good for the price point. Color is spot-on. Would order again.`,
-        tags: ["accurate-color", "fast-shipping"],
+        bodyShort: `Generous set size and soft absorbency with ${shortName}.`,
+        bodyFull: `The water absorption on ${shortName} is great right out of the package. Solid GSM thickness without feeling overly heavy when wet.`,
+        tags: ["great-absorption", "soft-touch", "solid-thickness"],
       },
       {
-        reviewerName: "Liam Howard",
         rating: 5,
-        bodyShort: `Getting compliments everywhere wearing ${shortName}!`,
-        bodyFull: `Got so many compliments wearing ${shortName}! Feels premium and durable. Definitely worth every penny.`,
-        tags: ["stylish", "premium-feel"],
+        bodyShort: `${shortName} brings a refreshing spa-like feel to daily bath routines.`,
+        bodyFull: `Bought ${shortName} as a bathroom refresh. The cotton texture is gentle on skin, dries you off in seconds, and holds shape wash after wash.`,
+        tags: ["spa-quality", "gentle-on-skin", "shape-retention"],
       },
       {
-        reviewerName: "Sophia Martinez",
         rating: 5,
-        bodyShort: `Love the attention to detail on ${shortName}!`,
-        bodyFull: `Bought ${shortName} as a gift and ended up buying one for myself too. High quality stitching and lovely packaging.`,
-        tags: ["great-gift", "durable"],
+        bodyShort: `Thick quality weave on ${shortName} with sturdy reinforced edges.`,
+        bodyFull: `${shortName} exceeded expectations. Hemming along the edges is neat and sturdy. Highly recommend if you want durable bath towels.`,
+        tags: ["neat-hemming", "long-lasting", "dense-weave"],
       },
+      {
+        rating: 5,
+        bodyShort: `${shortName} stays soft without scratchiness even after line drying.`,
+        bodyFull: `Impressed by how soft ${shortName} remains after laundering. Dries fast and feels gentle on sensitive skin.`,
+        tags: ["soft-laundering", "fast-drying", "gentle-skin"],
+      }
     ];
   } else if (isBeauty) {
-    reviewPool = [
+    reviewTemplates = [
       {
-        reviewerName: "Emily Clarke",
         rating: 5,
-        bodyShort: `${shortName} absorbs quickly and leaves skin feeling amazing!`,
-        bodyFull: `I've been using ${shortName} daily for two weeks. My skin feels noticeably softer and hydrated without feeling greasy or heavy.`,
-        tags: ["hydrating", "non-greasy", "fast-results"],
+        bodyShort: `${shortName} absorbs quickly and leaves skin hydrated without grease.`,
+        bodyFull: `Been using ${shortName} daily. Skin feels noticeably softer and hydrated without feeling heavy or oily. Very gentle formula.`,
+        tags: ["hydrating", "non-greasy", "gentle-formula"],
       },
       {
-        reviewerName: "David Kim",
         rating: 5,
-        bodyShort: `Finally found something that works — ${shortName} is it!`,
-        bodyFull: `I have sensitive skin but ${shortName} caused zero irritation. Very soothing and smells subtle and pleasant.`,
-        tags: ["sensitive-skin-safe", "soothing"],
+        bodyShort: `${shortName} is gentle on sensitive skin with visible smoothness.`,
+        bodyFull: `I have sensitive skin but ${shortName} caused zero irritation. Very soothing texture and subtle pleasant scent.`,
+        tags: ["sensitive-skin-safe", "soothing", "subtle-scent"],
       },
       {
-        reviewerName: "Priya Sharma",
         rating: 4,
-        bodyShort: `Noticeable improvement in skin texture with ${shortName}.`,
-        bodyFull: `Saw results after 4-5 days using ${shortName} consistently. Will definitely keep this in my daily routine.`,
-        tags: ["effective", "daily-use"],
+        bodyShort: `Noticeable improvement in skin texture using ${shortName}.`,
+        bodyFull: `Saw positive results after 4-5 days using ${shortName} consistently. Will definitely keep this in my daily skincare routine.`,
+        tags: ["effective", "daily-routine", "smooth-skin"],
       },
       {
-        reviewerName: "Hannah Wright",
         rating: 5,
-        bodyShort: `${shortName} is holy grail status! Will reorder.`,
-        bodyFull: `${shortName} is one of the best purchases I've made this year. Lightweight, effective, and generous quantity.`,
-        tags: ["must-have", "great-value"],
+        bodyShort: `${shortName} is lightweight, effective, and long-lasting.`,
+        bodyFull: `${shortName} is one of the best skincare purchases I've made this year. Lightweight, effective, and generous bottle quantity.`,
+        tags: ["lightweight", "great-value", "long-lasting"],
       },
       {
-        reviewerName: "Alex Rivera",
         rating: 5,
-        bodyShort: `${shortName} is gentle on skin with an instant glow.`,
+        bodyShort: `${shortName} gives skin an instant natural, healthy glow.`,
         bodyFull: `Packaging was pristine. ${shortName} feels so luxurious on application. Couldn't be happier with this purchase!`,
-        tags: ["luxurious", "secure-packaging"],
-      },
+        tags: ["luxurious", "pristine-packaging", "natural-glow"],
+      }
     ];
-  } else if (isSports) {
-    reviewPool = [
+  } else if (isClothing) {
+    reviewTemplates = [
       {
-        reviewerName: "Brandon Miller",
         rating: 5,
-        bodyShort: `${shortName} has outstanding performance on slopes and trails!`,
-        bodyFull: `Took ${shortName} out for a full weekend session. Handles like a dream, rock solid construction, exceeded all expectations.`,
-        tags: ["high-performance", "durable", "top-tier"],
+        bodyShort: `${shortName} fits true to size with soft, durable fabric.`,
+        bodyFull: `I was skeptical buying online, but ${shortName} blew me away. Super soft material, durable stitching, and it washed well without shrinking.`,
+        tags: ["true-to-size", "soft-fabric", "no-shrinkage"],
       },
       {
-        reviewerName: "Chloe Dupont",
         rating: 5,
-        bodyShort: `${shortName} glide and feel are smooth as butter.`,
-        bodyFull: `${shortName} is a huge upgrade over my previous gear. Easy to maneuver and built to last. Great protective packaging too.`,
-        tags: ["smooth-glide", "sturdy"],
+        bodyShort: `${shortName} has a clean, relaxed cut for daily wear.`,
+        bodyFull: `Wore ${shortName} all day. Incredibly comfortable, lightweight, and looks even better in person. Shipped fast too!`,
+        tags: ["comfortable-fit", "stylish-cut", "lightweight"],
       },
       {
-        reviewerName: "Jason K.",
         rating: 4,
-        bodyShort: `${shortName} is reliable for all conditions.`,
-        bodyFull: `Solid build quality on ${shortName}. Held up great under tough conditions. Very happy with the responsiveness.`,
-        tags: ["reliable", "all-weather"],
+        bodyShort: `${shortName} is well tailored and color matches photos accurately.`,
+        bodyFull: `${shortName} arrived in 3 days. Quality is really good for the price point. Color is spot-on. Would order again.`,
+        tags: ["accurate-color", "fast-shipping", "tailored-fit"],
       },
       {
-        reviewerName: "Megan Ross",
         rating: 5,
-        bodyShort: `${shortName} is the best investment I've made this season!`,
-        bodyFull: `${shortName} is worth every cent! Light, strong, and performs consistently well. Delivery was super fast too.`,
-        tags: ["fast-delivery", "recommended"],
+        bodyShort: `Receiving compliments whenever wearing ${shortName}!`,
+        bodyFull: `Got compliments wearing ${shortName}. Feels premium, durable, and holds shape after washing.`,
+        tags: ["premium-feel", "durable", "shape-holding"],
       },
       {
-        reviewerName: "Tyler Sanders",
         rating: 5,
-        bodyShort: `${shortName} has top notch quality and awesome design.`,
-        bodyFull: `The craftsmanship of ${shortName} is top notch. Tested thoroughly and performed flawlessly under all conditions.`,
-        tags: ["craftsmanship", "flawless"],
+        bodyShort: `Neat stitching and great quality material on ${shortName}.`,
+        bodyFull: `Bought ${shortName} as a gift and ended up buying one for myself too. High quality stitching and lovely packaging.`,
+        tags: ["neat-stitching", "great-gift", "quality-cotton"],
+      }
+    ];
+  } else if (isWax) {
+    reviewTemplates = [
+      {
+        rating: 5,
+        bodyShort: `${shortName} made gliding noticeably smoother across all snow conditions.`,
+        bodyFull: `Applied ${shortName} before my weekend session. Application was smooth and easy, and the glide performance was fantastic all day long!`,
+        tags: ["smooth-glide", "easy-application", "snow-performance"],
       },
+      {
+        rating: 5,
+        bodyShort: `${shortName} keeps bases protected and fast all season.`,
+        bodyFull: `${shortName} keeps my bases protected, hydrated, and fast all season. Super reliable for varied temperatures.`,
+        tags: ["base-protection", "all-temp", "fast-glide"],
+      },
+      {
+        rating: 4,
+        bodyShort: `${shortName} is a solid everyday glide wax for gear tuning.`,
+        bodyFull: `${shortName} holds up well for multiple runs. Great value and easy maintenance. Would definitely buy again.`,
+        tags: ["great-value", "long-lasting", "easy-maintenance"],
+      },
+      {
+        rating: 5,
+        bodyShort: `${shortName} gives a noticeable boost in glide speed.`,
+        bodyFull: `${shortName} gives a noticeable boost in speed and reduces base drag completely. Will keep handy all season.`,
+        tags: ["glide-speed", "smooth-ride", "zero-drag"],
+      }
     ];
   } else {
-    reviewPool = [
+    reviewTemplates = [
       {
-        reviewerName: "Sarah Jenkins",
         rating: 5,
-        bodyShort: `${shortName} — exceptional quality and fast delivery!`,
-        bodyFull: `Impressed with ${shortName} right out of the box. Arrived earlier than expected and works exactly as advertised. Highly recommend!`,
-        tags: ["fast-shipping", "top-quality", "as-described"],
+        bodyShort: `${shortName} — practical design, solid build, and fast delivery!`,
+        bodyFull: `Impressed with ${shortName} right out of the box. Arrived earlier than expected and works exactly as advertised.`,
+        tags: ["fast-shipping", "solid-build", "as-described"],
       },
       {
-        reviewerName: "Michael Chang",
         rating: 5,
-        bodyShort: `${shortName} exceeded my expectations in every way.`,
-        bodyFull: `I bought ${shortName} based on positive reviews and it lived up to the hype! Solid materials, easy to use, great value.`,
-        tags: ["great-value", "easy-to-use"],
+        bodyShort: `${shortName} exceeded expectations with quality materials throughout.`,
+        bodyFull: `I bought ${shortName} based on product specifications and it lived up to expectations! Solid materials, easy to use, great value.`,
+        tags: ["great-value", "easy-to-use", "quality-materials"],
       },
       {
-        reviewerName: "Amanda Foster",
         rating: 4,
-        bodyShort: `Very satisfied with my ${shortName} purchase.`,
-        bodyFull: `${shortName} was well packaged and arrived in perfect condition. Practical, well-designed, great customer service.`,
-        tags: ["well-packaged", "practical"],
+        bodyShort: `Very satisfied with ${shortName}. Well packaged and reliable finish.`,
+        bodyFull: `${shortName} was well packaged and arrived in perfect condition. Practical, well-designed, and sturdy finish.`,
+        tags: ["well-packaged", "practical-design", "sturdy-finish"],
       },
       {
-        reviewerName: "Daniel Smith",
         rating: 5,
-        bodyShort: `${shortName} works like a charm! 5 stars.`,
-        bodyFull: `Have been using ${shortName} for a few weeks now. Reliable performance and excellent quality for the price. Totally worth it.`,
-        tags: ["reliable", "5-stars"],
+        bodyShort: `${shortName} performs reliably for everyday store standards.`,
+        bodyFull: `Have been using ${shortName} for a few weeks now. Reliable performance and excellent quality for the price.`,
+        tags: ["reliable", "quality-finish", "daily-use"],
       },
       {
-        reviewerName: "Olivia Taylor",
         rating: 5,
-        bodyShort: `So glad I bought ${shortName}!`,
-        bodyFull: `Super happy with my ${shortName} order. Beautiful finish, sturdy feel, and great user experience. Will definitely buy again!`,
-        tags: ["recommended", "sturdy-feel"],
-      },
+        bodyShort: `Sturdy construction and great overall user experience on ${shortName}.`,
+        bodyFull: `Super happy with my ${shortName} order. Beautiful finish, sturdy feel, and great user experience.`,
+        tags: ["sturdy-feel", "recommended", "beautiful-finish"],
+      }
     ];
   }
 
-  const targetCount = input.count || 5;
-  let reviews: GeneratedReview[] = [...reviewPool];
+  let reviews: GeneratedReview[] = [];
+  for (let i = 0; i < targetCount; i++) {
+    const templateIdx = (seed + i) % reviewTemplates.length;
+    const base = reviewTemplates[templateIdx];
+    const uniqueName = DIVERSE_NAMES[(seed * 7 + i * 3) % DIVERSE_NAMES.length];
 
-  const firstNames = ["Rachel", "Marcus", "Jessica", "Liam", "Sophia", "David", "Priya", "Alex", "Emily", "Brandon", "Chloe", "Tyler", "Noah", "Olivia", "Ethan"];
-  const lastNames = ["Vance", "Thorne", "Patel", "Howard", "Martinez", "Miller", "Sharma", "Rivera", "Clarke", "Dupont", "Sanders", "Wilson", "Taylor", "Brooks"];
-
-  while (reviews.length < targetCount) {
-    const idx = reviews.length;
-    const base = reviewPool[idx % reviewPool.length];
-    const newName = `${firstNames[idx % firstNames.length]} ${lastNames[(idx * 3) % lastNames.length]}`;
     reviews.push({
-      reviewerName: newName,
-      rating: 5,
-      bodyShort: `${shortName} — exceptional quality, works like a charm!`,
-      bodyFull: `I've been using ${shortName} regularly for a while now. High build quality, super fast shipping, and performs even better than advertised!`,
-      tags: [...base.tags],
+      reviewerName: uniqueName,
+      rating: base.rating,
+      bodyShort: base.bodyShort,
+      bodyFull: base.bodyFull,
+      tags: base.tags,
     });
   }
 
@@ -315,12 +347,11 @@ const BANNED_CLICHES = [
 ];
 
 const DIVERSE_NAME_POOL = [
-  "Rachel Vance", "Marcus Thorne", "Jessica Patel", "Liam Howard",
-  "Sophia Martinez", "David Kim", "Priya Sharma", "Alex Rivera",
-  "Emily Clarke", "Brandon Miller", "Chloe Dupont", "Tyler Sanders",
-  "Noah Wilson", "Olivia Taylor", "Ethan Brooks", "Hannah Wright",
-  "Daniel Smith", "Amanda Foster", "Michael Chang", "Sarah Jenkins",
-  "Justin Blake", "Elena Rostova", "Kavya Menon", "Carlos Mendez"
+  "Rachel Vance", "David Kim", "Priya Sharma", "Sophia Martinez", "Liam Howard",
+  "Jessica Patel", "Alex Rivera", "Emily Clarke", "Brandon Miller", "Carlos Mendez",
+  "Hannah Wright", "Tyler Sanders", "Chloe Dupont", "Ethan Brooks", "Elena Rostova",
+  "Daniel Smith", "Kavya Menon", "Justin Blake", "Amanda Foster", "Marcus Thorne",
+  "Michael Chang", "Sarah Jenkins", "Olivia Taylor", "Noah Wilson", "Isabelle Chen"
 ];
 
 function validateAndPostProcessReviews(
@@ -339,7 +370,12 @@ function validateAndPostProcessReviews(
     : (input.description || "").split(/\s+/).slice(0, 4).join(" ") || "this item";
   const shortName = productName.split(/\s+/).slice(0, 3).join(" ");
 
-  let nameIndex = 0;
+  const lowerText = (productName + " " + (input.description || "")).toLowerCase();
+  const isBedding = lowerText.includes("sheet") || lowerText.includes("pillowcase") || lowerText.includes("duvet") || lowerText.includes("thread count") || lowerText.includes("bedding");
+  const isTowels = lowerText.includes("towel") || lowerText.includes("washcloth") || lowerText.includes("bath") || lowerText.includes("robe");
+  const isClothing = (lowerText.includes("hoodie") || lowerText.includes("shirt") || lowerText.includes("jacket") || lowerText.includes("pant") || lowerText.includes("dress")) && !isBedding && !isTowels;
+
+  let nameIndex = Math.abs(productName.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0));
 
   for (const r of reviews) {
     let reviewerName = (r.reviewerName || "").trim();
@@ -355,6 +391,29 @@ function validateAndPostProcessReviews(
 
     let bodyShort = (r.bodyShort || "").trim();
     let bodyFull = (r.bodyFull || "").trim();
+
+    // BAN "super comfortable for daily wear" / "daily wear" on non-clothing items
+    if (!isClothing) {
+      const dailyWearRegex = /is super comfortable for daily wear|comfortable for daily wear|relaxed cut for daily wear/gi;
+      if (dailyWearRegex.test(bodyShort)) {
+        if (isBedding) {
+          bodyShort = `${shortName} is silky smooth, breathable, and cool for night sleeping.`;
+        } else if (isTowels) {
+          bodyShort = `${shortName} is super absorbent, plush, and quick-drying!`;
+        } else {
+          bodyShort = `${shortName} — practical design, solid build, and fast delivery!`;
+        }
+      }
+      if (dailyWearRegex.test(bodyFull)) {
+        if (isBedding) {
+          bodyFull = `I bought ${shortName} recently and the quality surprised me. The fabric feels crisp and luxurious against skin, and deep corners fit our mattress securely.`;
+        } else if (isTowels) {
+          bodyFull = `These towels are fantastic after a shower. ${shortName} absorbs moisture instantly, feels plush against skin, and dries quickly.`;
+        } else {
+          bodyFull = `Impressed with ${shortName} right out of the box. Arrived earlier than expected and works exactly as advertised.`;
+        }
+      }
+    }
 
     // Enforce Rule 8: Filter out banned clichés
     for (const cliché of BANNED_CLICHES) {
@@ -378,7 +437,7 @@ function validateAndPostProcessReviews(
     // Enforce Rule 7: Unique comments / no duplicate short snippets
     let uniqueShortKey = bodyShort.toLowerCase().replace(/[^a-z0-9]/g, "");
     if (usedShorts.has(uniqueShortKey)) {
-      bodyShort = `${bodyShort} (${shortName} feature)`;
+      bodyShort = `${bodyShort} (verified feature)`;
       uniqueShortKey = bodyShort.toLowerCase().replace(/[^a-z0-9]/g, "");
     }
     usedShorts.add(uniqueShortKey);
@@ -394,18 +453,28 @@ function validateAndPostProcessReviews(
 
   // Ensure returned set matches requested count
   while (validated.length < reqCount) {
-    const idx = validated.length;
     let fallbackName = DIVERSE_NAME_POOL[nameIndex++ % DIVERSE_NAME_POOL.length];
     while (usedNames.has(fallbackName.toLowerCase())) {
       fallbackName = DIVERSE_NAME_POOL[nameIndex++ % DIVERSE_NAME_POOL.length];
     }
     usedNames.add(fallbackName.toLowerCase());
 
+    let fallbackShort = `${shortName} — practical design and comfortable fit`;
+    let fallbackFull = `I've been using ${shortName} regularly. The texture and features match what was shown in the catalog, and it performs reliably for daily use.`;
+
+    if (isBedding) {
+      fallbackShort = `${shortName} — silky smooth weave and cool night sleeping`;
+      fallbackFull = `${shortName} fits comfortably around mattress corners and keeps its crisp softness wash after wash.`;
+    } else if (isTowels) {
+      fallbackShort = `${shortName} — plush cotton density and super absorbent`;
+      fallbackFull = `${shortName} absorbs water effortlessly, feels soft and thick, and dries fast on the bathroom rack.`;
+    }
+
     validated.push({
       reviewerName: fallbackName,
       rating: 5,
-      bodyShort: `${shortName} — practical design and comfortable fit`,
-      bodyFull: `I've been using ${shortName} regularly. The texture and features match what was shown in the catalog, and it performs reliably for daily use.`,
+      bodyShort: fallbackShort,
+      bodyFull: fallbackFull,
       tags: ["practical-design", "verified-purchase"],
     });
   }
