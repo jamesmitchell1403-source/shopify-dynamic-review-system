@@ -74,6 +74,24 @@ export async function loader({ request }: LoaderFunctionArgs) {
   return json({ products });
 }
 
+const MARKETPLACE_INFO: Record<string, { name: string; actionHint: string; buttonText: string }> = {
+  IMPORTED_AMAZON: {
+    name: "Amazon",
+    actionHint: "Drag & drop your Amazon reviews CSV file here or click to browse",
+    buttonText: "Start Amazon CSV Import Process",
+  },
+  IMPORTED_FLIPKART: {
+    name: "Flipkart",
+    actionHint: "Drag & drop your Flipkart reviews CSV file here or click to browse",
+    buttonText: "Start Flipkart CSV Import Process",
+  },
+  IMPORTED_ALIBABA: {
+    name: "Alibaba",
+    actionHint: "Drag & drop your Alibaba reviews CSV file here or click to browse",
+    buttonText: "Start Alibaba CSV Import Process",
+  },
+};
+
 export default function ImportReviewsPage() {
   const { products } = useLoaderData<typeof loader>();
 
@@ -86,6 +104,8 @@ export default function ImportReviewsPage() {
   const [manualMappings, setManualMappings] = useState<Record<number, string>>({});
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  const currentMarketplace = MARKETPLACE_INFO[sourceType] || MARKETPLACE_INFO.IMPORTED_AMAZON;
+
   const handleDrop = (_files: File[], acceptedFiles: File[]) => {
     if (acceptedFiles.length > 0) {
       setFile(acceptedFiles[0]);
@@ -93,12 +113,12 @@ export default function ImportReviewsPage() {
   };
 
   const handleDownloadTemplate = () => {
-    const csvContent = "SKU/ASIN,ReviewerName,Rating,ReviewText,Date\nB08N5WRWNW,Jane Smith,5,Amazing product! Highly recommend for daily use.,2026-08-01\nB08N5WRWNW,John Doe,4,Very good build quality and fast shipping.,2026-08-05";
+    const csvContent = "SKU/ASIN,ReviewerName,Rating,ReviewText,Date\nSAMPLE_SKU_123,Jane Smith,5,Amazing product! Highly recommend for daily use.,2026-08-01\nSAMPLE_SKU_123,John Doe,4,Very good build quality and fast shipping.,2026-08-05";
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.setAttribute("download", `${sourceType.toLowerCase()}_template.csv`);
+    link.setAttribute("download", `${currentMarketplace.name.toLowerCase()}_reviews_template.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -175,6 +195,8 @@ export default function ImportReviewsPage() {
     setFile(null);
     setImportResult(null);
     setErrorMessage(null);
+    setTargetProductId("");
+    setManualMappings({});
   };
 
   return (
@@ -186,7 +208,7 @@ export default function ImportReviewsPage() {
 
         <Card padding="500">
           <BlockStack gap="400">
-            <Text as="h2" variant="headingMd">Upload CSV File</Text>
+            <Text as="h2" variant="headingMd">{`Upload ${currentMarketplace.name} Reviews CSV`}</Text>
 
             <InlineStack gap="400">
               <div style={{ width: "220px" }}>
@@ -216,7 +238,7 @@ export default function ImportReviewsPage() {
 
               <div style={{ paddingTop: "24px" }}>
                 <Button icon={ExportIcon} onClick={handleDownloadTemplate}>
-                  Download CSV Template
+                  {`Download ${currentMarketplace.name} Template`}
                 </Button>
               </div>
             </InlineStack>
@@ -228,7 +250,7 @@ export default function ImportReviewsPage() {
                   <Text as="p" tone="subdued">{`${(file.size / 1024).toFixed(1)} KB`}</Text>
                 </div>
               ) : (
-                <DropZone.FileUpload actionHint="Drag & drop your CSV file here or click to browse" />
+                <DropZone.FileUpload actionHint={currentMarketplace.actionHint} />
               )}
             </DropZone>
 
@@ -239,7 +261,7 @@ export default function ImportReviewsPage() {
               loading={loading}
               onClick={handleUpload}
             >
-              Start CSV Import Process
+              {currentMarketplace.buttonText}
             </Button>
           </BlockStack>
         </Card>
