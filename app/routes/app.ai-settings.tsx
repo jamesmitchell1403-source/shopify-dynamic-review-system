@@ -37,17 +37,24 @@ export async function loader({ request }: LoaderFunctionArgs) {
       orderBy: { createdAt: "desc" },
       take: 20,
     });
+    const mergedSettings = {
+      ...settings,
+      anthropicApiKey: settings?.anthropicApiKey || process.env.ANTHROPIC_API_KEY || "",
+      geminiApiKey: settings?.geminiApiKey || process.env.GEMINI_API_KEY || "",
+      openaiApiKey: (settings as any)?.openaiApiKey || process.env.OPENAI_API_KEY || "",
+    };
+
+    return json({ settings: mergedSettings, aiJobs });
   } catch (err) {
     console.error("AI settings DB loader error:", err);
-    settings = {
+    const fallbackSettings = {
       shop,
-      defaultAiProvider: "claude",
-      anthropicApiKey: "",
-      geminiApiKey: "",
+      anthropicApiKey: process.env.ANTHROPIC_API_KEY || "",
+      geminiApiKey: process.env.GEMINI_API_KEY || "",
+      openaiApiKey: process.env.OPENAI_API_KEY || "",
     };
+    return json({ settings: fallbackSettings, aiJobs: [] });
   }
-
-  return json({ settings, aiJobs });
 }
 
 export async function action({ request }: ActionFunctionArgs) {
