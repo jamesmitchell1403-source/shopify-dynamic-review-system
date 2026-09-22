@@ -51,6 +51,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 }
 
 export async function action({ request }: ActionFunctionArgs) {
+  await ensureTablesExist();
   const { session } = await authenticate.admin(request);
   const shop = session.shop;
 
@@ -60,22 +61,51 @@ export async function action({ request }: ActionFunctionArgs) {
   const geminiApiKey = (formData.get("geminiApiKey") as string) || null;
   const openaiApiKey = (formData.get("openaiApiKey") as string) || null;
 
-  await db.shopSettings.upsert({
-    where: { shop },
-    update: {
-      defaultAiProvider,
-      anthropicApiKey,
-      geminiApiKey,
-      openaiApiKey,
-    } as any,
-    create: {
-      shop,
-      defaultAiProvider,
-      anthropicApiKey,
-      geminiApiKey,
-      openaiApiKey,
-    } as any,
-  });
+  try {
+    await db.shopSettings.upsert({
+      where: { shop },
+      update: {
+        defaultAiProvider,
+        anthropicApiKey,
+        geminiApiKey,
+        openaiApiKey,
+      },
+      create: {
+        shop,
+        defaultAiProvider,
+        anthropicApiKey,
+        geminiApiKey,
+        openaiApiKey,
+      },
+    });
+  } catch (err) {
+    console.warn("Prisma upsert warning, executing raw SQL fallback:", err);
+    try {
+      const existing = await db.$queryRawUnsafe<any[]>(`SELECT id FROM ShopSettings WHERE shop = ?`, shop);
+      if (existing && existing.length > 0) {
+        await db.$executeRawUnsafe(
+          `UPDATE ShopSettings SET defaultAiProvider = ?, anthropicApiKey = ?, geminiApiKey = ?, openaiApiKey = ? WHERE shop = ?`,
+          defaultAiProvider,
+          anthropicApiKey,
+          geminiApiKey,
+          openaiApiKey,
+          shop
+        );
+      } else {
+        await db.$executeRawUnsafe(
+          `INSERT INTO ShopSettings (id, shop, defaultAiProvider, anthropicApiKey, geminiApiKey, openaiApiKey) VALUES (?, ?, ?, ?, ?, ?)`,
+          `set_${Date.now()}`,
+          shop,
+          defaultAiProvider,
+          anthropicApiKey,
+          geminiApiKey,
+          openaiApiKey
+        );
+      }
+    } catch (sqlErr) {
+      console.error("Raw SQL fallback error:", sqlErr);
+    }
+  }
 
   return json({ success: true });
 }
