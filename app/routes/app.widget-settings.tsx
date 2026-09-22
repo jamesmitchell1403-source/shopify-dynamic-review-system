@@ -136,19 +136,8 @@ export default function WidgetSettingsPage() {
     setTimeout(() => setSavedSuccess(false), 3000);
   };
 
-  const pageTitleWithIcon = (
-    <InlineStack gap="300" blockAlign="center">
-      <img
-        src="/app-icon.png"
-        alt="AI Dynamic Review System Logo"
-        style={{ width: "36px", height: "36px", borderRadius: "10px", objectFit: "cover", boxShadow: "0 2px 8px rgba(0,0,0,0.12)" }}
-      />
-      <Text as="h1" variant="headingLg">Dynamic PDP Review Widget Settings (Module A)</Text>
-    </InlineStack>
-  );
-
   return (
-    <Page fullWidth title={pageTitleWithIcon as any}>
+    <Page fullWidth title="Dynamic PDP Review Widget Settings (Module A)">
       <BlockStack gap="500">
         <Banner title="Non-Intrusive Floating PDP Review Notifications" tone="info">
           <p>Configure how rotating review notifications appear on Product Detail Pages (PDP). Choose from 5 beautiful card design layouts to match your store branding.</p>

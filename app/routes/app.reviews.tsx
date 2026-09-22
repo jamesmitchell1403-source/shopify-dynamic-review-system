@@ -392,19 +392,8 @@ export default function ReviewsPage() {
     </InlineStack>,
   ]);
 
-  const pageTitleWithIcon = (
-    <InlineStack gap="300" blockAlign="center">
-      <img
-        src="/app-icon.png"
-        alt="AI Dynamic Review System Logo"
-        style={{ width: "36px", height: "36px", borderRadius: "10px", objectFit: "cover", boxShadow: "0 2px 8px rgba(0,0,0,0.12)" }}
-      />
-      <Text as="h1" variant="headingLg">Reviews Moderation & Management</Text>
-    </InlineStack>
-  );
-
   return (
-    <Page fullWidth title={pageTitleWithIcon as any}>
+    <Page fullWidth title="Reviews Moderation & Management">
       <BlockStack gap="500">
         <Banner title="Review Moderation Queue" tone="info">
           <p>

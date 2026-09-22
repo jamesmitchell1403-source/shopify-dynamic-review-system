@@ -357,19 +357,8 @@ export default function AiGeneratorPage() {
     }
   };
 
-  const pageTitleWithIcon = (
-    <InlineStack gap="300" blockAlign="center">
-      <img
-        src="/app-icon.png"
-        alt="AI Dynamic Review System Logo"
-        style={{ width: "36px", height: "36px", borderRadius: "10px", objectFit: "cover", boxShadow: "0 2px 8px rgba(0,0,0,0.12)" }}
-      />
-      <Text as="h1" variant="headingLg">AI & Custom Review Generator (Module B)</Text>
-    </InlineStack>
-  );
-
   return (
-    <Page fullWidth title={pageTitleWithIcon as any}>
+    <Page fullWidth title="AI & Custom Review Generator (Module B)">
       <BlockStack gap="500">
         {isScopeForbidden && (
           <Banner
