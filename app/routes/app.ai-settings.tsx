@@ -58,6 +58,7 @@ export async function action({ request }: ActionFunctionArgs) {
   const defaultAiProvider = (formData.get("defaultAiProvider") as string) || "claude";
   const anthropicApiKey = (formData.get("anthropicApiKey") as string) || null;
   const geminiApiKey = (formData.get("geminiApiKey") as string) || null;
+  const openaiApiKey = (formData.get("openaiApiKey") as string) || null;
 
   await db.shopSettings.upsert({
     where: { shop },
@@ -65,13 +66,15 @@ export async function action({ request }: ActionFunctionArgs) {
       defaultAiProvider,
       anthropicApiKey,
       geminiApiKey,
-    },
+      openaiApiKey,
+    } as any,
     create: {
       shop,
       defaultAiProvider,
       anthropicApiKey,
       geminiApiKey,
-    },
+      openaiApiKey,
+    } as any,
   });
 
   return json({ success: true });
@@ -85,6 +88,7 @@ export default function AiSettingsPage() {
   const [provider, setProvider] = useState<string>(settings.defaultAiProvider || "claude");
   const [claudeKey, setClaudeKey] = useState<string>(settings.anthropicApiKey || "");
   const [geminiKey, setGeminiKey] = useState<string>(settings.geminiApiKey || "");
+  const [openaiKey, setOpenaiKey] = useState<string>((settings as any).openaiApiKey || "");
   const [savedSuccess, setSavedSuccess] = useState<boolean>(false);
 
   const handleSave = () => {
@@ -92,6 +96,7 @@ export default function AiSettingsPage() {
     fd.append("defaultAiProvider", provider);
     fd.append("anthropicApiKey", claudeKey);
     fd.append("geminiApiKey", geminiKey);
+    fd.append("openaiApiKey", openaiKey);
 
     submit(fd, { method: "post" });
     setSavedSuccess(true);
@@ -114,13 +119,13 @@ export default function AiSettingsPage() {
       <BlockStack gap="500">
         <Banner title="Provider-Agnostic AI Service Layer" tone="info">
           <p>
-            Configure <strong>Anthropic Claude</strong> and <strong>Google Gemini</strong> API keys. The app dynamically routes review generation requests to your primary provider with automatic fallback if rate limits or errors occur.
+            Configure <strong>Anthropic Claude</strong>, <strong>Google Gemini</strong>, and <strong>ChatGPT (OpenAI)</strong> API keys. The app dynamically routes review generation requests to your primary provider with automatic fallback if rate limits or errors occur.
           </p>
         </Banner>
 
         {savedSuccess && (
           <Banner tone="success" title="AI Settings Updated">
-            <p>AI provider keys and defaults saved successfully.</p>
+            <p>AI provider keys and preferences saved successfully.</p>
           </Banner>
         )}
 
@@ -135,6 +140,7 @@ export default function AiSettingsPage() {
                   options={[
                     { label: "Anthropic Claude (claude-3-5-sonnet)", value: "claude" },
                     { label: "Google Gemini (gemini-2.5-flash)", value: "gemini" },
+                    { label: "ChatGPT OpenAI (gpt-4o-mini)", value: "openai" },
                   ]}
                   value={provider}
                   onChange={setProvider}
@@ -158,6 +164,16 @@ export default function AiSettingsPage() {
                   autoComplete="off"
                   placeholder="AIzaSy..."
                   helpText="Required for Gemini multimodal & auto-tagging."
+                />
+
+                <TextField
+                  label="ChatGPT (OpenAI) API Key"
+                  type="password"
+                  value={openaiKey}
+                  onChange={setOpenaiKey}
+                  autoComplete="off"
+                  placeholder="sk-proj-..."
+                  helpText="Required for ChatGPT (gpt-4o / gpt-4o-mini) review generation."
                 />
 
                 <Button

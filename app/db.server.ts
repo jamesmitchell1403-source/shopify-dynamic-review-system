@@ -45,6 +45,7 @@ export async function ensureTablesExist() {
             defaultAiProvider TEXT DEFAULT 'claude',
             anthropicApiKey TEXT,
             geminiApiKey TEXT,
+            openaiApiKey TEXT,
             widgetPosition TEXT DEFAULT 'bottom-left',
             widgetLayoutStyle TEXT DEFAULT 'layout-1',
             widgetDelaySeconds INTEGER DEFAULT 4,
@@ -57,6 +58,10 @@ export async function ensureTablesExist() {
             updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
           );
         `);
+
+        try {
+          await prisma.$executeRawUnsafe(`ALTER TABLE ShopSettings ADD COLUMN openaiApiKey TEXT;`);
+        } catch (_) {}
 
         await prisma.$executeRawUnsafe(`
           CREATE TABLE IF NOT EXISTS Review (

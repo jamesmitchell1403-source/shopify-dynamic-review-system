@@ -447,6 +447,7 @@ export default function AiGeneratorPage() {
                       options={[
                         { label: "Anthropic Claude (claude-3-5-sonnet)", value: "claude" },
                         { label: "Google Gemini (gemini-2.5-flash)", value: "gemini" },
+                        { label: "ChatGPT OpenAI (gpt-4o-mini)", value: "openai" },
                       ]}
                       value={bulkProvider}
                       onChange={setBulkProvider}
@@ -530,8 +531,9 @@ export default function AiGeneratorPage() {
                           <Select
                             label="AI Provider"
                             options={[
-                              { label: "Anthropic Claude", value: "claude" },
-                              { label: "Google Gemini", value: "gemini" },
+                              { label: "Anthropic Claude (claude-3-5-sonnet)", value: "claude" },
+                              { label: "Google Gemini (gemini-2.5-flash)", value: "gemini" },
+                              { label: "ChatGPT OpenAI (gpt-4o-mini)", value: "openai" },
                             ]}
                             value={provider}
                             onChange={setProvider}

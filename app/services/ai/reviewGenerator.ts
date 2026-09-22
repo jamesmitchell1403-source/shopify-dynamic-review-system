@@ -1,24 +1,53 @@
 import { ClaudeProvider } from "./providers/claudeProvider";
 import { GeminiProvider } from "./providers/geminiProvider";
+import { OpenAIProvider } from "./providers/openaiProvider";
 import { AIProvider, GeneratedReview, ReviewGenInput } from "./AIProvider";
 import { getShopAIConfig } from "./config";
 
 export async function generateReviewsForShop(
   shopDomain: string,
   input: ReviewGenInput,
-  preferredProvider?: "claude" | "gemini"
+  preferredProvider?: "claude" | "gemini" | "openai"
 ): Promise<{ reviews: GeneratedReview[]; providerUsed: string; modelUsed: string }> {
   const config = await getShopAIConfig(shopDomain);
   const activeProvider = preferredProvider || config.defaultProvider;
 
   const claude = new ClaudeProvider();
   const gemini = new GeminiProvider();
+  const openai = new OpenAIProvider();
 
-  let primary: AIProvider = activeProvider === "gemini" ? gemini : claude;
-  let secondary: AIProvider = activeProvider === "gemini" ? claude : gemini;
+  let primary: AIProvider = claude;
+  let primaryKey = config.anthropicApiKey;
 
-  let primaryKey = activeProvider === "gemini" ? config.geminiApiKey : config.anthropicApiKey;
-  let secondaryKey = activeProvider === "gemini" ? config.anthropicApiKey : config.geminiApiKey;
+  if (activeProvider === "gemini") {
+    primary = gemini;
+    primaryKey = config.geminiApiKey;
+  } else if (activeProvider === "openai") {
+    primary = openai;
+    primaryKey = config.openaiApiKey;
+  }
+
+  // Find fallback key & provider
+  let secondary: AIProvider | null = null;
+  let secondaryKey: string | undefined = undefined;
+
+  if (activeProvider !== "gemini" && config.geminiApiKey) {
+    secondary = gemini;
+    secondaryKey = config.geminiApiKey;
+  } else if (activeProvider !== "claude" && config.anthropicApiKey) {
+    secondary = claude;
+    secondaryKey = config.anthropicApiKey;
+  } else if (activeProvider !== "openai" && config.openaiApiKey) {
+    secondary = openai;
+    secondaryKey = config.openaiApiKey;
+  }
+
+  const getModelName = (prov: string) => {
+    if (prov === "claude") return "claude-3-5-sonnet-20241022";
+    if (prov === "gemini") return "gemini-2.5-flash";
+    if (prov === "openai") return "gpt-4o-mini";
+    return "Template Engine v1";
+  };
 
   try {
     if (!primaryKey && !secondaryKey) {
@@ -26,7 +55,7 @@ export async function generateReviewsForShop(
       const demoReviews = generateSmartDemoReviews(input);
       return {
         reviews: validateAndPostProcessReviews(demoReviews, input),
-        providerUsed: "Demo Generator (Add API key in AI Settings for live Claude/Gemini AI)",
+        providerUsed: "Demo Generator (Add API key in AI Settings for live Claude/Gemini/ChatGPT AI)",
         modelUsed: "Template Engine v1",
       };
     }
@@ -35,28 +64,22 @@ export async function generateReviewsForShop(
     return {
       reviews: validateAndPostProcessReviews(reviews, input),
       providerUsed: primary.providerName,
-      modelUsed: primary.providerName === "claude" ? "claude-3-5-sonnet-20241022" : "gemini-2.5-flash",
+      modelUsed: getModelName(primary.providerName),
     };
   } catch (primaryError: any) {
     console.warn(`Primary AI Provider (${primary.providerName}) failed: ${primaryError?.message}. Attempting fallback...`);
 
     // Try fallback
-    if (secondaryKey) {
+    if (secondary && secondaryKey) {
       try {
         const fallbackReviews = await secondary.generateReviews(input, secondaryKey);
         return {
           reviews: validateAndPostProcessReviews(fallbackReviews, input),
           providerUsed: secondary.providerName,
-          modelUsed: secondary.providerName === "claude" ? "claude-3-5-sonnet-20241022" : "gemini-2.5-flash",
+          modelUsed: getModelName(secondary.providerName),
         };
       } catch (secondaryError: any) {
         console.warn(`Fallback AI Provider (${secondary.providerName}) also failed: ${secondaryError?.message}. Using Smart Template Engine fallback...`);
-        const demoReviews = generateSmartDemoReviews(input);
-        return {
-          reviews: validateAndPostProcessReviews(demoReviews, input),
-          providerUsed: "Smart Demo Engine (Live API key rate limited or missing)",
-          modelUsed: "Template Engine v1",
-        };
       }
     }
 

@@ -17,7 +17,7 @@ export interface ReviewGenInput {
 }
 
 export interface AIProvider {
-  providerName: "claude" | "gemini";
+  providerName: "claude" | "gemini" | "openai";
   generateReviews(input: ReviewGenInput, apiKey?: string): Promise<GeneratedReview[]>;
   autoTagReview(reviewText: string, apiKey?: string): Promise<string[]>;
 }
