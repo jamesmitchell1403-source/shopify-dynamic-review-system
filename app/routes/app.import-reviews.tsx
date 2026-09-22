@@ -170,6 +170,13 @@ export default function ImportReviewsPage() {
     }
   };
 
+  const handleSourceTypeChange = (newSource: string) => {
+    setSourceType(newSource);
+    setFile(null);
+    setImportResult(null);
+    setErrorMessage(null);
+  };
+
   return (
     <Page fullWidth title="Marketplace Review Import (Module C)">
       <BlockStack gap="500">
@@ -191,7 +198,7 @@ export default function ImportReviewsPage() {
                     { label: "Alibaba CSV", value: "IMPORTED_ALIBABA" },
                   ]}
                   value={sourceType}
-                  onChange={setSourceType}
+                  onChange={handleSourceTypeChange}
                 />
               </div>
 
