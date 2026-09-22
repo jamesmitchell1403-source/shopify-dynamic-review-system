@@ -39,6 +39,10 @@ export async function getShopAIConfig(shopDomain: string): Promise<AIConfig> {
   const hasOpenaiKey = Boolean(openaiApiKey && openaiApiKey.trim().length > 0);
   const hasAnyKey = hasClaudeKey || hasGeminiKey || hasOpenaiKey;
 
+  if (hasClaudeKey) defaultProvider = "claude";
+  else if (hasGeminiKey) defaultProvider = "gemini";
+  else if (hasOpenaiKey) defaultProvider = "openai";
+
   return {
     defaultProvider,
     anthropicApiKey,

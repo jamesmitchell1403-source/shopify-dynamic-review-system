@@ -56,23 +56,24 @@ export async function action({ request }: ActionFunctionArgs) {
   const shop = session.shop;
 
   const formData = await request.formData();
-  const defaultAiProvider = (formData.get("defaultAiProvider") as string) || "claude";
-  const anthropicApiKey = (formData.get("anthropicApiKey") as string) || null;
-  const geminiApiKey = (formData.get("geminiApiKey") as string) || null;
-  const openaiApiKey = (formData.get("openaiApiKey") as string) || null;
+  const anthropicApiKeyRaw = formData.get("anthropicApiKey") as string;
+  const geminiApiKeyRaw = formData.get("geminiApiKey") as string;
+  const openaiApiKeyRaw = formData.get("openaiApiKey") as string;
+
+  const anthropicApiKey = anthropicApiKeyRaw && anthropicApiKeyRaw.trim().length > 0 ? anthropicApiKeyRaw.trim() : null;
+  const geminiApiKey = geminiApiKeyRaw && geminiApiKeyRaw.trim().length > 0 ? geminiApiKeyRaw.trim() : null;
+  const openaiApiKey = openaiApiKeyRaw && openaiApiKeyRaw.trim().length > 0 ? openaiApiKeyRaw.trim() : null;
 
   try {
     await db.shopSettings.upsert({
       where: { shop },
       update: {
-        defaultAiProvider,
         anthropicApiKey,
         geminiApiKey,
         openaiApiKey,
       },
       create: {
         shop,
-        defaultAiProvider,
         anthropicApiKey,
         geminiApiKey,
         openaiApiKey,
@@ -84,8 +85,7 @@ export async function action({ request }: ActionFunctionArgs) {
       const existing = await db.$queryRawUnsafe<any[]>(`SELECT id FROM ShopSettings WHERE shop = ?`, shop);
       if (existing && existing.length > 0) {
         await db.$executeRawUnsafe(
-          `UPDATE ShopSettings SET defaultAiProvider = ?, anthropicApiKey = ?, geminiApiKey = ?, openaiApiKey = ? WHERE shop = ?`,
-          defaultAiProvider,
+          `UPDATE ShopSettings SET anthropicApiKey = ?, geminiApiKey = ?, openaiApiKey = ? WHERE shop = ?`,
           anthropicApiKey,
           geminiApiKey,
           openaiApiKey,
@@ -93,10 +93,9 @@ export async function action({ request }: ActionFunctionArgs) {
         );
       } else {
         await db.$executeRawUnsafe(
-          `INSERT INTO ShopSettings (id, shop, defaultAiProvider, anthropicApiKey, geminiApiKey, openaiApiKey) VALUES (?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO ShopSettings (id, shop, anthropicApiKey, geminiApiKey, openaiApiKey) VALUES (?, ?, ?, ?, ?)`,
           `set_${Date.now()}`,
           shop,
-          defaultAiProvider,
           anthropicApiKey,
           geminiApiKey,
           openaiApiKey
@@ -115,15 +114,13 @@ export default function AiSettingsPage() {
   const submit = useSubmit();
   const navigation = useNavigation();
 
-  const [provider, setProvider] = useState<string>(settings.defaultAiProvider || "claude");
-  const [claudeKey, setClaudeKey] = useState<string>(settings.anthropicApiKey || "");
-  const [geminiKey, setGeminiKey] = useState<string>(settings.geminiApiKey || "");
-  const [openaiKey, setOpenaiKey] = useState<string>((settings as any).openaiApiKey || "");
+  const [claudeKey, setClaudeKey] = useState<string>(settings?.anthropicApiKey || "");
+  const [geminiKey, setGeminiKey] = useState<string>(settings?.geminiApiKey || "");
+  const [openaiKey, setOpenaiKey] = useState<string>((settings as any)?.openaiApiKey || "");
   const [savedSuccess, setSavedSuccess] = useState<boolean>(false);
 
   const handleSave = () => {
     const fd = new FormData();
-    fd.append("defaultAiProvider", provider);
     fd.append("anthropicApiKey", claudeKey);
     fd.append("geminiApiKey", geminiKey);
     fd.append("openaiApiKey", openaiKey);
@@ -149,13 +146,13 @@ export default function AiSettingsPage() {
       <BlockStack gap="500">
         <Banner title="Provider-Agnostic AI Service Layer" tone="info">
           <p>
-            Configure <strong>Anthropic Claude</strong>, <strong>Google Gemini</strong>, and <strong>ChatGPT (OpenAI)</strong> API keys. The app dynamically routes review generation requests to your primary provider with automatic fallback if rate limits or errors occur.
+            Configure <strong>Anthropic Claude</strong>, <strong>Google Gemini</strong>, and <strong>ChatGPT (OpenAI)</strong> API keys. Saved API keys remain active for review generation until intentionally removed.
           </p>
         </Banner>
 
         {savedSuccess && (
           <Banner tone="success" title="AI Settings Updated">
-            <p>AI provider keys and preferences saved successfully.</p>
+            <p>AI provider keys saved successfully.</p>
           </Banner>
         )}
 
@@ -164,17 +161,6 @@ export default function AiSettingsPage() {
             <Card padding="500">
               <BlockStack gap="400">
                 <Text as="h2" variant="headingMd">AI Provider Configuration</Text>
-
-                <Select
-                  label="Default AI Provider"
-                  options={[
-                    { label: "Anthropic Claude (claude-3-5-sonnet)", value: "claude" },
-                    { label: "Google Gemini (gemini-2.5-flash)", value: "gemini" },
-                    { label: "ChatGPT OpenAI (gpt-4o-mini)", value: "openai" },
-                  ]}
-                  value={provider}
-                  onChange={setProvider}
-                />
 
                 <TextField
                   label="Anthropic Claude API Key"
