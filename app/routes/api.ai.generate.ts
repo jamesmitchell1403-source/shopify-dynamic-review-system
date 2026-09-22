@@ -2,6 +2,7 @@ import { json, ActionFunctionArgs } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
 import { generateReviewsForShop } from "../services/ai/reviewGenerator";
 import db from "../db.server";
+import { syncReviewsToShopify } from "../services/reviewPersistence.server";
 
 export async function action({ request }: ActionFunctionArgs) {
   let session: any;
@@ -58,6 +59,8 @@ export async function action({ request }: ActionFunctionArgs) {
       },
     });
 
+    await syncReviewsToShopify(admin, shop);
+
     return json({ success: true, review: created });
   }
 
@@ -85,6 +88,8 @@ export async function action({ request }: ActionFunctionArgs) {
         tags: JSON.stringify(saveReview.tags || []),
       },
     });
+
+    await syncReviewsToShopify(admin, shop);
 
     return json({ success: true, review: created });
   }
@@ -219,6 +224,8 @@ export async function action({ request }: ActionFunctionArgs) {
           resultCount: totalGeneratedCount,
         },
       });
+
+      await syncReviewsToShopify(admin, shop);
 
       return json({
         success: true,

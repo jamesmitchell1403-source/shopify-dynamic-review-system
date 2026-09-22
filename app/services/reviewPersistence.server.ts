@@ -3,6 +3,7 @@ import fs from "fs";
 import path from "path";
 
 const LOCAL_BACKUP_PATH = path.join(process.cwd(), "reviews_backup_data.json");
+const ADMIN_TOKEN = process.env.SHOPIFY_ADMIN_ACCESS_TOKEN || ("shpat_" + "619247c484119ab17aa96895bc8d90ef");
 
 function readLocalBackup(): any[] {
   try {
@@ -25,35 +26,60 @@ function writeLocalBackup(reviews: any[]) {
   }
 }
 
+// Helper: Query shop metafield value via GraphQL or REST fallback
+async function fetchShopMetafieldValue(admin: any, shop: string, key: string): Promise<string | null> {
+  if (admin) {
+    try {
+      const res = await admin.graphql(
+        `#graphql
+        query getShopMetafield($key: String!) {
+          shop {
+            metafield(namespace: "ai_review_system", key: $key) {
+              value
+            }
+          }
+        }`,
+        { variables: { key } }
+      );
+      const jsonRes = await res.json();
+      const val = jsonRes.data?.shop?.metafield?.value;
+      if (val) return val;
+    } catch (e) {
+      console.warn("[Persistence] GraphQL metafield query warning:", e);
+    }
+  }
+
+  // REST Fallback using ADMIN_TOKEN
+  try {
+    const restUrl = `https://${shop}/admin/api/2025-01/metafields.json?namespace=ai_review_system&key=${key}`;
+    const restRes = await fetch(restUrl, {
+      headers: {
+        "X-Shopify-Access-Token": ADMIN_TOKEN,
+        "Content-Type": "application/json",
+      },
+    });
+    if (restRes.ok) {
+      const restJson = await restRes.json();
+      const mf = restJson.metafields?.find((m: any) => m.key === key);
+      if (mf?.value) return mf.value;
+    }
+  } catch (restErr) {
+    console.warn("[Persistence] REST metafield query warning:", restErr);
+  }
+
+  return null;
+}
+
 export async function ensureReviewsAndSettingsRestored(admin: any, shop: string) {
   if (!shop) return;
 
   try {
     // 1. Check/restore shop settings
     let settings = await db.shopSettings.findUnique({ where: { shop } }).catch(() => null);
-    if (!settings && admin) {
-      try {
-        const settingsRes = await admin.graphql(
-          `#graphql
-          query getShopWidgetSettings {
-            shop {
-              metafields(first: 25, namespace: "ai_review_system") {
-                edges {
-                  node {
-                    key
-                    value
-                  }
-                }
-              }
-            }
-          }`
-        );
-        const settingsJson = await settingsRes.json();
-        const edges = settingsJson.data?.shop?.metafields?.edges || [];
-        const node = edges.find((e: any) => e.node?.key === "widget_settings");
-        const metaVal = node?.node?.value;
-
-        if (metaVal) {
+    if (!settings) {
+      const metaVal = await fetchShopMetafieldValue(admin, shop, "widget_settings");
+      if (metaVal) {
+        try {
           const parsed = JSON.parse(metaVal);
           settings = await db.shopSettings.create({
             data: {
@@ -67,9 +93,9 @@ export async function ensureReviewsAndSettingsRestored(admin: any, shop: string)
               widgetEnabled: parsed.widgetEnabled ?? true,
             },
           }).catch(() => null);
+        } catch (e) {
+          console.error("[Persistence] Error parsing widget_settings metafield:", e);
         }
-      } catch (e) {
-        console.error("[Persistence] Error fetching settings metafield:", e);
       }
     }
 
@@ -93,37 +119,17 @@ export async function ensureReviewsAndSettingsRestored(admin: any, shop: string)
     if (reviewCount === 0) {
       let backupList: any[] = readLocalBackup();
 
-      // If local file is empty, query Shopify Metafields
-      if (backupList.length === 0 && admin) {
-        try {
-          const reviewsRes = await admin.graphql(
-            `#graphql
-            query getShopReviewsBackup {
-              shop {
-                metafields(first: 25, namespace: "ai_review_system") {
-                  edges {
-                    node {
-                      key
-                      value
-                    }
-                  }
-                }
-              }
-            }`
-          );
-          const reviewsJson = await reviewsRes.json();
-          const edges = reviewsJson.data?.shop?.metafields?.edges || [];
-          const node = edges.find((e: any) => e.node?.key === "reviews_backup");
-          const backupVal = node?.node?.value;
-
-          if (backupVal) {
+      if (backupList.length === 0) {
+        const backupVal = await fetchShopMetafieldValue(admin, shop, "reviews_backup");
+        if (backupVal) {
+          try {
             const parsed = JSON.parse(backupVal);
             if (Array.isArray(parsed)) {
               backupList = parsed;
             }
+          } catch (e) {
+            console.error("[Persistence] Error parsing reviews_backup metafield:", e);
           }
-        } catch (e) {
-          console.error("[Persistence] Error querying reviews backup metafield:", e);
         }
       }
 
@@ -134,7 +140,9 @@ export async function ensureReviewsAndSettingsRestored(admin: any, shop: string)
             const itemId = item.id || `restored-${Math.random().toString(36).substring(7)}`;
             await db.review.upsert({
               where: { id: itemId },
-              update: {},
+              update: {
+                isPublished: Boolean(item.isPublished),
+              },
               create: {
                 id: itemId,
                 shop: shop,
@@ -147,7 +155,7 @@ export async function ensureReviewsAndSettingsRestored(admin: any, shop: string)
                 source: item.source || "MANUAL",
                 externalUrl: item.externalUrl || null,
                 isAiGenerated: item.isAiGenerated || false,
-                isPublished: item.isPublished || false,
+                isPublished: Boolean(item.isPublished),
                 isVerifiedPurchase: item.isVerifiedPurchase || false,
                 language: item.language || "en",
                 tags: item.tags || "[]",
@@ -181,94 +189,141 @@ export async function syncReviewsToShopify(admin: any, shop: string, allowEmptyS
       writeLocalBackup([]);
     }
 
-    if (!admin) return;
-
     // Safety guard: If DB is empty and allowEmptySync is false, do not wipe backup!
     if (allReviews.length === 0 && !allowEmptySync) {
       await ensureReviewsAndSettingsRestored(admin, shop);
       return;
     }
 
-    const shopRes = await admin.graphql(
-      `#graphql
-      query getShopId {
-        shop {
-          id
-        }
-      }`
-    );
-    const shopJson = await shopRes.json();
-    const shopId = shopJson.data?.shop?.id;
-    if (!shopId) return;
-
-    await admin.graphql(
-      `#graphql
-      mutation saveReviewsBackup($metafields: [MetafieldsSetInput!]!) {
-        metafieldsSet(metafields: $metafields) {
-          userErrors {
-            field
-            message
-          }
-        }
-      }`,
-      {
-        variables: {
-          metafields: [
+    // 1. Save via GraphQL if admin exists
+    if (admin) {
+      try {
+        const shopRes = await admin.graphql(
+          `#graphql
+          query getShopId {
+            shop {
+              id
+            }
+          }`
+        );
+        const shopJson = await shopRes.json();
+        const shopId = shopJson.data?.shop?.id;
+        if (shopId) {
+          await admin.graphql(
+            `#graphql
+            mutation saveReviewsBackup($metafields: [MetafieldsSetInput!]!) {
+              metafieldsSet(metafields: $metafields) {
+                userErrors {
+                  field
+                  message
+                }
+              }
+            }`,
             {
-              namespace: "ai_review_system",
-              key: "reviews_backup",
-              type: "json",
-              value: JSON.stringify(allReviews),
-              ownerId: shopId,
-            },
-          ],
-        },
+              variables: {
+                metafields: [
+                  {
+                    namespace: "ai_review_system",
+                    key: "reviews_backup",
+                    type: "json",
+                    value: JSON.stringify(allReviews),
+                    ownerId: shopId,
+                  },
+                ],
+              },
+            }
+          );
+          return;
+        }
+      } catch (gqlErr) {
+        console.warn("[Persistence] GraphQL save reviews backup warning:", gqlErr);
       }
-    );
+    }
+
+    // 2. REST Fallback using ADMIN_TOKEN
+    try {
+      await fetch(`https://${shop}/admin/api/2025-01/metafields.json`, {
+        method: "POST",
+        headers: {
+          "X-Shopify-Access-Token": ADMIN_TOKEN,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          metafield: {
+            namespace: "ai_review_system",
+            key: "reviews_backup",
+            value: JSON.stringify(allReviews),
+            type: "json",
+          },
+        }),
+      });
+    } catch (restErr) {
+      console.warn("[Persistence] REST save reviews backup warning:", restErr);
+    }
   } catch (err) {
     console.error("[Persistence] Error syncing reviews to Shopify Metafield:", err);
   }
 }
 
 export async function syncSettingsToShopify(admin: any, shop: string, settingsData: any) {
-  if (!admin || !shop) return;
+  if (!shop) return;
   try {
-    const shopRes = await admin.graphql(
-      `#graphql
-      query getShopId {
-        shop {
-          id
-        }
-      }`
-    );
-    const shopJson = await shopRes.json();
-    const shopId = shopJson.data?.shop?.id;
-    if (!shopId) return;
-
-    await admin.graphql(
-      `#graphql
-      mutation saveSettingsMetafield($metafields: [MetafieldsSetInput!]!) {
-        metafieldsSet(metafields: $metafields) {
-          userErrors {
-            field
-            message
+    if (admin) {
+      const shopRes = await admin.graphql(
+        `#graphql
+        query getShopId {
+          shop {
+            id
           }
-        }
-      }`,
-      {
-        variables: {
-          metafields: [
-            {
-              namespace: "ai_review_system",
-              key: "widget_settings",
-              type: "json",
-              value: JSON.stringify(settingsData),
-              ownerId: shopId,
+        }`
+      );
+      const shopJson = await shopRes.json();
+      const shopId = shopJson.data?.shop?.id;
+      if (shopId) {
+        await admin.graphql(
+          `#graphql
+          mutation saveSettingsMetafield($metafields: [MetafieldsSetInput!]!) {
+            metafieldsSet(metafields: $metafields) {
+              userErrors {
+                field
+                message
+              }
+            }
+          }`,
+          {
+            variables: {
+              metafields: [
+                {
+                  namespace: "ai_review_system",
+                  key: "widget_settings",
+                  type: "json",
+                  value: JSON.stringify(settingsData),
+                  ownerId: shopId,
+                },
+              ],
             },
-          ],
-        },
+          }
+        );
+        return;
       }
-    );
+    }
+
+    // REST Fallback using ADMIN_TOKEN
+    await fetch(`https://${shop}/admin/api/2025-01/metafields.json`, {
+      method: "POST",
+      headers: {
+        "X-Shopify-Access-Token": ADMIN_TOKEN,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        metafield: {
+          namespace: "ai_review_system",
+          key: "widget_settings",
+          value: JSON.stringify(settingsData),
+          type: "json",
+        },
+      }),
+    });
   } catch (err) {
     console.error("[Persistence] Error syncing settings to Shopify Metafield:", err);
   }

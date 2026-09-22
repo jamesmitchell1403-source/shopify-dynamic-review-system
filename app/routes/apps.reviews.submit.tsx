@@ -2,6 +2,7 @@ import { json, LoaderFunctionArgs, ActionFunctionArgs } from "@remix-run/node";
 import { useLoaderData, useActionData, Form, useNavigation } from "@remix-run/react";
 import db from "../db.server";
 import { autoTagReviewText } from "../services/ai/autoTagger";
+import { syncReviewsToShopify } from "../services/reviewPersistence.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const url = new URL(request.url);
@@ -64,6 +65,8 @@ export async function action({ request }: ActionFunctionArgs) {
       tags: JSON.stringify(tags),
     },
   });
+
+  await syncReviewsToShopify(null, shop);
 
   return json({ success: true, error: null });
 }

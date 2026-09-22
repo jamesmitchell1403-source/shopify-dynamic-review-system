@@ -2,6 +2,7 @@ import { json, ActionFunctionArgs } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
 import Papa from "papaparse";
 import db from "../db.server";
+import { syncReviewsToShopify } from "../services/reviewPersistence.server";
 
 export async function action({ request }: ActionFunctionArgs) {
   let session: any;
@@ -54,6 +55,7 @@ export async function action({ request }: ActionFunctionArgs) {
         });
         createdCount++;
       }
+      await syncReviewsToShopify(admin, shop);
       return json({ success: true, createdCount });
     } catch (e: any) {
       return json({ success: false, error: e.message }, { status: 400 });
@@ -226,6 +228,8 @@ export async function action({ request }: ActionFunctionArgs) {
       unmatched: JSON.stringify(unmatchedRows),
     },
   });
+
+  await syncReviewsToShopify(admin, shop);
 
   return json({
     success: true,

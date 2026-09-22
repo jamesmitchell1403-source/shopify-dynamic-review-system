@@ -17,10 +17,16 @@ import {
 import { ImportIcon, ExportIcon } from "@shopify/polaris-icons";
 import { authenticate } from "../shopify.server";
 import { ensureTablesExist } from "../db.server";
+import { ensureReviewsAndSettingsRestored } from "../services/reviewPersistence.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   await ensureTablesExist();
   const { admin, session } = await authenticate.admin(request);
+  try {
+    await ensureReviewsAndSettingsRestored(admin, session.shop);
+  } catch (e) {
+    console.warn("Import reviews restore warning:", e);
+  }
   const adminToken = process.env.SHOPIFY_ADMIN_ACCESS_TOKEN || ("shpat_" + "619247c484119ab17aa96895bc8d90ef");
 
   // Fetch shop products for manual mapping dropdown

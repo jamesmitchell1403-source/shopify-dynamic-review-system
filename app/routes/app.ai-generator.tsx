@@ -23,10 +23,16 @@ import { MagicIcon, ClipboardIcon, PlusIcon, EditIcon, CheckIcon } from "@shopif
 import { authenticate } from "../shopify.server";
 import db, { ensureTablesExist } from "../db.server";
 import { getShopAIConfig } from "../services/ai/config";
+import { ensureReviewsAndSettingsRestored } from "../services/reviewPersistence.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   await ensureTablesExist();
   const { admin, session } = await authenticate.admin(request);
+  try {
+    await ensureReviewsAndSettingsRestored(admin, session.shop);
+  } catch (e) {
+    console.warn("AI Generator review restore warning:", e);
+  }
 
   const adminToken = process.env.SHOPIFY_ADMIN_ACCESS_TOKEN || ("shpat_" + "619247c484119ab17aa96895bc8d90ef");
   let products: Array<{ label: string; value: string; description: string; imageUrl: string | null }> = [];

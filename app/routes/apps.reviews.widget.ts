@@ -1,5 +1,6 @@
 import { json, LoaderFunctionArgs } from "@remix-run/node";
 import db from "../db.server";
+import { ensureReviewsAndSettingsRestored } from "../services/reviewPersistence.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const url = new URL(request.url);
@@ -11,6 +12,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
     return json({ reviews: [], settings: null, error: "Missing productId" }, {
       headers: { "Access-Control-Allow-Origin": "*" },
     });
+  }
+
+  if (shop) {
+    try {
+      await ensureReviewsAndSettingsRestored(null, shop);
+    } catch (e) {
+      console.warn("Storefront widget review restore warning:", e);
+    }
   }
 
   // Fetch shop settings
