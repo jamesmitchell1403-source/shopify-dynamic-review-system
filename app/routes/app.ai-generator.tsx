@@ -22,6 +22,7 @@ import {
 import { MagicIcon, ClipboardIcon, PlusIcon, EditIcon, CheckIcon } from "@shopify/polaris-icons";
 import { authenticate } from "../shopify.server";
 import db, { ensureTablesExist } from "../db.server";
+import { getShopAIConfig } from "../services/ai/config";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   await ensureTablesExist();
@@ -126,15 +127,30 @@ export async function loader({ request }: LoaderFunctionArgs) {
     isScopeForbidden = false;
   }
 
-  return json({ products, isScopeForbidden, shop: session.shop });
+  const aiConfig = await getShopAIConfig(session.shop);
+
+  return json({ products, isScopeForbidden, shop: session.shop, aiConfig });
 }
 
 export default function AiGeneratorPage() {
-  const { products, isScopeForbidden, shop } = useLoaderData<typeof loader>();
+  const { products, isScopeForbidden, shop, aiConfig } = useLoaderData<typeof loader>();
   const [selectedTab, setSelectedTab] = useState<number>(0);
 
+  // Calculate default active provider based on configured API keys
+  const getInitialActiveProvider = () => {
+    if (aiConfig.defaultProvider === "claude" && aiConfig.hasClaudeKey) return "claude";
+    if (aiConfig.defaultProvider === "gemini" && aiConfig.hasGeminiKey) return "gemini";
+    if (aiConfig.defaultProvider === "openai" && aiConfig.hasOpenaiKey) return "openai";
+    if (aiConfig.hasClaudeKey) return "claude";
+    if (aiConfig.hasGeminiKey) return "gemini";
+    if (aiConfig.hasOpenaiKey) return "openai";
+    return "";
+  };
+
+  const initialProvider = getInitialActiveProvider();
+
   // --- STATE FOR BULK GENERATION FOR ALL PRODUCTS ---
-  const [bulkProvider, setBulkProvider] = useState<string>("claude");
+  const [bulkProvider, setBulkProvider] = useState<string>(initialProvider);
   const [bulkLanguage, setBulkLanguage] = useState<string>("en");
   const [reviewsPerProduct, setReviewsPerProduct] = useState<string>("3");
   const [bulkLoading, setBulkLoading] = useState<boolean>(false);
@@ -147,7 +163,26 @@ export default function AiGeneratorPage() {
   const [productImageUrl, setProductImageUrl] = useState<string | null>(products[0]?.imageUrl || null);
   const [notes, setNotes] = useState<string>("");
   const [language, setLanguage] = useState<string>("en");
-  const [provider, setProvider] = useState<string>("claude");
+  const [provider, setProvider] = useState<string>(initialProvider);
+
+  // Select dropdown options — disable models without configured API keys
+  const providerOptions = [
+    {
+      label: `Anthropic Claude (claude-3-5-sonnet)${!aiConfig.hasClaudeKey ? " — Key Missing (Disabled)" : ""}`,
+      value: "claude",
+      disabled: !aiConfig.hasClaudeKey,
+    },
+    {
+      label: `Google Gemini (gemini-2.5-flash)${!aiConfig.hasGeminiKey ? " — Key Missing (Disabled)" : ""}`,
+      value: "gemini",
+      disabled: !aiConfig.hasGeminiKey,
+    },
+    {
+      label: `ChatGPT OpenAI (gpt-4o-mini)${!aiConfig.hasOpenaiKey ? " — Key Missing (Disabled)" : ""}`,
+      value: "openai",
+      disabled: !aiConfig.hasOpenaiKey,
+    },
+  ];
 
   const [imageBase64, setImageBase64] = useState<string | undefined>(undefined);
   const [imageMimeType, setImageMimeType] = useState<string | undefined>(undefined);
@@ -376,6 +411,21 @@ export default function AiGeneratorPage() {
           </Banner>
         )}
 
+        {!aiConfig.hasAnyKey && (
+          <Banner
+            title="AI Review Generation Locked — API Key Required"
+            tone="warning"
+            action={{
+              content: "Configure AI Settings",
+              url: "/app/ai-settings",
+            }}
+          >
+            <p>
+              No AI API key has been configured in <strong>AI Settings</strong>. To enable review generation, please add a valid API key for Anthropic Claude, Google Gemini, or ChatGPT OpenAI.
+            </p>
+          </Banner>
+        )}
+
         <Banner title="Mandatory FTC & Legal Compliance Notice" tone="info">
           <p>
             Generated drafts are saved internally for merchant review. Always ensure customer reviews reflect genuine product features and verified customer experiences before publishing.
@@ -444,11 +494,7 @@ export default function AiGeneratorPage() {
 
                     <Select
                       label="AI Engine Provider"
-                      options={[
-                        { label: "Anthropic Claude (claude-3-5-sonnet)", value: "claude" },
-                        { label: "Google Gemini (gemini-2.5-flash)", value: "gemini" },
-                        { label: "ChatGPT OpenAI (gpt-4o-mini)", value: "openai" },
-                      ]}
+                      options={providerOptions}
                       value={bulkProvider}
                       onChange={setBulkProvider}
                     />
@@ -468,6 +514,7 @@ export default function AiGeneratorPage() {
                       variant="primary"
                       icon={MagicIcon}
                       loading={bulkLoading}
+                      disabled={!aiConfig.hasAnyKey || !bulkProvider || (bulkProvider === "claude" && !aiConfig.hasClaudeKey) || (bulkProvider === "gemini" && !aiConfig.hasGeminiKey) || (bulkProvider === "openai" && !aiConfig.hasOpenaiKey)}
                       onClick={handleBulkGenerateAll}
                     >
                       {`Generate Unique Reviews for ALL ${products.length} Products`}
@@ -530,11 +577,7 @@ export default function AiGeneratorPage() {
 
                           <Select
                             label="AI Provider"
-                            options={[
-                              { label: "Anthropic Claude (claude-3-5-sonnet)", value: "claude" },
-                              { label: "Google Gemini (gemini-2.5-flash)", value: "gemini" },
-                              { label: "ChatGPT OpenAI (gpt-4o-mini)", value: "openai" },
-                            ]}
+                            options={providerOptions}
                             value={provider}
                             onChange={setProvider}
                           />
@@ -574,6 +617,7 @@ export default function AiGeneratorPage() {
                           variant="primary"
                           icon={MagicIcon}
                           loading={loading}
+                          disabled={!aiConfig.hasAnyKey || !provider || (provider === "claude" && !aiConfig.hasClaudeKey) || (provider === "gemini" && !aiConfig.hasGeminiKey) || (provider === "openai" && !aiConfig.hasOpenaiKey)}
                           onClick={() => handleGenerate(false)}
                         >
                           Generate 5 Authentic Reviews

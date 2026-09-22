@@ -50,14 +50,8 @@ export async function generateReviewsForShop(
   };
 
   try {
-    if (!primaryKey && !secondaryKey) {
-      // Demo template mode when no API keys have been entered yet
-      const demoReviews = generateSmartDemoReviews(input);
-      return {
-        reviews: validateAndPostProcessReviews(demoReviews, input),
-        providerUsed: "Demo Generator (Add API key in AI Settings for live Claude/Gemini/ChatGPT AI)",
-        modelUsed: "Template Engine v1",
-      };
+    if (!primaryKey) {
+      throw new Error(`Selected AI Provider (${activeProvider.toUpperCase()}) does not have an API key configured in AI Settings. Please add a valid API key to enable review generation.`);
     }
 
     const reviews = await primary.generateReviews(input, primaryKey);

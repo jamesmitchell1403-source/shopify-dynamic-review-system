@@ -5,26 +5,48 @@ export interface AIConfig {
   anthropicApiKey?: string;
   geminiApiKey?: string;
   openaiApiKey?: string;
+  hasClaudeKey: boolean;
+  hasGeminiKey: boolean;
+  hasOpenaiKey: boolean;
+  hasAnyKey: boolean;
 }
 
 export async function getShopAIConfig(shopDomain: string): Promise<AIConfig> {
+  let defaultProvider: "claude" | "gemini" | "openai" = "claude";
+  let anthropicApiKey = process.env.ANTHROPIC_API_KEY;
+  let geminiApiKey = process.env.GEMINI_API_KEY;
+  let openaiApiKey = process.env.OPENAI_API_KEY;
+
   try {
     const settings = await db.shopSettings.findUnique({
       where: { shop: shopDomain },
     });
 
-    return {
-      defaultProvider: (settings?.defaultAiProvider as "claude" | "gemini" | "openai") || "claude",
-      anthropicApiKey: settings?.anthropicApiKey || process.env.ANTHROPIC_API_KEY,
-      geminiApiKey: settings?.geminiApiKey || process.env.GEMINI_API_KEY,
-      openaiApiKey: (settings as any)?.openaiApiKey || process.env.OPENAI_API_KEY,
-    };
+    if (settings) {
+      if (settings.defaultAiProvider) {
+        defaultProvider = settings.defaultAiProvider as "claude" | "gemini" | "openai";
+      }
+      if (settings.anthropicApiKey) anthropicApiKey = settings.anthropicApiKey;
+      if (settings.geminiApiKey) geminiApiKey = settings.geminiApiKey;
+      if ((settings as any).openaiApiKey) openaiApiKey = (settings as any).openaiApiKey;
+    }
   } catch (error) {
-    return {
-      defaultProvider: "claude",
-      anthropicApiKey: process.env.ANTHROPIC_API_KEY,
-      geminiApiKey: process.env.GEMINI_API_KEY,
-      openaiApiKey: process.env.OPENAI_API_KEY,
-    };
+    console.warn("Error fetching ShopSettings in getShopAIConfig:", error);
   }
+
+  const hasClaudeKey = Boolean(anthropicApiKey && anthropicApiKey.trim().length > 0);
+  const hasGeminiKey = Boolean(geminiApiKey && geminiApiKey.trim().length > 0);
+  const hasOpenaiKey = Boolean(openaiApiKey && openaiApiKey.trim().length > 0);
+  const hasAnyKey = hasClaudeKey || hasGeminiKey || hasOpenaiKey;
+
+  return {
+    defaultProvider,
+    anthropicApiKey,
+    geminiApiKey,
+    openaiApiKey,
+    hasClaudeKey,
+    hasGeminiKey,
+    hasOpenaiKey,
+    hasAnyKey,
+  };
 }
