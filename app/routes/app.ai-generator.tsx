@@ -127,7 +127,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     isScopeForbidden = false;
   }
 
-  const aiConfig = await getShopAIConfig(session.shop);
+  const aiConfig = await getShopAIConfig(session.shop, admin);
 
   return json({ products, isScopeForbidden, shop: session.shop, aiConfig });
 }

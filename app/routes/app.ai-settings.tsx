@@ -17,10 +17,11 @@ import {
 } from "@shopify/polaris";
 import { authenticate } from "../shopify.server";
 import db, { ensureTablesExist } from "../db.server";
+import { getShopAIKeysFromShopify, saveShopAIKeysToShopify } from "../services/shopifyMetafields.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   await ensureTablesExist();
-  const { session } = await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
   const shop = session.shop;
 
   let settings: any = null;
@@ -37,21 +38,26 @@ export async function loader({ request }: LoaderFunctionArgs) {
       orderBy: { createdAt: "desc" },
       take: 20,
     });
+
+    // 1. Read persistent API keys stored in Shopify's cloud (Shop Metafields)
+    const shopifyCloudKeys = await getShopAIKeysFromShopify(admin);
+
     const mergedSettings = {
       ...settings,
-      anthropicApiKey: settings?.anthropicApiKey || process.env.ANTHROPIC_API_KEY || "",
-      geminiApiKey: settings?.geminiApiKey || process.env.GEMINI_API_KEY || "",
-      openaiApiKey: (settings as any)?.openaiApiKey || process.env.OPENAI_API_KEY || "",
+      anthropicApiKey: shopifyCloudKeys?.anthropicApiKey || settings?.anthropicApiKey || process.env.ANTHROPIC_API_KEY || "",
+      geminiApiKey: shopifyCloudKeys?.geminiApiKey || settings?.geminiApiKey || process.env.GEMINI_API_KEY || "",
+      openaiApiKey: shopifyCloudKeys?.openaiApiKey || (settings as any)?.openaiApiKey || process.env.OPENAI_API_KEY || "",
     };
 
     return json({ settings: mergedSettings, aiJobs });
   } catch (err) {
     console.error("AI settings DB loader error:", err);
+    const shopifyCloudKeys = await getShopAIKeysFromShopify(admin);
     const fallbackSettings = {
       shop,
-      anthropicApiKey: process.env.ANTHROPIC_API_KEY || "",
-      geminiApiKey: process.env.GEMINI_API_KEY || "",
-      openaiApiKey: process.env.OPENAI_API_KEY || "",
+      anthropicApiKey: shopifyCloudKeys?.anthropicApiKey || process.env.ANTHROPIC_API_KEY || "",
+      geminiApiKey: shopifyCloudKeys?.geminiApiKey || process.env.GEMINI_API_KEY || "",
+      openaiApiKey: shopifyCloudKeys?.openaiApiKey || process.env.OPENAI_API_KEY || "",
     };
     return json({ settings: fallbackSettings, aiJobs: [] });
   }
@@ -59,7 +65,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
 export async function action({ request }: ActionFunctionArgs) {
   await ensureTablesExist();
-  const { session } = await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
   const shop = session.shop;
 
   const formData = await request.formData();
@@ -67,10 +73,18 @@ export async function action({ request }: ActionFunctionArgs) {
   const geminiApiKeyRaw = formData.get("geminiApiKey") as string;
   const openaiApiKeyRaw = formData.get("openaiApiKey") as string;
 
-  const anthropicApiKey = anthropicApiKeyRaw && anthropicApiKeyRaw.trim().length > 0 ? anthropicApiKeyRaw.trim() : null;
-  const geminiApiKey = geminiApiKeyRaw && geminiApiKeyRaw.trim().length > 0 ? geminiApiKeyRaw.trim() : null;
-  const openaiApiKey = openaiApiKeyRaw && openaiApiKeyRaw.trim().length > 0 ? openaiApiKeyRaw.trim() : null;
+  const anthropicApiKey = anthropicApiKeyRaw !== null && anthropicApiKeyRaw !== undefined ? anthropicApiKeyRaw.trim() : null;
+  const geminiApiKey = geminiApiKeyRaw !== null && geminiApiKeyRaw !== undefined ? geminiApiKeyRaw.trim() : null;
+  const openaiApiKey = openaiApiKeyRaw !== null && openaiApiKeyRaw !== undefined ? openaiApiKeyRaw.trim() : null;
 
+  // 1. Save permanently to Shopify Cloud (Shop Metafields) — survives all Render resets
+  await saveShopAIKeysToShopify(admin, {
+    anthropicApiKey,
+    geminiApiKey,
+    openaiApiKey,
+  });
+
+  // 2. Also update local DB
   try {
     await db.shopSettings.upsert({
       where: { shop },

@@ -1,4 +1,5 @@
 import db from "../../db.server";
+import { getShopAIKeysFromShopify } from "../shopifyMetafields.server";
 
 export interface AIConfig {
   defaultProvider: "claude" | "gemini" | "openai";
@@ -11,11 +12,20 @@ export interface AIConfig {
   hasAnyKey: boolean;
 }
 
-export async function getShopAIConfig(shopDomain: string): Promise<AIConfig> {
+export async function getShopAIConfig(shopDomain: string, admin?: any): Promise<AIConfig> {
   let defaultProvider: "claude" | "gemini" | "openai" = "claude";
   let anthropicApiKey = process.env.ANTHROPIC_API_KEY;
   let geminiApiKey = process.env.GEMINI_API_KEY;
   let openaiApiKey = process.env.OPENAI_API_KEY;
+
+  if (admin) {
+    const cloudKeys = await getShopAIKeysFromShopify(admin);
+    if (cloudKeys) {
+      if (cloudKeys.anthropicApiKey) anthropicApiKey = cloudKeys.anthropicApiKey;
+      if (cloudKeys.geminiApiKey) geminiApiKey = cloudKeys.geminiApiKey;
+      if (cloudKeys.openaiApiKey) openaiApiKey = cloudKeys.openaiApiKey;
+    }
+  }
 
   try {
     const settings = await db.shopSettings.findUnique({
