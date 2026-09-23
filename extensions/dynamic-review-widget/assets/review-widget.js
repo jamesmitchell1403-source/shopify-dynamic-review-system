@@ -208,8 +208,10 @@
           </div>
           <div class="rw-header" style="margin-bottom: 6px;">
             <div class="rw-user-info">
-              <span class="rw-reviewer">${escapeHtml(name)}</span>
-              <span class="rw-stars">${stars}</span>
+              <div class="rw-reviewer-title">
+                <span class="rw-reviewer">${escapeHtml(name)}</span>
+                <span class="rw-stars">${stars}</span>
+              </div>
             </div>
           </div>
           <div class="rw-body rw-quote-body">${escapeHtml(bodyText)}</div>
@@ -225,8 +227,10 @@
             <div class="rw-user-info">
               <div class="rw-avatar">${escapeHtml(initials)}</div>
               <div>
-                <div class="rw-reviewer">${escapeHtml(name)}</div>
-                <div class="rw-stars">${stars}</div>
+                <div class="rw-reviewer-title">
+                  <span class="rw-reviewer">${escapeHtml(name)}</span>
+                  <span class="rw-stars">${stars}</span>
+                </div>
               </div>
             </div>
             <button class="rw-close-btn" aria-label="Close review">&times;</button>

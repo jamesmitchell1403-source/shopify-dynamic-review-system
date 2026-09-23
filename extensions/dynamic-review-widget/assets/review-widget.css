@@ -78,17 +78,29 @@
   box-shadow: 0 2px 6px rgba(232, 121, 158, 0.3);
 }
 
+.rw-reviewer-title {
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  white-space: nowrap !important;
+}
+
 .rw-reviewer {
-  font-weight: 700;
-  font-size: 15px;
-  color: #1E293B;
-  margin-right: 6px;
+  font-weight: 700 !important;
+  font-size: 15px !important;
+  color: #1E293B !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  max-width: 140px !important;
 }
 
 .rw-stars {
-  color: #F59E0B;
-  font-size: 13px;
-  letter-spacing: 1px;
+  color: #F59E0B !important;
+  font-size: 13px !important;
+  letter-spacing: 1px !important;
+  white-space: nowrap !important;
+  flex-shrink: 0 !important;
 }
 
 .rw-close-btn {
