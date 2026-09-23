@@ -17,7 +17,6 @@ import {
 import {
   MagicIcon,
   ImportIcon,
-  ProductIcon,
   SettingsIcon,
   StarFilledIcon,
 } from "@shopify/polaris-icons";
@@ -98,10 +97,10 @@ export default function Dashboard() {
     <Page fullWidth title="Dynamic Review Ecosystem Dashboard">
       <BlockStack gap="500">
         <Banner title="AI-Powered Dynamic Review System is active!" tone="success">
-          <p>Surfacing high-converting PDP floating reviews, multi-provider AI draft generation (Claude + Gemini), marketplace imports, and QR post-purchase collection.</p>
+          <p>Surfacing high-converting PDP floating reviews, multi-provider AI draft generation (Claude + Gemini), and marketplace imports.</p>
         </Banner>
 
-        <InlineGrid columns={{ xs: 1, sm: 2, md: 4 }} gap="400">
+        <InlineGrid columns={{ xs: 1, sm: 2, md: 3 }} gap="400">
           <Card padding="400">
             <BlockStack gap="200">
               <Text as="h3" variant="headingSm" tone="subdued">Total Reviews</Text>
@@ -128,14 +127,6 @@ export default function Dashboard() {
               <Badge tone="attention">Amazon / Flipkart / Alibaba</Badge>
             </BlockStack>
           </Card>
-
-          <Card padding="400">
-            <BlockStack gap="200">
-              <Text as="h3" variant="headingSm" tone="subdued">QR Code Scans</Text>
-              <Text as="p" variant="headingLg">{data.totalQrScans}</Text>
-              <Badge tone="success">Physical Touchpoints</Badge>
-            </BlockStack>
-          </Card>
         </InlineGrid>
 
         <Card padding="500">
@@ -147,9 +138,6 @@ export default function Dashboard() {
               </Button>
               <Button icon={ImportIcon} onClick={() => navigate("/app/import-reviews")}>
                 Import Marketplace CSV
-              </Button>
-              <Button icon={ProductIcon} onClick={() => navigate("/app/qr-codes")}>
-                Generate QR Codes
               </Button>
               <Button icon={SettingsIcon} onClick={() => navigate("/app/widget-settings")}>
                 Configure PDP Widget

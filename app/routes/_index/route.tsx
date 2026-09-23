@@ -40,7 +40,7 @@ export default function App() {
         <div className={styles.badge}>🛒 Shopify App Install Portal</div>
         <h1 className={styles.heading}>AI Dynamic Review System</h1>
         <p className={styles.text}>
-          Surfacing high-converting PDP floating reviews, multi-provider AI draft generation (Claude + Gemini), marketplace imports, and QR post-purchase collection.
+          Surfacing high-converting PDP floating reviews, multi-provider AI draft generation (Claude + Gemini), and marketplace imports.
         </p>
 
         <form className={styles.cardForm} onSubmit={handleSubmit}>

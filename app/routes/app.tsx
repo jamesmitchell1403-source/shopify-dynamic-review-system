@@ -63,7 +63,6 @@ export default function App() {
         <Link to="/app/reviews">Reviews</Link>
         <Link to="/app/ai-generator">AI Review Generator</Link>
         <Link to="/app/import-reviews">Import Reviews</Link>
-        <Link to="/app/qr-codes">QR Codes</Link>
         <Link to="/app/widget-settings">Widget Settings</Link>
         <Link to="/app/ai-settings">AI Settings</Link>
       </NavMenu>
