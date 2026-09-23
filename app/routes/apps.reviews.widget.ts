@@ -5,11 +5,12 @@ import { ensureReviewsAndSettingsRestored } from "../services/reviewPersistence.
 export async function loader({ request }: LoaderFunctionArgs) {
   const url = new URL(request.url);
   const productId = url.searchParams.get("productId");
+  const productHandle = url.searchParams.get("productHandle");
   const shop = url.searchParams.get("shop") || request.headers.get("x-shopify-shop-domain");
   const customerTagsParam = url.searchParams.get("customerTags");
 
-  if (!productId) {
-    return json({ reviews: [], settings: null, error: "Missing productId" }, {
+  if (!productId && !productHandle) {
+    return json({ reviews: [], settings: null, error: "Missing productId or productHandle" }, {
       headers: { "Access-Control-Allow-Origin": "*" },
     });
   }
@@ -27,36 +28,37 @@ export async function loader({ request }: LoaderFunctionArgs) {
     ? await db.shopSettings.findUnique({ where: { shop } })
     : null;
 
-  // Fetch published reviews for this product ID
-  const rawId = productId.replace(/^gid:\/\/shopify\/Product\//, "");
-  const fullGid = `gid://shopify/Product/${rawId}`;
+  // Fetch published reviews for this product ID or handle
+  const rawId = productId ? productId.replace(/^gid:\/\/shopify\/Product\//, "") : "";
+  const fullGid = rawId ? `gid://shopify/Product/${rawId}` : "";
 
-  // PRIORITY 1: Fetch imported marketplace reviews for this product
-  let marketplaceReviews = await db.review.findMany({
+  const whereProductMatch: any[] = [];
+  if (rawId) {
+    whereProductMatch.push({ productId: { in: [fullGid, rawId] } });
+    whereProductMatch.push({ productHandle: rawId });
+  }
+  if (productHandle) {
+    whereProductMatch.push({ productHandle: productHandle });
+    whereProductMatch.push({ productId: productHandle });
+  }
+
+  // PRIORITY 1: Fetch product-specific published reviews
+  let productReviews = await db.review.findMany({
     where: {
-      productId: { in: [fullGid, rawId] },
+      ...(shop ? { shop } : {}),
       isPublished: true,
-      source: { in: ["IMPORTED_AMAZON", "IMPORTED_FLIPKART", "IMPORTED_ALIBABA"] },
+      ...(whereProductMatch.length > 0 ? { OR: whereProductMatch } : {}),
     },
     orderBy: { createdAt: "desc" },
-    take: 50,
+    take: 100,
   });
 
-  // PRIORITY 2: Fetch AI & Manual reviews for this product
-  let otherReviews = await db.review.findMany({
-    where: {
-      productId: { in: [fullGid, rawId] },
-      isPublished: true,
-      source: { notIn: ["IMPORTED_AMAZON", "IMPORTED_FLIPKART", "IMPORTED_ALIBABA"] },
-    },
-    orderBy: { createdAt: "desc" },
-    take: 50,
-  });
+  let reviews = [...productReviews];
 
-  let reviews = [...marketplaceReviews, ...otherReviews];
-
-  // FALLBACK: If 0 reviews found for this specific product ID, fetch ANY top published reviews for the shop
+  // FALLBACK: If 0 reviews found for this specific product ID, fetch top published reviews for the shop
+  let isFallback = false;
   if (reviews.length === 0) {
+    isFallback = true;
     reviews = await db.review.findMany({
       where: {
         ...(shop ? { shop } : {}),
@@ -150,8 +152,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
     enabled: settings?.widgetEnabled ?? true,
   };
 
-  const totalCount = safeReviews.length;
-  const sumRating = safeReviews.reduce((sum, r) => sum + (r.rating || 5), 0);
+  const totalCount = isFallback ? reviews.length : productReviews.length;
+  const targetReviews = isFallback ? reviews : productReviews;
+  const sumRating = targetReviews.reduce((sum, r) => sum + (r.rating || 5), 0);
   const averageRating = totalCount > 0 ? (sumRating / totalCount).toFixed(1) : "5.0";
 
   return json(

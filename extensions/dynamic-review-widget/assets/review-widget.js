@@ -18,11 +18,15 @@
   }
 
   let productId = rootEl ? rootEl.getAttribute('data-product-id') : null;
+  let productHandle = rootEl ? rootEl.getAttribute('data-product-handle') : null;
   let shop = rootEl ? rootEl.getAttribute('data-shop') : null;
 
   // Fallbacks if element not in DOM or data-product-id missing
   if (!productId && window.meta && window.meta.product) {
     productId = String(window.meta.product.id);
+  }
+  if (!productHandle && window.meta && window.meta.product) {
+    productHandle = window.meta.product.handle;
   }
   if (!productId && window.ShopifyAnalytics && window.ShopifyAnalytics.meta && window.ShopifyAnalytics.meta.product) {
     productId = String(window.ShopifyAnalytics.meta.product.id);
@@ -55,7 +59,8 @@
     const badgeElements = document.querySelectorAll('.dynamic-review-badge-wrapper');
     if (!badgeElements || badgeElements.length === 0) return;
 
-    const countText = `(${totalCount} ${totalCount === 1 ? 'review' : 'reviews'})`;
+    const countInt = Number(totalCount) || 0;
+    const countText = countInt === 1 ? '1 review' : `${countInt} reviews`;
     const numRating = Number(avgRating) || 5.0;
     const roundedStars = Math.min(Math.max(Math.round(numRating), 1), 5);
     const starString = '★'.repeat(roundedStars) + '☆'.repeat(5 - roundedStars);
@@ -66,7 +71,7 @@
       const starsEl = badge.querySelector('.dynamic-review-badge-stars');
       const linkEl = badge.querySelector('.dynamic-review-badge-link');
 
-      if (ratingEl) ratingEl.textContent = Number(numRating).toFixed(1);
+      if (ratingEl) ratingEl.style.display = "none";
       if (countEl) countEl.textContent = countText;
       if (starsEl) starsEl.textContent = starString;
 
@@ -84,6 +89,11 @@
         });
       }
     });
+  }
+
+  function fetchReviews(pid) {
+    const endpoint = `/apps/reviews/widget?productId=${encodeURIComponent(pid)}&productHandle=${encodeURIComponent(productHandle || '')}&shop=${encodeURIComponent(shop || '')}&customerTags=${encodeURIComponent(JSON.stringify(customerTags))}`;
+    return fetch(endpoint).then((res) => res.json());
   }
 
   fetchReviews(productId)

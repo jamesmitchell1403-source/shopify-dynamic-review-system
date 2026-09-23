@@ -3,11 +3,12 @@
 {% endcomment %}
 
 {% if template.name == 'product' or template contains 'product' %}
-<link rel="stylesheet" href="/apps/reviews/widget.css?v=3.6" id="rw-widget-style">
+<link rel="stylesheet" href="/apps/reviews/widget.css?v=3.8" id="rw-widget-style">
 
 <div 
   class="dynamic-review-badge-wrapper"
   data-product-id="{{ product.id }}"
+  data-product-handle="{{ product.handle }}"
   data-shop="{{ shop.permanent_domain }}"
   style="--drb-star-color: {{ block.settings.star_color }}; --drb-text-color: {{ block.settings.text_color }}; --drb-font-size: {{ block.settings.font_size }}px;"
 >
@@ -15,16 +16,13 @@
     <span class="dynamic-review-badge-stars" id="drb-stars-{{ block.id }}">
       ★★★★★
     </span>
-    <span class="dynamic-review-badge-rating" id="drb-rating-{{ block.id }}">
-      5.0
-    </span>
     <span class="dynamic-review-badge-count" id="drb-count-{{ block.id }}">
-      (0 reviews)
+      0 reviews
     </span>
   </a>
 </div>
 
-<script src="/apps/reviews/widget.js?v=3.6" defer="defer"></script>
+<script src="/apps/reviews/widget.js?v=3.8" defer="defer"></script>
 {% endif %}
 
 {% schema %}
