@@ -121,27 +121,44 @@ export async function ensureReviewsAndSettingsRestored(admin: any, shop: string)
     // 2. Check/restore reviews backup
     const reviewCount = await db.review.count({ where: { shop } }).catch(() => 0);
     if (reviewCount === 0) {
-      let backupList: any[] = readLocalBackup();
+      const backupVal = await fetchShopMetafieldValue(admin, shop, "reviews_backup");
+      let backupList: any[] = [];
 
-      if (backupList.length === 0) {
-        const backupVal = await fetchShopMetafieldValue(admin, shop, "reviews_backup");
-        if (backupVal) {
-          try {
-            const parsed = JSON.parse(backupVal);
-            if (Array.isArray(parsed)) {
-              backupList = parsed;
-            }
-          } catch (e) {
-            console.error("[Persistence] Error parsing reviews_backup metafield:", e);
+      if (backupVal === "[]") {
+        // Admin explicitly deleted all reviews for this shop — keep review count at 0!
+        return;
+      }
+
+      if (backupVal) {
+        try {
+          const parsed = JSON.parse(backupVal);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            backupList = parsed;
+          }
+        } catch (e) {
+          console.error("[Persistence] Error parsing reviews_backup metafield:", e);
+        }
+      }
+
+      // First-time setup for new shop where metafield is not set yet
+      if (backupList.length === 0 && backupVal === null) {
+        backupList = readLocalBackup();
+        if (backupList.length === 0) {
+          // Check if DB contains initial template reviews
+          const seedReviews = await db.review.findMany({ take: 100 });
+          if (seedReviews.length > 0) {
+            backupList = seedReviews;
           }
         }
       }
 
       if (backupList.length > 0) {
         console.log(`[Persistence] Restoring ${backupList.length} reviews for ${shop}...`);
+        const shopPrefix = shop.split(".")[0];
         for (const item of backupList) {
           try {
-            const itemId = item.id || `restored-${Math.random().toString(36).substring(7)}`;
+            const rawId = item.id || Math.random().toString(36).substring(7);
+            const itemId = rawId.startsWith(shopPrefix) ? rawId : `${shopPrefix}-${rawId}`;
             await db.review.upsert({
               where: { id: itemId },
               update: {
@@ -171,7 +188,7 @@ export async function ensureReviewsAndSettingsRestored(admin: any, shop: string)
             console.warn("[Persistence] Single review restore skipped:", singleErr);
           }
         }
-        writeLocalBackup(backupList);
+        await syncReviewsToShopify(admin, shop);
       }
     }
   } catch (err) {

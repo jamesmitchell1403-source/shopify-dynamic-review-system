@@ -42,10 +42,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
     whereProductMatch.push({ productId: productHandle });
   }
 
-  // PRIORITY 1: Fetch product-specific published reviews with shop filter
-  let productReviews = await db.review.findMany({
+  // PRIORITY 1: Fetch product-specific published reviews for THIS shop
+  const productReviews = await db.review.findMany({
     where: {
-      ...(shop ? { shop } : {}),
+      shop,
       isPublished: true,
       ...(whereProductMatch.length > 0 ? { OR: whereProductMatch } : {}),
     },
@@ -53,45 +53,39 @@ export async function loader({ request }: LoaderFunctionArgs) {
     take: 100,
   });
 
-  // PRIORITY 1b: If 0 found for shop, try product-specific matching across all shops in DB
-  if (productReviews.length === 0 && whereProductMatch.length > 0) {
-    productReviews = await db.review.findMany({
-      where: {
-        isPublished: true,
-        OR: whereProductMatch,
-      },
-      orderBy: { createdAt: "desc" },
-      take: 100,
-    });
+  // PRIORITY 2: Fetch storewide published reviews for THIS shop ONLY
+  const shopReviews = await db.review.findMany({
+    where: {
+      shop,
+      isPublished: true,
+    },
+    orderBy: { createdAt: "desc" },
+    take: 50,
+  });
+
+  const safeProductReviews = productReviews.filter((r) => r.isPublished);
+  const safeShopReviews = shopReviews.filter((r) => r.isPublished);
+
+  let reviewsToReturn: any[] = [];
+  let totalCount = 0;
+  let averageRating = "0.0";
+
+  if (safeProductReviews.length > 0) {
+    reviewsToReturn = safeProductReviews;
+    totalCount = safeProductReviews.length;
+    const sumRating = safeProductReviews.reduce((sum, r) => sum + (r.rating || 5), 0);
+    averageRating = (sumRating / totalCount).toFixed(1);
+  } else if (safeShopReviews.length > 0) {
+    // Product has 0 reviews, but shop has published reviews for floating popups
+    reviewsToReturn = safeShopReviews;
+    totalCount = 0;
+    averageRating = "0.0";
+  } else {
+    // Shop has 0 published reviews in Admin -> Return 0 reviews, 0 count, no popup cards!
+    reviewsToReturn = [];
+    totalCount = 0;
+    averageRating = "0.0";
   }
-
-  let reviews = [...productReviews];
-
-  // FALLBACK: If 0 reviews found for this specific product ID, fetch top published reviews for shop (or global)
-  let isFallback = false;
-  if (reviews.length === 0) {
-    isFallback = true;
-    reviews = await db.review.findMany({
-      where: {
-        ...(shop ? { shop } : {}),
-        isPublished: true,
-      },
-      orderBy: { createdAt: "desc" },
-      take: 20,
-    });
-
-    if (reviews.length === 0) {
-      reviews = await db.review.findMany({
-        where: {
-          isPublished: true,
-        },
-        orderBy: { createdAt: "desc" },
-        take: 20,
-      });
-    }
-  }
-
-  const safeReviews = reviews.filter((r) => r.isPublished);
 
   // Parsing customer tags if available (Module D Personalization)
   let customerTags: string[] = [];
@@ -103,7 +97,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     }
   }
 
-  const formattedReviews = safeReviews.map((r) => {
+  const formattedReviews = reviewsToReturn.map((r) => {
     let parsedTags: string[] = [];
     try {
       parsedTags = JSON.parse(r.tags);
@@ -173,10 +167,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
     maxPerSession: settings?.widgetMaxPerSession ?? 20,
     enabled: settings?.widgetEnabled ?? true,
   };
-
-  const totalCount = safeReviews.length;
-  const sumRating = safeReviews.reduce((sum, r) => sum + (r.rating || 5), 0);
-  const averageRating = totalCount > 0 ? (sumRating / totalCount).toFixed(1) : "5.0";
 
   return json(
     {
