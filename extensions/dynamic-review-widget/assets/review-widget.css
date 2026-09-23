@@ -324,3 +324,50 @@
     transform: translateX(-50%) translateY(0);
   }
 }
+
+/* ------------------------------------------------------------- */
+/* DYNAMIC REVIEW BADGE APP BLOCK STYLES */
+/* ------------------------------------------------------------- */
+.dynamic-review-badge-wrapper {
+  display: inline-flex !important;
+  align-items: center !important;
+  margin: 6px 0 12px 0 !important;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+  font-size: var(--drb-font-size, 14px) !important;
+  color: var(--drb-text-color, #2c3e50) !important;
+}
+
+.dynamic-review-badge-link {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  text-decoration: none !important;
+  color: inherit !important;
+  transition: opacity 0.2s ease !important;
+  cursor: pointer !important;
+}
+
+.dynamic-review-badge-link:hover {
+  opacity: 0.85 !important;
+}
+
+.dynamic-review-badge-stars {
+  color: var(--drb-star-color, #ffb400) !important;
+  font-size: calc(var(--drb-font-size, 14px) * 1.1) !important;
+  letter-spacing: 2px !important;
+  line-height: 1 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+}
+
+.dynamic-review-badge-rating {
+  font-weight: 700 !important;
+  color: var(--drb-text-color, #2c3e50) !important;
+  font-size: var(--drb-font-size, 14px) !important;
+}
+
+.dynamic-review-badge-count {
+  font-size: var(--drb-font-size, 14px) !important;
+  color: #64748B !important;
+}
+

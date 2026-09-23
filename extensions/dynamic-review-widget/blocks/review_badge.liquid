@@ -1,0 +1,59 @@
+{% comment %}
+  Dynamic Review Badge Block for Storefront Product Page
+{% endcomment %}
+
+{% if template.name == 'product' or template contains 'product' %}
+<link rel="stylesheet" href="/apps/reviews/widget.css?v=3.6" id="rw-widget-style">
+
+<div 
+  class="dynamic-review-badge-wrapper"
+  data-product-id="{{ product.id }}"
+  data-shop="{{ shop.permanent_domain }}"
+  style="--drb-star-color: {{ block.settings.star_color }}; --drb-text-color: {{ block.settings.text_color }}; --drb-font-size: {{ block.settings.font_size }}px;"
+>
+  <a href="#dynamic-review-widget-root" class="dynamic-review-badge-link" id="drb-link-{{ block.id }}">
+    <span class="dynamic-review-badge-stars" id="drb-stars-{{ block.id }}">
+      ★★★★★
+    </span>
+    <span class="dynamic-review-badge-rating" id="drb-rating-{{ block.id }}">
+      5.0
+    </span>
+    <span class="dynamic-review-badge-count" id="drb-count-{{ block.id }}">
+      (0 reviews)
+    </span>
+  </a>
+</div>
+
+<script src="/apps/reviews/widget.js?v=3.6" defer="defer"></script>
+{% endif %}
+
+{% schema %}
+{
+  "name": "Dynamic Review Badge",
+  "target": "section",
+  "settings": [
+    {
+      "type": "color",
+      "id": "star_color",
+      "label": "Star Rating Color",
+      "default": "#ffb400"
+    },
+    {
+      "type": "color",
+      "id": "text_color",
+      "label": "Text Color",
+      "default": "#2c3e50"
+    },
+    {
+      "type": "range",
+      "id": "font_size",
+      "min": 12,
+      "max": 20,
+      "step": 1,
+      "unit": "px",
+      "label": "Font Size",
+      "default": 14
+    }
+  ]
+}
+{% endschema %}

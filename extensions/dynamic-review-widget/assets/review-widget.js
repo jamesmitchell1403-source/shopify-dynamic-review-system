@@ -51,13 +51,47 @@
     return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase().replace(/[^A-Z]/g, '');
   }
 
-  function fetchReviews(pid) {
-    const endpoint = `/apps/reviews/widget?productId=${encodeURIComponent(pid)}&shop=${encodeURIComponent(shop || '')}&customerTags=${encodeURIComponent(JSON.stringify(customerTags))}`;
-    return fetch(endpoint).then((res) => res.json());
+  function updateReviewBadges(avgRating, totalCount) {
+    const badgeElements = document.querySelectorAll('.dynamic-review-badge-wrapper');
+    if (!badgeElements || badgeElements.length === 0) return;
+
+    const countText = `(${totalCount} ${totalCount === 1 ? 'review' : 'reviews'})`;
+    const numRating = Number(avgRating) || 5.0;
+    const roundedStars = Math.min(Math.max(Math.round(numRating), 1), 5);
+    const starString = '★'.repeat(roundedStars) + '☆'.repeat(5 - roundedStars);
+
+    badgeElements.forEach((badge) => {
+      const ratingEl = badge.querySelector('.dynamic-review-badge-rating');
+      const countEl = badge.querySelector('.dynamic-review-badge-count');
+      const starsEl = badge.querySelector('.dynamic-review-badge-stars');
+      const linkEl = badge.querySelector('.dynamic-review-badge-link');
+
+      if (ratingEl) ratingEl.textContent = Number(numRating).toFixed(1);
+      if (countEl) countEl.textContent = countText;
+      if (starsEl) starsEl.textContent = starString;
+
+      if (linkEl && !linkEl.dataset.boundClick) {
+        linkEl.dataset.boundClick = "true";
+        linkEl.addEventListener('click', (e) => {
+          e.preventDefault();
+          const targetWidget = document.getElementById('dynamic-review-widget-root');
+          if (targetWidget) {
+            targetWidget.scrollIntoView({ behavior: 'smooth' });
+          } else {
+            const card = document.querySelector('.rw-notification-card');
+            if (card) card.classList.add('rw-visible');
+          }
+        });
+      }
+    });
   }
 
   fetchReviews(productId)
     .then((data) => {
+      const avg = data && data.averageRating ? data.averageRating : "5.0";
+      const count = data && data.totalCount !== undefined ? data.totalCount : (data && data.reviews ? data.reviews.length : 0);
+      updateReviewBadges(avg, count);
+
       if (data && data.reviews && data.reviews.length > 0) {
         initWidget(data.reviews, data.settings || {});
       } else {

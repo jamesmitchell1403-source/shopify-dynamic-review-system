@@ -150,10 +150,16 @@ export async function loader({ request }: LoaderFunctionArgs) {
     enabled: settings?.widgetEnabled ?? true,
   };
 
+  const totalCount = safeReviews.length;
+  const sumRating = safeReviews.reduce((sum, r) => sum + (r.rating || 5), 0);
+  const averageRating = totalCount > 0 ? (sumRating / totalCount).toFixed(1) : "5.0";
+
   return json(
     {
       reviews: formattedReviews,
       settings: widgetConfig,
+      averageRating,
+      totalCount,
     },
     {
       headers: {
