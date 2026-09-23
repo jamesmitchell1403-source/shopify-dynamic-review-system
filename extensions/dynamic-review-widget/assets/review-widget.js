@@ -69,25 +69,10 @@
       const ratingEl = badge.querySelector('.dynamic-review-badge-rating');
       const countEl = badge.querySelector('.dynamic-review-badge-count');
       const starsEl = badge.querySelector('.dynamic-review-badge-stars');
-      const linkEl = badge.querySelector('.dynamic-review-badge-link');
 
       if (ratingEl) ratingEl.style.display = "none";
       if (countEl) countEl.textContent = countText;
       if (starsEl) starsEl.textContent = starString;
-
-      if (linkEl && !linkEl.dataset.boundClick) {
-        linkEl.dataset.boundClick = "true";
-        linkEl.addEventListener('click', (e) => {
-          e.preventDefault();
-          const targetWidget = document.getElementById('dynamic-review-widget-root');
-          if (targetWidget) {
-            targetWidget.scrollIntoView({ behavior: 'smooth' });
-          } else {
-            const card = document.querySelector('.rw-notification-card');
-            if (card) card.classList.add('rw-visible');
-          }
-        });
-      }
     });
   }
 

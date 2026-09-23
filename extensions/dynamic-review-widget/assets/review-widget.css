@@ -348,20 +348,17 @@
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
   font-size: var(--drb-font-size, 14px) !important;
   color: var(--drb-text-color, #2c3e50) !important;
+  cursor: default !important;
+  user-select: none !important;
 }
 
-.dynamic-review-badge-link {
+.dynamic-review-badge-content {
   display: inline-flex !important;
   align-items: center !important;
   gap: 8px !important;
   text-decoration: none !important;
   color: inherit !important;
-  transition: opacity 0.2s ease !important;
-  cursor: pointer !important;
-}
-
-.dynamic-review-badge-link:hover {
-  opacity: 0.85 !important;
+  cursor: default !important;
 }
 
 .dynamic-review-badge-stars {

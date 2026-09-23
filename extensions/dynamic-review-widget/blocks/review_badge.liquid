@@ -12,14 +12,14 @@
   data-shop="{{ shop.permanent_domain }}"
   style="--drb-star-color: {{ block.settings.star_color }}; --drb-text-color: {{ block.settings.text_color }}; --drb-font-size: {{ block.settings.font_size }}px;"
 >
-  <a href="#dynamic-review-widget-root" class="dynamic-review-badge-link" id="drb-link-{{ block.id }}">
+  <div class="dynamic-review-badge-content" id="drb-content-{{ block.id }}">
     <span class="dynamic-review-badge-stars" id="drb-stars-{{ block.id }}">
       ★★★★★
     </span>
     <span class="dynamic-review-badge-count" id="drb-count-{{ block.id }}">
       0 reviews
     </span>
-  </a>
+  </div>
 </div>
 
 <script src="/apps/reviews/widget.js?v=3.8" defer="defer"></script>
