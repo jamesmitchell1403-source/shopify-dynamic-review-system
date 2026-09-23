@@ -33,16 +33,16 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const fullGid = rawId ? `gid://shopify/Product/${rawId}` : "";
 
   const whereProductMatch: any[] = [];
-  if (rawId) {
+  if (rawId && rawId !== "all") {
     whereProductMatch.push({ productId: { in: [fullGid, rawId] } });
     whereProductMatch.push({ productHandle: rawId });
   }
-  if (productHandle) {
+  if (productHandle && productHandle !== "all") {
     whereProductMatch.push({ productHandle: productHandle });
     whereProductMatch.push({ productId: productHandle });
   }
 
-  // PRIORITY 1: Fetch product-specific published reviews
+  // PRIORITY 1: Fetch product-specific published reviews with shop filter
   let productReviews = await db.review.findMany({
     where: {
       ...(shop ? { shop } : {}),
@@ -53,9 +53,21 @@ export async function loader({ request }: LoaderFunctionArgs) {
     take: 100,
   });
 
+  // PRIORITY 1b: If 0 found for shop, try product-specific matching across all shops in DB
+  if (productReviews.length === 0 && whereProductMatch.length > 0) {
+    productReviews = await db.review.findMany({
+      where: {
+        isPublished: true,
+        OR: whereProductMatch,
+      },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+    });
+  }
+
   let reviews = [...productReviews];
 
-  // FALLBACK: If 0 reviews found for this specific product ID, fetch top published reviews for the shop
+  // FALLBACK: If 0 reviews found for this specific product ID, fetch top published reviews for shop (or global)
   let isFallback = false;
   if (reviews.length === 0) {
     isFallback = true;
@@ -67,6 +79,16 @@ export async function loader({ request }: LoaderFunctionArgs) {
       orderBy: { createdAt: "desc" },
       take: 20,
     });
+
+    if (reviews.length === 0) {
+      reviews = await db.review.findMany({
+        where: {
+          isPublished: true,
+        },
+        orderBy: { createdAt: "desc" },
+        take: 20,
+      });
+    }
   }
 
   const safeReviews = reviews.filter((r) => r.isPublished);
@@ -152,9 +174,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
     enabled: settings?.widgetEnabled ?? true,
   };
 
-  const totalCount = isFallback ? reviews.length : productReviews.length;
-  const targetReviews = isFallback ? reviews : productReviews;
-  const sumRating = targetReviews.reduce((sum, r) => sum + (r.rating || 5), 0);
+  const totalCount = safeReviews.length;
+  const sumRating = safeReviews.reduce((sum, r) => sum + (r.rating || 5), 0);
   const averageRating = totalCount > 0 ? (sumRating / totalCount).toFixed(1) : "5.0";
 
   return json(

@@ -49,19 +49,23 @@ async function fetchShopMetafieldValue(admin: any, shop: string, key: string): P
     }
   }
 
-  // REST Fallback using ADMIN_TOKEN
+  // REST Fallback using shop's token from db.session or ADMIN_TOKEN
   try {
-    const restUrl = `https://${shop}/admin/api/2025-01/metafields.json?namespace=ai_review_system&key=${key}`;
-    const restRes = await fetch(restUrl, {
-      headers: {
-        "X-Shopify-Access-Token": ADMIN_TOKEN,
-        "Content-Type": "application/json",
-      },
-    });
-    if (restRes.ok) {
-      const restJson = await restRes.json();
-      const mf = restJson.metafields?.find((m: any) => m.key === key);
-      if (mf?.value) return mf.value;
+    const session = await db.session.findFirst({ where: { shop } }).catch(() => null);
+    const token = session?.accessToken || ADMIN_TOKEN;
+    if (token) {
+      const restUrl = `https://${shop}/admin/api/2025-01/metafields.json?namespace=ai_review_system&key=${key}`;
+      const restRes = await fetch(restUrl, {
+        headers: {
+          "X-Shopify-Access-Token": token,
+          "Content-Type": "application/json",
+        },
+      });
+      if (restRes.ok) {
+        const restJson = await restRes.json();
+        const mf = restJson.metafields?.find((m: any) => m.key === key);
+        if (mf?.value) return mf.value;
+      }
     }
   } catch (restErr) {
     console.warn("[Persistence] REST metafield query warning:", restErr);
