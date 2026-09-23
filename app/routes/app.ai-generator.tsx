@@ -488,8 +488,6 @@ export default function AiGeneratorPage() {
                       label="Target Language"
                       options={[
                         { label: "English", value: "en" },
-                        { label: "Gujarati", value: "gu" },
-                        { label: "Hindi", value: "hi" },
                         { label: "Spanish", value: "es" },
                         { label: "French", value: "fr" },
                         { label: "German", value: "de" },
@@ -571,8 +569,6 @@ export default function AiGeneratorPage() {
                             label="Target Language"
                             options={[
                               { label: "English", value: "en" },
-                              { label: "Gujarati", value: "gu" },
-                              { label: "Hindi", value: "hi" },
                               { label: "Spanish", value: "es" },
                               { label: "French", value: "fr" },
                               { label: "German", value: "de" },
