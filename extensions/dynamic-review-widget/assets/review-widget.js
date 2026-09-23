@@ -90,26 +90,13 @@
       if (data && data.reviews && data.reviews.length > 0) {
         initWidget(data.reviews, data.settings || {});
       } else {
-        // Fallback to fetch all published reviews for the shop
-        fetchReviews("all").then((fallbackData) => {
-          if (fallbackData && fallbackData.reviews && fallbackData.reviews.length > 0) {
-            const fallbackAvg = fallbackData.averageRating || "5.0";
-            const fallbackCount = fallbackData.totalCount !== undefined ? fallbackData.totalCount : fallbackData.reviews.length;
-            updateReviewBadges(fallbackAvg, fallbackCount);
-            initWidget(fallbackData.reviews, fallbackData.settings || {});
-          }
-        });
+        const card = document.querySelector('.rw-notification-card');
+        if (card) card.classList.remove('rw-visible');
       }
     })
     .catch(() => {
-      fetchReviews("all").then((fallbackData) => {
-        if (fallbackData && fallbackData.reviews && fallbackData.reviews.length > 0) {
-          const fallbackAvg = fallbackData.averageRating || "5.0";
-          const fallbackCount = fallbackData.totalCount !== undefined ? fallbackData.totalCount : fallbackData.reviews.length;
-          updateReviewBadges(fallbackAvg, fallbackCount);
-          initWidget(fallbackData.reviews, fallbackData.settings || {});
-        }
-      });
+      const card = document.querySelector('.rw-notification-card');
+      if (card) card.classList.remove('rw-visible');
     });
 
   function getMarketplaceBadgeHtml(source, externalUrl) {

@@ -42,29 +42,31 @@ export async function loader({ request }: LoaderFunctionArgs) {
     whereProductMatch.push({ productId: productHandle });
   }
 
-  // PRIORITY 1: Fetch product-specific published reviews for THIS shop
-  const productReviews = await db.review.findMany({
-    where: {
-      shop,
-      isPublished: true,
-      ...(whereProductMatch.length > 0 ? { OR: whereProductMatch } : {}),
-    },
-    orderBy: { createdAt: "desc" },
-    take: 100,
-  });
+  const isAllProductsRequest = (productId === "all" || productHandle === "all");
 
-  // PRIORITY 2: Fetch storewide published reviews for THIS shop ONLY
-  const shopReviews = await db.review.findMany({
-    where: {
-      shop,
-      isPublished: true,
-    },
-    orderBy: { createdAt: "desc" },
-    take: 50,
-  });
+  let productReviews: any[] = [];
+  if (isAllProductsRequest) {
+    productReviews = await db.review.findMany({
+      where: {
+        shop,
+        isPublished: true,
+      },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+    });
+  } else {
+    productReviews = await db.review.findMany({
+      where: {
+        shop,
+        isPublished: true,
+        ...(whereProductMatch.length > 0 ? { OR: whereProductMatch } : {}),
+      },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+    });
+  }
 
   const safeProductReviews = productReviews.filter((r) => r.isPublished);
-  const safeShopReviews = shopReviews.filter((r) => r.isPublished);
 
   let reviewsToReturn: any[] = [];
   let totalCount = 0;
@@ -75,13 +77,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
     totalCount = safeProductReviews.length;
     const sumRating = safeProductReviews.reduce((sum, r) => sum + (r.rating || 5), 0);
     averageRating = (sumRating / totalCount).toFixed(1);
-  } else if (safeShopReviews.length > 0) {
-    // Product has 0 reviews, but shop has published reviews for floating popups
-    reviewsToReturn = safeShopReviews;
-    totalCount = 0;
-    averageRating = "0.0";
   } else {
-    // Shop has 0 published reviews in Admin -> Return 0 reviews, 0 count, no popup cards!
+    // Product has 0 reviews for this shop -> Return 0 reviews, 0 count, no popup cards!
     reviewsToReturn = [];
     totalCount = 0;
     averageRating = "0.0";
