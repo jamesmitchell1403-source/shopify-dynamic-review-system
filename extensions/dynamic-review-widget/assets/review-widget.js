@@ -282,7 +282,10 @@
 
         setTimeout(() => {
           card.classList.remove('rw-visible');
-          scheduleNext();
+          // Allow 500ms for exit fade-out transition before scheduling next cycle
+          setTimeout(() => {
+            scheduleNext();
+          }, 500);
         }, durationMs);
       }, waitTime);
     }

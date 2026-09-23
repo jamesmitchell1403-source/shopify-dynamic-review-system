@@ -14,16 +14,16 @@
   opacity: 0 !important;
   visibility: hidden !important;
   transform: translateY(20px) !important;
-  transition: opacity 0.4s ease, transform 0.4s cubic-bezier(0.16, 1, 0.3, 1) !important;
-  pointer-events: auto !important;
+  transition: opacity 0.5s ease-in-out, transform 0.5s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.5s ease-in-out !important;
+  pointer-events: none !important;
   box-sizing: border-box !important;
 }
 
 .rw-notification-card.rw-visible {
   opacity: 1 !important;
   visibility: visible !important;
-  display: block !important;
   transform: translateY(0) !important;
+  pointer-events: auto !important;
 }
 
 /* Position options */
