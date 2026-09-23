@@ -2,7 +2,7 @@ import { json, ActionFunctionArgs } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
 import { generateReviewsForShop } from "../services/ai/reviewGenerator";
 import db from "../db.server";
-import { syncReviewsToShopify } from "../services/reviewPersistence.server";
+import { syncReviewsToShopify, syncAiJobsToShopify } from "../services/reviewPersistence.server";
 
 export async function action({ request }: ActionFunctionArgs) {
   let session: any;
@@ -226,6 +226,7 @@ export async function action({ request }: ActionFunctionArgs) {
       });
 
       await syncReviewsToShopify(admin, shop);
+      await syncAiJobsToShopify(admin, shop);
 
       return json({
         success: true,
@@ -287,6 +288,8 @@ export async function action({ request }: ActionFunctionArgs) {
         resultCount: result.reviews.length,
       },
     });
+
+    await syncAiJobsToShopify(admin, shop);
 
     return json({
       success: true,

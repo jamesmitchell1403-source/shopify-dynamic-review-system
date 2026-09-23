@@ -328,3 +328,125 @@ export async function syncSettingsToShopify(admin: any, shop: string, settingsDa
     console.error("[Persistence] Error syncing settings to Shopify Metafield:", err);
   }
 }
+
+export async function ensureAiJobsRestored(admin: any, shop: string) {
+  if (!shop) return;
+  try {
+    const count = await db.aiGenerationJob.count({ where: { shop } }).catch(() => 0);
+    if (count === 0) {
+      const metaVal = await fetchShopMetafieldValue(admin, shop, "ai_jobs_backup");
+      if (metaVal) {
+        const parsed = JSON.parse(metaVal);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          console.log(`[Persistence] Restoring ${parsed.length} AI generation jobs for ${shop}...`);
+          for (const item of parsed) {
+            try {
+              const itemId = item.id || `job-${Math.random().toString(36).substring(7)}`;
+              await db.aiGenerationJob.upsert({
+                where: { id: itemId },
+                update: {},
+                create: {
+                  id: itemId,
+                  shop,
+                  productId: item.productId || null,
+                  inputImageUrl: item.inputImageUrl || null,
+                  inputDescription: item.inputDescription || null,
+                  inputNotes: item.inputNotes || null,
+                  language: item.language || "en",
+                  provider: item.provider || "claude",
+                  modelUsed: item.modelUsed || "Default Model",
+                  status: item.status || "completed",
+                  resultCount: item.resultCount ?? 0,
+                  createdAt: item.createdAt ? new Date(item.createdAt) : new Date(),
+                },
+              });
+            } catch (singleErr) {
+              console.warn("[Persistence] Single AI job restore skipped:", singleErr);
+            }
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error("[Persistence] Error in ensureAiJobsRestored:", err);
+  }
+}
+
+export async function syncAiJobsToShopify(admin: any, shop: string, allowEmptySync: boolean = false) {
+  if (!shop) return;
+  try {
+    const allJobs = await db.aiGenerationJob.findMany({
+      where: { shop },
+      orderBy: { createdAt: "desc" },
+    });
+
+    if (allJobs.length === 0 && !allowEmptySync) {
+      await ensureAiJobsRestored(admin, shop);
+      return;
+    }
+
+    if (admin) {
+      try {
+        const shopRes = await admin.graphql(
+          `#graphql
+          query getShopId {
+            shop {
+              id
+            }
+          }`
+        );
+        const shopJson = await shopRes.json();
+        const shopId = shopJson.data?.shop?.id;
+        if (shopId) {
+          await admin.graphql(
+            `#graphql
+            mutation saveAiJobsBackup($metafields: [MetafieldsSetInput!]!) {
+              metafieldsSet(metafields: $metafields) {
+                userErrors {
+                  field
+                  message
+                }
+              }
+            }`,
+            {
+              variables: {
+                metafields: [
+                  {
+                    namespace: "ai_review_system",
+                    key: "ai_jobs_backup",
+                    type: "json",
+                    value: JSON.stringify(allJobs),
+                    ownerId: shopId,
+                  },
+                ],
+              },
+            }
+          );
+          return;
+        }
+      } catch (gqlErr) {
+        console.warn("[Persistence] GraphQL save AI jobs backup warning:", gqlErr);
+      }
+    }
+
+    // REST Fallback using ADMIN_TOKEN
+    await fetch(`https://${shop}/admin/api/2025-01/metafields.json`, {
+      method: "POST",
+      headers: {
+        "X-Shopify-Access-Token": ADMIN_TOKEN,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        metafield: {
+          namespace: "ai_review_system",
+          key: "ai_jobs_backup",
+          value: JSON.stringify(allJobs),
+          type: "json",
+        },
+      }),
+    });
+  } catch (err) {
+    console.error("[Persistence] Error syncing AI jobs to Shopify Metafield:", err);
+  }
+}
+

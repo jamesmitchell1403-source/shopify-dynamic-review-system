@@ -7,7 +7,6 @@ import {
   Card,
   BlockStack,
   InlineStack,
-  Select,
   TextField,
   Button,
   Banner,
@@ -15,9 +14,11 @@ import {
   Badge,
   DataTable,
 } from "@shopify/polaris";
+import { DeleteIcon } from "@shopify/polaris-icons";
 import { authenticate } from "../shopify.server";
 import db, { ensureTablesExist } from "../db.server";
 import { getShopAIKeysFromShopify, saveShopAIKeysToShopify } from "../services/shopifyMetafields.server";
+import { ensureAiJobsRestored, syncAiJobsToShopify } from "../services/reviewPersistence.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   await ensureTablesExist();
@@ -28,6 +29,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
   let aiJobs: any[] = [];
 
   try {
+    await ensureAiJobsRestored(admin, shop);
+
     settings = await db.shopSettings.findUnique({ where: { shop } });
     if (!settings) {
       settings = await db.shopSettings.create({ data: { shop } });
@@ -36,10 +39,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
     aiJobs = await db.aiGenerationJob.findMany({
       where: { shop },
       orderBy: { createdAt: "desc" },
-      take: 20,
     });
 
-    // 1. Read persistent API keys stored in Shopify's cloud (Shop Metafields)
+    // Read persistent API keys stored in Shopify's cloud (Shop Metafields)
     const shopifyCloudKeys = await getShopAIKeysFromShopify(admin);
 
     const mergedSettings = {
@@ -69,6 +71,28 @@ export async function action({ request }: ActionFunctionArgs) {
   const shop = session.shop;
 
   const formData = await request.formData();
+  const intent = formData.get("intent") as string;
+
+  if (intent === "deleteJob") {
+    const jobId = formData.get("jobId") as string;
+    if (jobId) {
+      await db.aiGenerationJob.deleteMany({
+        where: { id: jobId, shop },
+      });
+      await syncAiJobsToShopify(admin, shop, true);
+    }
+    return json({ success: true, message: "Audit history record deleted." });
+  }
+
+  if (intent === "clearAllJobs") {
+    await db.aiGenerationJob.deleteMany({
+      where: { shop },
+    });
+    await syncAiJobsToShopify(admin, shop, true);
+    return json({ success: true, message: "All audit history records cleared." });
+  }
+
+  // DEFAULT ACTION: Save API keys
   const anthropicApiKeyRaw = formData.get("anthropicApiKey") as string;
   const geminiApiKeyRaw = formData.get("geminiApiKey") as string;
   const openaiApiKeyRaw = formData.get("openaiApiKey") as string;
@@ -127,7 +151,7 @@ export async function action({ request }: ActionFunctionArgs) {
     }
   }
 
-  return json({ success: true });
+  return json({ success: true, message: "API keys saved successfully." });
 }
 
 export default function AiSettingsPage() {
@@ -142,6 +166,7 @@ export default function AiSettingsPage() {
 
   const handleSave = () => {
     const fd = new FormData();
+    fd.append("intent", "saveKeys");
     fd.append("anthropicApiKey", claudeKey);
     fd.append("geminiApiKey", geminiKey);
     fd.append("openaiApiKey", openaiKey);
@@ -151,15 +176,42 @@ export default function AiSettingsPage() {
     setTimeout(() => setSavedSuccess(false), 3000);
   };
 
+  const handleDeleteJob = (jobId: string) => {
+    if (confirm("Are you sure you want to remove this audit log entry?")) {
+      const fd = new FormData();
+      fd.append("intent", "deleteJob");
+      fd.append("jobId", jobId);
+      submit(fd, { method: "post" });
+    }
+  };
+
+  const handleClearAllJobs = () => {
+    if (confirm("Are you sure you want to clear ALL AI generation audit history logs?")) {
+      const fd = new FormData();
+      fd.append("intent", "clearAllJobs");
+      submit(fd, { method: "post" });
+    }
+  };
+
   const rows = aiJobs.map((j) => [
     new Date(j.createdAt).toISOString().substring(0, 19).replace("T", " "),
     j.provider.toUpperCase(),
     j.modelUsed || "Default Model",
+    j.productId ? (j.productId === "ALL_PRODUCTS_BULK" ? "All Store Products" : j.productId.replace(/^gid:\/\/shopify\/Product\//, "Product #")) : "Single Generation",
     j.language.toUpperCase(),
     `${j.resultCount} Reviews`,
     <Badge key={`st-${j.id}`} tone={j.status === "completed" ? "success" : "critical"}>
       {j.status}
     </Badge>,
+    <Button
+      key={`del-${j.id}`}
+      icon={DeleteIcon}
+      tone="critical"
+      size="micro"
+      onClick={() => handleDeleteJob(j.id)}
+    >
+      Delete
+    </Button>,
   ]);
 
   return (
@@ -227,15 +279,31 @@ export default function AiSettingsPage() {
           <Layout.Section>
             <Card padding="500">
               <BlockStack gap="400">
-                <Text as="h2" variant="headingMd">AI Generation Audit History</Text>
-                <Text as="p" tone="subdued">Track all AI API calls, model IDs used, and generated counts for cost auditing:</Text>
+                <InlineStack align="space-between" blockAlign="center">
+                  <BlockStack gap="100">
+                    <Text as="h2" variant="headingMd">AI Generation Audit History</Text>
+                    <Text as="p" tone="subdued">
+                      Complete history of all AI review generation jobs, model IDs used, and generated counts:
+                    </Text>
+                  </BlockStack>
+
+                  {aiJobs.length > 0 && (
+                    <Button
+                      tone="critical"
+                      icon={DeleteIcon}
+                      onClick={handleClearAllJobs}
+                    >
+                      Clear Audit History
+                    </Button>
+                  )}
+                </InlineStack>
 
                 {aiJobs.length === 0 ? (
-                  <Text as="p" tone="subdued">No AI generation jobs recorded yet.</Text>
+                  <Text as="p" tone="subdued">No AI generation jobs recorded yet. Whenever you generate reviews, records will appear here automatically.</Text>
                 ) : (
                   <DataTable
-                    columnContentTypes={["text", "text", "text", "text", "text", "text"]}
-                    headings={["Date & Time", "Provider", "Model ID", "Language", "Generated", "Status"]}
+                    columnContentTypes={["text", "text", "text", "text", "text", "text", "text", "text"]}
+                    headings={["Date & Time", "Provider", "Model ID", "Target Product", "Language", "Generated", "Status", "Actions"]}
                     rows={rows}
                   />
                 )}
