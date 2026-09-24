@@ -156,7 +156,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   }
 
   const widgetConfig = {
-    position: settings?.widgetPosition || "bottom-right",
+    position: settings?.widgetPosition || "bottom-left",
     layoutStyle: settings?.widgetLayoutStyle || "layout-1",
     delaySeconds: settings?.widgetDelaySeconds ?? 1,
     displayDuration: settings?.widgetDisplayDuration ?? 10,

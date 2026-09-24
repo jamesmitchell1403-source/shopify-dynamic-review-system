@@ -37,7 +37,7 @@ model ShopSettings {
   anthropicApiKey       String?
   geminiApiKey          String?
   openaiApiKey          String?
-  widgetPosition        String   @default("bottom-right")
+  widgetPosition        String   @default("bottom-left")
   widgetLayoutStyle     String   @default("layout-1")
   widgetDelaySeconds    Int      @default(1)
   widgetDisplayDuration Int      @default(10)

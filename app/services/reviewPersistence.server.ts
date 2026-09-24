@@ -88,7 +88,7 @@ export async function ensureReviewsAndSettingsRestored(admin: any, shop: string)
           settings = await db.shopSettings.create({
             data: {
               shop,
-              widgetPosition: parsed.widgetPosition || "bottom-right",
+              widgetPosition: parsed.widgetPosition || "bottom-left",
               widgetLayoutStyle: parsed.widgetLayoutStyle || "layout-1",
               widgetDelaySeconds: parsed.widgetDelaySeconds ?? 1,
               widgetDisplayDuration: parsed.widgetDisplayDuration ?? 10,
@@ -107,7 +107,7 @@ export async function ensureReviewsAndSettingsRestored(admin: any, shop: string)
       await db.shopSettings.create({
         data: {
           shop,
-          widgetPosition: "bottom-right",
+          widgetPosition: "bottom-left",
           widgetLayoutStyle: "layout-1",
           widgetDelaySeconds: 1,
           widgetDisplayDuration: 10,

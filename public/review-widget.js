@@ -99,7 +99,7 @@
   }
 
   function initWidget(reviews, settings) {
-    const position = settings.position || 'bottom-right';
+    const position = settings.position || 'bottom-left';
     const layoutStyle = settings.layoutStyle || 'layout-1';
     const delayMs = (settings.delaySeconds !== undefined ? settings.delaySeconds : 1) * 1000;
     const durationMs = (settings.displayDuration || 10) * 1000;

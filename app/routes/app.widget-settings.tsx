@@ -38,7 +38,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       settings = await db.shopSettings.create({
         data: {
           shop,
-          widgetPosition: "bottom-right",
+          widgetPosition: "bottom-left",
           widgetLayoutStyle: "layout-1",
           widgetDelaySeconds: 1,
           widgetDisplayDuration: 10,
@@ -47,12 +47,18 @@ export async function loader({ request }: LoaderFunctionArgs) {
           widgetEnabled: true,
         },
       });
+    } else if (settings.widgetPosition === "bottom-right") {
+      // Upgrade existing default setting from bottom-right to bottom-left as requested
+      settings = await db.shopSettings.update({
+        where: { shop },
+        data: { widgetPosition: "bottom-left" },
+      });
     }
   } catch (err) {
     console.error("Widget settings DB error:", err);
     settings = {
       shop,
-      widgetPosition: "bottom-right",
+      widgetPosition: "bottom-left",
       widgetLayoutStyle: "layout-1",
       widgetDelaySeconds: 1,
       widgetDisplayDuration: 10,
@@ -70,7 +76,7 @@ export async function action({ request }: ActionFunctionArgs) {
   const shop = session.shop;
 
   const formData = await request.formData();
-  const widgetPosition = (formData.get("widgetPosition") as string) || "bottom-right";
+  const widgetPosition = (formData.get("widgetPosition") as string) || "bottom-left";
   const widgetLayoutStyle = (formData.get("widgetLayoutStyle") as string) || "layout-1";
   const widgetDelaySeconds = parseInt((formData.get("widgetDelaySeconds") as string) || "1", 10);
   const widgetDisplayDuration = parseInt((formData.get("widgetDisplayDuration") as string) || "10", 10);
@@ -111,7 +117,7 @@ export default function WidgetSettingsPage() {
   const submit = useSubmit();
   const navigation = useNavigation();
 
-  const [position, setPosition] = useState<string>(settings.widgetPosition || "bottom-right");
+  const [position, setPosition] = useState<string>(settings.widgetPosition || "bottom-left");
   const [layoutStyle, setLayoutStyle] = useState<string>(settings.widgetLayoutStyle || "layout-1");
   const [delay, setDelay] = useState<string>(String(settings.widgetDelaySeconds ?? 1));
   const [duration, setDuration] = useState<string>(String(settings.widgetDisplayDuration ?? 10));
