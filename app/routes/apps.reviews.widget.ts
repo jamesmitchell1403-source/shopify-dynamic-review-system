@@ -169,8 +169,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
     });
   }
 
+  const rawPosition = settings?.widgetPosition || "bottom-left";
   const widgetConfig = {
-    position: settings?.widgetPosition || "bottom-left",
+    position: rawPosition === "bottom-right" ? "bottom-left" : rawPosition,
     layoutStyle: settings?.widgetLayoutStyle || "layout-1",
     delaySeconds: settings?.widgetDelaySeconds ?? 1,
     displayDuration: settings?.widgetDisplayDuration ?? 10,

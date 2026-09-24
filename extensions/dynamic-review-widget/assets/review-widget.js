@@ -121,7 +121,10 @@
   }
 
   function initWidget(reviews, settings) {
-    const position = settings.position || 'bottom-left';
+    let position = settings.position || 'bottom-left';
+    if (position === 'bottom-right') {
+      position = 'bottom-left';
+    }
     const layoutStyle = settings.layoutStyle || 'layout-1';
     const delayMs = (settings.delaySeconds !== undefined ? settings.delaySeconds : 1) * 1000;
     const durationMs = (settings.displayDuration || 10) * 1000;
@@ -151,6 +154,17 @@
       const hasVideo = !!review.videoUrl;
       const isLayout2 = hasImage && hasVideo; // Image + Video
       const isLayout1 = (hasImage || hasVideo) && !isLayout2; // Image OR Video
+
+      if (isLayout1) {
+        card.classList.add('rw-has-media-1');
+        card.classList.remove('rw-has-media-2');
+      } else if (isLayout2) {
+        card.classList.add('rw-has-media-2');
+        card.classList.remove('rw-has-media-1');
+      } else {
+        card.classList.remove('rw-has-media-1');
+        card.classList.remove('rw-has-media-2');
+      }
 
       let contentHtml = '';
 

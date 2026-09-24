@@ -338,19 +338,31 @@
 /* MEDIA LAYOUT 1 & LAYOUT 2 STYLES (MATCHING DESIGN SPECS) */
 /* ------------------------------------------------------------- */
 
+.rw-notification-card.rw-has-media-1 {
+  width: 430px !important;
+  max-width: 92vw !important;
+  padding: 14px 16px !important;
+}
+
+.rw-notification-card.rw-has-media-2 {
+  width: 360px !important;
+  max-width: 92vw !important;
+  padding: 14px 16px !important;
+}
+
 /* Layout 1: Media on Left / Review on Right */
 .rw-layout-1-wrapper {
   display: flex !important;
-  gap: 14px !important;
+  gap: 12px !important;
   align-items: stretch !important;
   width: 100% !important;
 }
 
 .rw-media-left {
   position: relative !important;
-  width: 110px !important;
-  min-width: 110px !important;
-  height: 110px !important;
+  width: 95px !important;
+  min-width: 95px !important;
+  height: 95px !important;
   border-radius: 12px !important;
   overflow: hidden !important;
   background: #000000 !important;
@@ -370,8 +382,8 @@
   top: 50% !important;
   left: 50% !important;
   transform: translate(-50%, -50%) !important;
-  width: 32px !important;
-  height: 32px !important;
+  width: 30px !important;
+  height: 30px !important;
   background: rgba(0, 0, 0, 0.55) !important;
   border: 1.5px solid rgba(255, 255, 255, 0.8) !important;
   border-radius: 50% !important;
@@ -379,20 +391,20 @@
   align-items: center !important;
   justify-content: center !important;
   color: #ffffff !important;
-  font-size: 12px !important;
+  font-size: 11px !important;
   pointer-events: none !important;
 }
 
 .rw-media-time-pill {
   position: absolute !important;
-  bottom: 6px !important;
-  left: 6px !important;
+  bottom: 5px !important;
+  left: 5px !important;
   background: rgba(0, 0, 0, 0.75) !important;
   color: #ffffff !important;
-  font-size: 10px !important;
+  font-size: 9.5px !important;
   font-weight: 600 !important;
-  padding: 2px 5px !important;
-  border-radius: 4px !important;
+  padding: 1px 4px !important;
+  border-radius: 3px !important;
 }
 
 .rw-media-right {
@@ -401,6 +413,61 @@
   flex-direction: column !important;
   justify-content: space-between !important;
   min-width: 0 !important;
+}
+
+.rw-media-right .rw-header {
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  margin-bottom: 2px !important;
+}
+
+.rw-media-right .rw-user-info {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  min-width: 0 !important;
+}
+
+.rw-media-right .rw-avatar {
+  width: 30px !important;
+  height: 30px !important;
+  min-width: 30px !important;
+  font-size: 12px !important;
+}
+
+.rw-media-right .rw-reviewer {
+  font-size: 13.5px !important;
+  font-weight: 700 !important;
+  color: #1e293b !important;
+}
+
+.rw-media-right .rw-stars {
+  font-size: 12px !important;
+  white-space: nowrap !important;
+}
+
+.rw-media-right .rw-body {
+  font-size: 12px !important;
+  line-height: 1.35 !important;
+  color: #334155 !important;
+  margin: 2px 0 4px 0 !important;
+  display: -webkit-box !important;
+  -webkit-line-clamp: 3 !important;
+  -webkit-box-orient: vertical !important;
+  overflow: hidden !important;
+}
+
+.rw-media-right .rw-footer {
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  font-size: 10.5px !important;
+  white-space: nowrap !important;
+}
+
+.rw-verified-badge {
+  white-space: nowrap !important;
 }
 
 /* Layout 2: Media Carousel on Top / Review Below */
