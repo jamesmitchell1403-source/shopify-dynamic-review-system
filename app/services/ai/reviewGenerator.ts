@@ -371,63 +371,72 @@ const DIVERSE_NAME_POOL = [
   "Michael Chang", "Sarah Jenkins", "Olivia Taylor", "Noah Wilson", "Isabelle Chen"
 ];
 
+export function getAmazonReviewStylePhotoUrl(
+  productName: string,
+  seedInput: string | number,
+  contextText: string = ""
+): string {
+  const combinedText = (productName + " " + contextText).toLowerCase();
+
+  const isBedding = combinedText.includes("sheet") || combinedText.includes("pillowcase") || combinedText.includes("duvet") || combinedText.includes("comforter") || combinedText.includes("thread count") || combinedText.includes("bedding") || combinedText.includes("bed ");
+  const isTowels = combinedText.includes("towel") || combinedText.includes("washcloth") || combinedText.includes("bath") || combinedText.includes("shower") || combinedText.includes("robe");
+  const isBeauty = combinedText.includes("skin") || combinedText.includes("cream") || combinedText.includes("serum") || combinedText.includes("lotion") || combinedText.includes("cleanser") || combinedText.includes("moisturizer") || combinedText.includes("cosmetic");
+  const isClothing = (combinedText.includes("hoodie") || combinedText.includes("sweatpants") || combinedText.includes("shirt") || combinedText.includes("jacket") || combinedText.includes("pant") || combinedText.includes("suit") || combinedText.includes("dress") || combinedText.includes("wear") || combinedText.includes("shoe") || combinedText.includes("sneaker") || combinedText.includes("apparel") || combinedText.includes("coat") || combinedText.includes("top")) && !isBedding && !isTowels;
+  const isWax = combinedText.includes("wax") || combinedText.includes("tuning") || combinedText.includes("glide") || combinedText.includes("snowboard") || combinedText.includes("ski");
+
+  const cleanName = productName
+    .replace(/^gid:\/\/shopify\/Product\//, "")
+    .replace(/[^a-zA-Z0-9\s]/g, " ")
+    .trim() || "item";
+
+  const numSeed = typeof seedInput === "number"
+    ? Math.abs(seedInput)
+    : Math.abs(String(seedInput).split("").reduce((acc, c) => acc + c.charCodeAt(0), 0));
+
+  let prompt = "";
+  if (isClothing) {
+    prompt = `authentic Amazon customer review photo, real person wearing ${cleanName}, casual indoor mirror selfie snapshot, natural lighting, high resolution user photo`;
+  } else if (isBeauty) {
+    prompt = `authentic Amazon customer review photo, real hand holding ${cleanName} skincare product container in bathroom, candid user upload photo`;
+  } else if (isBedding) {
+    prompt = `authentic Amazon customer review photo, ${cleanName} spread neatly on a bedroom bed, cozy bedroom, candid smartphone picture`;
+  } else if (isTowels) {
+    prompt = `authentic Amazon customer review photo, soft plush ${cleanName} hanging in bathroom, authentic customer upload snapshot`;
+  } else if (isWax) {
+    prompt = `authentic Amazon customer review photo, person tuning snowboard ski using ${cleanName}, outdoor snow setting, customer review photo`;
+  } else {
+    prompt = `authentic Amazon customer review photo, real person holding and using ${cleanName} product at home, candid smartphone snapshot photo`;
+  }
+
+  return `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=800&height=800&seed=${numSeed}&nologo=true`;
+}
+
 const CATEGORY_MEDIA = {
   bedding: {
-    images: [
-      "https://images.unsplash.com/photo-1616046229478-9901c5536a45?auto=format&fit=crop&w=800&q=80",
-      "https://images.unsplash.com/photo-1522771739844-6a9f6d5f14af?auto=format&fit=crop&w=800&q=80",
-      "https://images.unsplash.com/photo-1584100936595-c0654b55a2e2?auto=format&fit=crop&w=800&q=80",
-      "https://images.unsplash.com/photo-1631049307264-da0ec9d70304?auto=format&fit=crop&w=800&q=80",
-      "https://images.unsplash.com/photo-1595526114035-0d45ed16cfbf?auto=format&fit=crop&w=800&q=80"
-    ],
     videos: [
       "https://assets.mixkit.co/videos/preview/mixkit-cozy-bedroom-with-made-bed-42880-large.mp4",
       "https://assets.mixkit.co/videos/preview/mixkit-hands-folding-a-soft-towel-or-sheet-42879-large.mp4"
     ]
   },
   towels: {
-    images: [
-      "https://images.unsplash.com/photo-1616627547584-bf28cee262db?auto=format&fit=crop&w=800&q=80",
-      "https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&w=800&q=80",
-      "https://images.unsplash.com/photo-1563298723-dcfebaa392e3?auto=format&fit=crop&w=800&q=80",
-      "https://images.unsplash.com/photo-1629909613654-28e377c37b09?auto=format&fit=crop&w=800&q=80"
-    ],
     videos: [
       "https://assets.mixkit.co/videos/preview/mixkit-hands-folding-a-soft-towel-or-sheet-42879-large.mp4",
       "https://assets.mixkit.co/videos/preview/mixkit-clean-bathroom-with-towels-and-amenities-41566-large.mp4"
     ]
   },
   beauty: {
-    images: [
-      "https://images.unsplash.com/photo-1556228720-195a672e8a03?auto=format&fit=crop&w=800&q=80",
-      "https://images.unsplash.com/photo-1608248597261-833258657640?auto=format&fit=crop&w=800&q=80",
-      "https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?auto=format&fit=crop&w=800&q=80",
-      "https://images.unsplash.com/photo-1620916566398-39f1143ab7be?auto=format&fit=crop&w=800&q=80"
-    ],
     videos: [
       "https://assets.mixkit.co/videos/preview/mixkit-woman-applying-facial-cream-in-front-of-mirror-42878-large.mp4",
       "https://assets.mixkit.co/videos/preview/mixkit-dropper-putting-serum-on-hand-42877-large.mp4"
     ]
   },
   clothing: {
-    images: [
-      "https://images.unsplash.com/photo-1521572267360-ee0c2909d518?auto=format&fit=crop&w=800&q=80",
-      "https://images.unsplash.com/photo-1489987707025-afc232f7ea0f?auto=format&fit=crop&w=800&q=80",
-      "https://images.unsplash.com/photo-1542291026-7eec264c27ff?auto=format&fit=crop&w=800&q=80",
-      "https://images.unsplash.com/photo-1562157873-818bc0726f68?auto=format&fit=crop&w=800&q=80"
-    ],
     videos: [
       "https://assets.mixkit.co/videos/preview/mixkit-model-showing-stylish-jacket-and-outfit-42876-large.mp4",
       "https://assets.mixkit.co/videos/preview/mixkit-close-up-of-fabric-texture-42875-large.mp4"
     ]
   },
   general: {
-    images: [
-      "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?auto=format&fit=crop&w=800&q=80",
-      "https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=800&q=80",
-      "https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?auto=format&fit=crop&w=800&q=80",
-      "https://images.unsplash.com/photo-1546868871-7041f2a55e12?auto=format&fit=crop&w=800&q=80"
-    ],
     videos: [
       "https://assets.mixkit.co/videos/preview/mixkit-hands-holding-and-showing-a-new-product-box-42874-large.mp4",
       "https://assets.mixkit.co/videos/preview/mixkit-close-up-unboxing-of-a-product-42873-large.mp4"
@@ -534,12 +543,14 @@ function validateAndPostProcessReviews(
     let assignedImage: string | undefined = undefined;
     let assignedVideo: string | undefined = undefined;
 
+    const uniqueSeed = seed * 1000 + idx * 73 + Math.floor(Math.random() * 100);
+
     if (mediaOption === "image") {
-      assignedImage = mediaPool.images[(seed + idx) % mediaPool.images.length];
+      assignedImage = getAmazonReviewStylePhotoUrl(productName, uniqueSeed, bodyShort);
     } else if (mediaOption === "video") {
       assignedVideo = mediaPool.videos[(seed + idx) % mediaPool.videos.length];
     } else if (mediaOption === "image_video") {
-      assignedImage = mediaPool.images[(seed + idx) % mediaPool.images.length];
+      assignedImage = getAmazonReviewStylePhotoUrl(productName, uniqueSeed, bodyShort);
       assignedVideo = mediaPool.videos[(seed + idx) % mediaPool.videos.length];
     }
 
@@ -577,12 +588,14 @@ function validateAndPostProcessReviews(
     let assignedImage: string | undefined = undefined;
     let assignedVideo: string | undefined = undefined;
 
+    const uniqueSeed = seed * 1000 + idx * 73 + Math.floor(Math.random() * 100);
+
     if (mediaOption === "image") {
-      assignedImage = mediaPool.images[(seed + idx) % mediaPool.images.length];
+      assignedImage = getAmazonReviewStylePhotoUrl(productName, uniqueSeed, fallbackShort);
     } else if (mediaOption === "video") {
       assignedVideo = mediaPool.videos[(seed + idx) % mediaPool.videos.length];
     } else if (mediaOption === "image_video") {
-      assignedImage = mediaPool.images[(seed + idx) % mediaPool.images.length];
+      assignedImage = getAmazonReviewStylePhotoUrl(productName, uniqueSeed, fallbackShort);
       assignedVideo = mediaPool.videos[(seed + idx) % mediaPool.videos.length];
     }
 

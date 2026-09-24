@@ -18,11 +18,15 @@
   }
 
   let productId = rootEl ? rootEl.getAttribute('data-product-id') : null;
+  let productHandle = rootEl ? rootEl.getAttribute('data-product-handle') : null;
   let shop = rootEl ? rootEl.getAttribute('data-shop') : null;
 
   // Fallbacks if element not in DOM or data-product-id missing
   if (!productId && window.meta && window.meta.product) {
     productId = String(window.meta.product.id);
+  }
+  if (!productHandle && window.meta && window.meta.product) {
+    productHandle = window.meta.product.handle;
   }
   if (!productId && window.ShopifyAnalytics && window.ShopifyAnalytics.meta && window.ShopifyAnalytics.meta.product) {
     productId = String(window.ShopifyAnalytics.meta.product.id);
@@ -51,30 +55,48 @@
     return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase().replace(/[^A-Z]/g, '');
   }
 
+  function updateReviewBadges(avgRating, totalCount) {
+    const badgeElements = document.querySelectorAll('.dynamic-review-badge-wrapper');
+    if (!badgeElements || badgeElements.length === 0) return;
+
+    const countInt = Number(totalCount) || 0;
+    const countText = countInt === 1 ? '1 review' : `${countInt} reviews`;
+    const numRating = Number(avgRating) || 5.0;
+    const roundedStars = Math.min(Math.max(Math.round(numRating), 1), 5);
+    const starString = '★'.repeat(roundedStars) + '☆'.repeat(5 - roundedStars);
+
+    badgeElements.forEach((badge) => {
+      const ratingEl = badge.querySelector('.dynamic-review-badge-rating');
+      const countEl = badge.querySelector('.dynamic-review-badge-count');
+      const starsEl = badge.querySelector('.dynamic-review-badge-stars');
+
+      if (ratingEl) ratingEl.style.display = "none";
+      if (countEl) countEl.textContent = countText;
+      if (starsEl) starsEl.textContent = starString;
+    });
+  }
+
   function fetchReviews(pid) {
-    const endpoint = `/apps/reviews/widget?productId=${encodeURIComponent(pid)}&shop=${encodeURIComponent(shop || '')}&customerTags=${encodeURIComponent(JSON.stringify(customerTags))}`;
+    const endpoint = `/apps/reviews/widget?productId=${encodeURIComponent(pid)}&productHandle=${encodeURIComponent(productHandle || '')}&shop=${encodeURIComponent(shop || '')}&customerTags=${encodeURIComponent(JSON.stringify(customerTags))}`;
     return fetch(endpoint).then((res) => res.json());
   }
 
   fetchReviews(productId)
     .then((data) => {
+      const avg = data && data.averageRating ? data.averageRating : "5.0";
+      const count = data && data.totalCount !== undefined ? data.totalCount : (data && data.reviews ? data.reviews.length : 0);
+      updateReviewBadges(avg, count);
+
       if (data && data.reviews && data.reviews.length > 0) {
         initWidget(data.reviews, data.settings || {});
       } else {
-        // Fallback to fetch all published reviews for the shop
-        fetchReviews("all").then((fallbackData) => {
-          if (fallbackData && fallbackData.reviews && fallbackData.reviews.length > 0) {
-            initWidget(fallbackData.reviews, fallbackData.settings || {});
-          }
-        });
+        const card = document.querySelector('.rw-notification-card');
+        if (card) card.classList.remove('rw-visible');
       }
     })
     .catch(() => {
-      fetchReviews("all").then((fallbackData) => {
-        if (fallbackData && fallbackData.reviews && fallbackData.reviews.length > 0) {
-          initWidget(fallbackData.reviews, fallbackData.settings || {});
-        }
-      });
+      const card = document.querySelector('.rw-notification-card');
+      if (card) card.classList.remove('rw-visible');
     });
 
   function getMarketplaceBadgeHtml(source, externalUrl) {
@@ -120,18 +142,6 @@
     } else {
       card.className = `rw-notification-card rw-pos-${position} rw-layout-${layoutStyle}`;
     }
-
-    const leftRaySvg = `<svg class="rw-accent-ray rw-accent-left" viewBox="0 0 16 28" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M12 4L4 8" stroke="#FBBF24" stroke-width="2.5" stroke-linecap="round"/>
-      <path d="M14 14L2 14" stroke="#FBBF24" stroke-width="2.5" stroke-linecap="round"/>
-      <path d="M12 24L4 20" stroke="#FBBF24" stroke-width="2.5" stroke-linecap="round"/>
-    </svg>`;
-
-    const rightRaySvg = `<svg class="rw-accent-ray rw-accent-right" viewBox="0 0 16 28" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M4 4L12 8" stroke="#FBBF24" stroke-width="2.5" stroke-linecap="round"/>
-      <path d="M2 14L14 14" stroke="#FBBF24" stroke-width="2.5" stroke-linecap="round"/>
-      <path d="M4 24L12 20" stroke="#FBBF24" stroke-width="2.5" stroke-linecap="round"/>
-    </svg>`;
 
     function renderReview(review) {
       const name = review.reviewerName || 'Rachel V.';
@@ -180,8 +190,10 @@
                 <div class="rw-user-info">
                   <div class="rw-avatar">${escapeHtml(initials)}</div>
                   <div>
-                    <span class="rw-reviewer">${escapeHtml(name)}</span>
-                    <span class="rw-stars">${stars}</span>
+                    <div class="rw-reviewer-title">
+                      <span class="rw-reviewer">${escapeHtml(name)}</span>
+                      <span class="rw-stars">${stars}</span>
+                    </div>
                   </div>
                 </div>
                 <button class="rw-close-btn" aria-label="Close review">&times;</button>
@@ -219,8 +231,10 @@
               <div class="rw-user-info">
                 <div class="rw-avatar">${escapeHtml(initials)}</div>
                 <div>
-                  <span class="rw-reviewer">${escapeHtml(name)}</span>
-                  <span class="rw-stars">${stars}</span>
+                  <div class="rw-reviewer-title">
+                    <span class="rw-reviewer">${escapeHtml(name)}</span>
+                    <span class="rw-stars">${stars}</span>
+                  </div>
                 </div>
               </div>
               <button class="rw-close-btn" aria-label="Close review">&times;</button>
@@ -235,18 +249,22 @@
           </div>
         `;
       } else if (layoutStyle === 'layout-4') {
-        // ELEGANT QUOTE CARD (NO MEDIA)
+        // LAYOUT 4: ELEGANT QUOTE CARD (NO MEDIA)
         contentHtml = `
-          <div class="rw-quote-mark">“</div>
-          <div class="rw-header">
-            <div class="rw-user-info">
-              <span class="rw-reviewer">${escapeHtml(name)}</span>
-              <span class="rw-stars">${stars}</span>
-            </div>
+          <div class="rw-quote-header">
+            <div class="rw-quote-mark">“</div>
             <button class="rw-close-btn" aria-label="Close review">&times;</button>
           </div>
+          <div class="rw-header" style="margin-bottom: 6px;">
+            <div class="rw-user-info">
+              <div class="rw-reviewer-title">
+                <span class="rw-reviewer">${escapeHtml(name)}</span>
+                <span class="rw-stars">${stars}</span>
+              </div>
+            </div>
+          </div>
           <div class="rw-body rw-quote-body">${escapeHtml(bodyText)}</div>
-          <div class="rw-footer">
+          <div class="rw-footer" style="margin-top: 10px;">
             <span class="rw-verified-badge">✓ Verified Purchase</span>
             ${marketplaceBadge}
           </div>
@@ -258,18 +276,16 @@
             <div class="rw-user-info">
               <div class="rw-avatar">${escapeHtml(initials)}</div>
               <div>
-                <span class="rw-reviewer">${escapeHtml(name)}</span>
-                <span class="rw-stars">${stars}</span>
+                <div class="rw-reviewer-title">
+                  <span class="rw-reviewer">${escapeHtml(name)}</span>
+                  <span class="rw-stars">${stars}</span>
+                </div>
               </div>
             </div>
             <button class="rw-close-btn" aria-label="Close review">&times;</button>
           </div>
 
-          <div class="rw-body-container">
-            ${layoutStyle === 'layout-2' || layoutStyle === 'layout-5' ? leftRaySvg : ''}
-            <div class="rw-body">“${escapeHtml(bodyText)}”</div>
-            ${layoutStyle === 'layout-2' || layoutStyle === 'layout-5' ? rightRaySvg : ''}
-          </div>
+          <div class="rw-body">“${escapeHtml(bodyText)}”</div>
 
           <div class="rw-footer">
             <span class="rw-verified-badge">✓ Verified Purchase</span>
@@ -315,7 +331,10 @@
 
         setTimeout(() => {
           card.classList.remove('rw-visible');
-          scheduleNext();
+          // Allow 500ms for exit fade-out transition before scheduling next cycle
+          setTimeout(() => {
+            scheduleNext();
+          }, 500);
         }, durationMs);
       }, waitTime);
     }

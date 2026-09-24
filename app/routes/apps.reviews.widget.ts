@@ -1,6 +1,7 @@
 import { json, LoaderFunctionArgs } from "@remix-run/node";
 import db from "../db.server";
 import { ensureReviewsAndSettingsRestored } from "../services/reviewPersistence.server";
+import { getAmazonReviewStylePhotoUrl } from "../services/ai/reviewGenerator";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const url = new URL(request.url);
@@ -106,7 +107,18 @@ export async function loader({ request }: LoaderFunctionArgs) {
     }
   }
 
-  const formattedReviews = reviewsToReturn.map((r) => {
+  const rawPosition = settings?.widgetPosition || "bottom-left";
+  const widgetConfig = {
+    position: rawPosition === "bottom-right" ? "bottom-left" : rawPosition,
+    layoutStyle: settings?.widgetLayoutStyle || "layout-1",
+    delaySeconds: settings?.widgetDelaySeconds ?? 1,
+    displayDuration: settings?.widgetDisplayDuration ?? 10,
+    rotationInterval: settings?.widgetRotationInterval ?? 2,
+    maxPerSession: settings?.widgetMaxPerSession ?? 20,
+    enabled: settings?.widgetEnabled ?? true,
+  };
+
+  const formattedReviews = reviewsToReturn.map((r, idx) => {
     let parsedTags: string[] = [];
     try {
       parsedTags = JSON.parse(r.tags);
@@ -140,6 +152,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
       }).catch(() => {});
     }
 
+    let imageUrl = r.imageUrl;
+
+    // Self-healing: Ensure EVERY review returned has a valid product-specific Amazon customer review photo URL if imageUrl is missing
+    if (!imageUrl && (r.isAiGenerated || widgetConfig.layoutStyle === "layout-1" || widgetConfig.layoutStyle === "layout-2")) {
+      const prodName = productHandle || r.productHandle || rawId || r.productId || "Product";
+      imageUrl = getAmazonReviewStylePhotoUrl(prodName, r.id || idx, bodyShort);
+    }
+
     return {
       id: r.id,
       reviewerName: r.reviewerName || "Verified Customer",
@@ -149,7 +169,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       isVerifiedPurchase: r.isVerifiedPurchase,
       source: r.source,
       externalUrl: r.externalUrl || null,
-      imageUrl: r.imageUrl || null,
+      imageUrl: imageUrl || null,
       videoUrl: r.videoUrl || null,
       tags: parsedTags,
     };
@@ -168,17 +188,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
       return bMatches - aMatches;
     });
   }
-
-  const rawPosition = settings?.widgetPosition || "bottom-left";
-  const widgetConfig = {
-    position: rawPosition === "bottom-right" ? "bottom-left" : rawPosition,
-    layoutStyle: settings?.widgetLayoutStyle || "layout-1",
-    delaySeconds: settings?.widgetDelaySeconds ?? 1,
-    displayDuration: settings?.widgetDisplayDuration ?? 10,
-    rotationInterval: settings?.widgetRotationInterval ?? 2,
-    maxPerSession: settings?.widgetMaxPerSession ?? 20,
-    enabled: settings?.widgetEnabled ?? true,
-  };
 
   return json(
     {
