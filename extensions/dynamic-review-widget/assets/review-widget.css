@@ -28,23 +28,31 @@
 
 /* Position options */
 .rw-pos-bottom-left {
-  bottom: 24px;
-  left: 24px;
+  bottom: 24px !important;
+  left: 24px !important;
+  right: auto !important;
+  top: auto !important;
 }
 
 .rw-pos-bottom-right {
-  bottom: 24px;
-  right: 24px;
+  bottom: 24px !important;
+  right: 24px !important;
+  left: auto !important;
+  top: auto !important;
 }
 
 .rw-pos-top-left {
-  top: 24px;
-  left: 24px;
+  top: 24px !important;
+  left: 24px !important;
+  right: auto !important;
+  bottom: auto !important;
 }
 
 .rw-pos-top-right {
-  top: 24px;
-  right: 24px;
+  top: 24px !important;
+  right: 24px !important;
+  left: auto !important;
+  bottom: auto !important;
 }
 
 /* Card Header */

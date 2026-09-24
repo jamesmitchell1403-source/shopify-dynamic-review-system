@@ -187,7 +187,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     {
       headers: {
         "Access-Control-Allow-Origin": "*",
-        "Cache-Control": "public, max-age=60, s-maxage=300",
+        "Cache-Control": "no-cache, no-store, must-revalidate",
       },
     }
   );
