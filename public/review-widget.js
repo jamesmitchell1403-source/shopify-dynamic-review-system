@@ -137,10 +137,91 @@
       const bodyText = review.bodyShort || review.bodyFull || '';
       const marketplaceBadge = getMarketplaceBadgeHtml(review.source, review.externalUrl);
 
+      const hasImage = !!review.imageUrl;
+      const hasVideo = !!review.videoUrl;
+      const isLayout2 = hasImage && hasVideo; // Image + Video
+      const isLayout1 = (hasImage || hasVideo) && !isLayout2; // Image OR Video
+
       let contentHtml = '';
 
-      if (layoutStyle === 'layout-4') {
-        // ELEGANT QUOTE CARD
+      if (isLayout1) {
+        // LAYOUT 1: Media on Left / Review on Right (Image OR Video)
+        const isVideoMedia = hasVideo && !hasImage;
+        const mediaHtml = `
+          <div class="rw-media-left">
+            ${isVideoMedia
+              ? `<video src="${escapeHtml(review.videoUrl)}" muted playsinline></video>
+                 <div class="rw-media-play-icon">▶</div>
+                 <div class="rw-media-time-pill">0:12</div>`
+              : `<img src="${escapeHtml(review.imageUrl)}" alt="Review product photo" />`
+            }
+          </div>
+        `;
+
+        contentHtml = `
+          <div class="rw-layout-1-wrapper">
+            ${mediaHtml}
+            <div class="rw-media-right">
+              <div class="rw-header" style="margin-bottom: 4px;">
+                <div class="rw-user-info">
+                  <div class="rw-avatar">${escapeHtml(initials)}</div>
+                  <div>
+                    <span class="rw-reviewer">${escapeHtml(name)}</span>
+                    <span class="rw-stars">${stars}</span>
+                  </div>
+                </div>
+                <button class="rw-close-btn" aria-label="Close review">&times;</button>
+              </div>
+              <div class="rw-body">“${escapeHtml(bodyText)}”</div>
+              <div class="rw-footer" style="margin-top: 4px;">
+                <span class="rw-verified-badge">✓ Verified Purchase</span>
+                ${marketplaceBadge}
+              </div>
+            </div>
+          </div>
+        `;
+      } else if (isLayout2) {
+        // LAYOUT 2: Media Carousel on Top / Review Below (Image + Video)
+        contentHtml = `
+          <div class="rw-layout-2-wrapper">
+            <div class="rw-carousel-header">
+              <div class="rw-carousel-track">
+                <div class="rw-carousel-item">
+                  <img src="${escapeHtml(review.imageUrl)}" alt="Product photo" />
+                </div>
+                <div class="rw-carousel-item">
+                  <video src="${escapeHtml(review.videoUrl)}" muted playsinline></video>
+                  <div class="rw-media-play-icon">▶</div>
+                  <div class="rw-media-time-pill">0:12</div>
+                </div>
+              </div>
+              <div class="rw-carousel-dots">
+                <span class="rw-carousel-dot active"></span>
+                <span class="rw-carousel-dot"></span>
+              </div>
+            </div>
+
+            <div class="rw-header" style="margin-bottom: 4px;">
+              <div class="rw-user-info">
+                <div class="rw-avatar">${escapeHtml(initials)}</div>
+                <div>
+                  <span class="rw-reviewer">${escapeHtml(name)}</span>
+                  <span class="rw-stars">${stars}</span>
+                </div>
+              </div>
+              <button class="rw-close-btn" aria-label="Close review">&times;</button>
+            </div>
+
+            <div class="rw-body">“${escapeHtml(bodyText)}”</div>
+
+            <div class="rw-footer">
+              <span class="rw-verified-badge">✓ Verified Purchase</span>
+              ${marketplaceBadge}
+            </div>
+          </div>
+        `;
+      } else if (layoutStyle === 'layout-4') {
+        // ELEGANT QUOTE CARD (NO MEDIA)
         contentHtml = `
           <div class="rw-quote-mark">“</div>
           <div class="rw-header">
@@ -157,7 +238,7 @@
           </div>
         `;
       } else {
-        // DEFAULT / OTHER LAYOUTS
+        // NORMAL EXISTING REVIEW LAYOUT (NO MEDIA)
         contentHtml = `
           <div class="rw-header">
             <div class="rw-user-info">

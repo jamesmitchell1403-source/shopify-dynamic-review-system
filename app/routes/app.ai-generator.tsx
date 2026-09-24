@@ -732,69 +732,106 @@ export default function AiGeneratorPage() {
                         </Card>
                       )}
 
-                      {generatedReviews.map((rev, idx) => (
-                        <Card key={`rev-${idx}`} padding="500">
-                          <BlockStack gap="300">
-                            <InlineStack align="space-between">
-                              <InlineStack gap="200">
-                                <Text as="span" fontWeight="bold" variant="headingSm">{rev.reviewerName}</Text>
-                                <Text as="span" tone="subdued">{`${rev.rating} ⭐`}</Text>
-                                <Badge tone="success">Verified Purchase</Badge>
-                                {rev.imageUrl && <Badge tone="attention">📸 Image</Badge>}
-                                {rev.videoUrl && <Badge tone="warning">🎥 Video</Badge>}
+                      {generatedReviews.map((rev, idx) => {
+                        const hasImg = !!rev.imageUrl;
+                        const hasVid = !!rev.videoUrl;
+                        const isLayout2 = hasImg && hasVid;
+                        const isLayout1 = (hasImg || hasVid) && !isLayout2;
+
+                        return (
+                          <Card key={`rev-${idx}`} padding="500">
+                            <BlockStack gap="300">
+                              <InlineStack align="space-between">
+                                <InlineStack gap="200">
+                                  <Text as="span" fontWeight="bold" variant="headingSm">{rev.reviewerName}</Text>
+                                  <Text as="span" tone="subdued">{`${rev.rating} ⭐`}</Text>
+                                  <Badge tone="success">Verified Purchase</Badge>
+                                  {isLayout2 && <Badge tone="attention">Layout 2 (Image + Video Carousel)</Badge>}
+                                  {isLayout1 && <Badge tone="info">{hasVid ? "Layout 1 (Video Left)" : "Layout 1 (Image Left)"}</Badge>}
+                                  {!hasImg && !hasVid && <Badge tone="subdued">Normal Existing Layout</Badge>}
+                                </InlineStack>
+
+                                <InlineStack gap="200">
+                                  <Button
+                                    icon={ClipboardIcon}
+                                    size="micro"
+                                    onClick={() => handleCopy(rev.bodyFull, idx)}
+                                  >
+                                    {copiedIndex === idx ? "Copied!" : "Copy"}
+                                  </Button>
+
+                                  <Button
+                                    size="micro"
+                                    variant="primary"
+                                    disabled={savedStatus[idx]}
+                                    loading={savingIndex === idx}
+                                    onClick={() => handleSaveDraft(rev, idx)}
+                                  >
+                                    {savedStatus[idx] ? "Saved to Drafts ✓" : "Add as Draft Review"}
+                                  </Button>
+                                </InlineStack>
                               </InlineStack>
 
-                              <InlineStack gap="200">
-                                <Button
-                                  icon={ClipboardIcon}
-                                  size="micro"
-                                  onClick={() => handleCopy(rev.bodyFull, idx)}
-                                >
-                                  {copiedIndex === idx ? "Copied!" : "Copy"}
-                                </Button>
+                              {/* LAYOUT PREVIEW RENDERING */}
+                              {isLayout1 && (
+                                <div style={{ display: "flex", gap: "16px", padding: "14px", background: "#f8fafc", borderRadius: "12px", border: "1px solid #e2e8f0", marginTop: "4px" }}>
+                                  <div style={{ position: "relative", width: "110px", height: "110px", borderRadius: "10px", overflow: "hidden", background: "#000", flexShrink: 0 }}>
+                                    {hasVid ? (
+                                      <>
+                                        <video src={rev.videoUrl} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                                        <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", width: "32px", height: "32px", borderRadius: "50%", background: "rgba(0,0,0,0.6)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "12px", border: "1.5px solid #fff" }}>▶</div>
+                                        <div style={{ position: "absolute", bottom: "4px", left: "4px", background: "rgba(0,0,0,0.75)", color: "#fff", fontSize: "10px", padding: "2px 4px", borderRadius: "3px" }}>0:12</div>
+                                      </>
+                                    ) : (
+                                      <img src={rev.imageUrl} alt="Review product" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                                    )}
+                                  </div>
+                                  <BlockStack gap="200">
+                                    <Text as="p" fontWeight="bold" tone="subdued">Snippet: "{rev.bodyShort}"</Text>
+                                    <Text as="p">{rev.bodyFull}</Text>
+                                  </BlockStack>
+                                </div>
+                              )}
 
-                                <Button
-                                  size="micro"
-                                  variant="primary"
-                                  disabled={savedStatus[idx]}
-                                  loading={savingIndex === idx}
-                                  onClick={() => handleSaveDraft(rev, idx)}
-                                >
-                                  {savedStatus[idx] ? "Saved to Drafts ✓" : "Add as Draft Review"}
-                                </Button>
-                              </InlineStack>
-                            </InlineStack>
+                              {isLayout2 && (
+                                <div style={{ padding: "14px", background: "#f8fafc", borderRadius: "12px", border: "1px solid #e2e8f0", marginTop: "4px" }}>
+                                  <div style={{ display: "flex", gap: "10px", marginBottom: "10px" }}>
+                                    <div style={{ width: "100px", height: "100px", borderRadius: "10px", overflow: "hidden", background: "#000", flexShrink: 0 }}>
+                                      <img src={rev.imageUrl} alt="Review product" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                                    </div>
+                                    <div style={{ position: "relative", width: "100px", height: "100px", borderRadius: "10px", overflow: "hidden", background: "#000", flexShrink: 0 }}>
+                                      <video src={rev.videoUrl} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                                      <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", width: "28px", height: "28px", borderRadius: "50%", background: "rgba(0,0,0,0.6)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "12px", border: "1.5px solid #fff" }}>▶</div>
+                                      <div style={{ position: "absolute", bottom: "4px", left: "4px", background: "rgba(0,0,0,0.75)", color: "#fff", fontSize: "9px", padding: "1px 3px", borderRadius: "3px" }}>0:12</div>
+                                    </div>
+                                  </div>
+                                  <BlockStack gap="200">
+                                    <Text as="p" fontWeight="bold" tone="subdued">Snippet: "{rev.bodyShort}"</Text>
+                                    <Text as="p">{rev.bodyFull}</Text>
+                                  </BlockStack>
+                                </div>
+                              )}
 
-                            <Text as="p" fontWeight="bold" tone="subdued">
-                              Snippet (Widget): "{rev.bodyShort}"
-                            </Text>
+                              {!hasImg && !hasVid && (
+                                <>
+                                  <Text as="p" fontWeight="bold" tone="subdued">
+                                    Snippet (Widget): "{rev.bodyShort}"
+                                  </Text>
+                                  <Text as="p">{rev.bodyFull}</Text>
+                                </>
+                              )}
 
-                            <Text as="p">{rev.bodyFull}</Text>
-
-                            {rev.imageUrl && (
-                              <div style={{ marginTop: "8px" }}>
-                                <Text as="p" variant="bodyXs" fontWeight="bold" tone="subdued">Attached Product Image:</Text>
-                                <img src={rev.imageUrl} alt="Review attachment" style={{ marginTop: "4px", width: "120px", height: "120px", objectFit: "cover", borderRadius: "8px", border: "1px solid #ddd" }} />
-                              </div>
-                            )}
-
-                            {rev.videoUrl && (
-                              <div style={{ marginTop: "8px" }}>
-                                <Text as="p" variant="bodyXs" fontWeight="bold" tone="subdued">Attached Product Video:</Text>
-                                <video src={rev.videoUrl} controls style={{ marginTop: "4px", width: "220px", borderRadius: "8px", border: "1px solid #ddd" }} />
-                              </div>
-                            )}
-
-                            {rev.tags && rev.tags.length > 0 && (
-                              <InlineStack gap="100">
-                                {rev.tags.map((t: string, tidx: number) => (
-                                  <Badge key={`t-${tidx}`} tone="info">{t}</Badge>
-                                ))}
-                              </InlineStack>
-                            )}
-                          </BlockStack>
-                        </Card>
-                      ))}
+                              {rev.tags && rev.tags.length > 0 && (
+                                <InlineStack gap="100">
+                                  {rev.tags.map((t: string, tidx: number) => (
+                                    <Badge key={`t-${tidx}`} tone="info">{t}</Badge>
+                                  ))}
+                                </InlineStack>
+                              )}
+                            </BlockStack>
+                          </Card>
+                        );
+                      })}
                     </BlockStack>
                   </Layout.Section>
                 </Layout>
