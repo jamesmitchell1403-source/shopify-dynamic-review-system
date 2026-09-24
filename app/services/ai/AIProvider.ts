@@ -4,6 +4,8 @@ export interface GeneratedReview {
   bodyShort: string; // concise persuasive snippet under 140 chars
   bodyFull: string;  // detailed full review text
   tags: string[];    // USP keywords, e.g. ["dry-skin", "moisturizing", "fast-shipping"]
+  imageUrl?: string;
+  videoUrl?: string;
 }
 
 export interface ReviewGenInput {
@@ -13,6 +15,7 @@ export interface ReviewGenInput {
   description: string;
   notes?: string;
   language: string; // e.g. "en", "gu", "hi"
+  mediaOption?: "image" | "video" | "image_video" | "none";
   avoidPhrasing?: string[]; // prior outputs to avoid repetition
 }
 

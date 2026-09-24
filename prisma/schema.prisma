@@ -60,6 +60,8 @@ model Review {
   bodyFull           String?
   source             String   @default("MANUAL")
   externalUrl        String?
+  imageUrl           String?
+  videoUrl           String?
   isAiGenerated      Boolean  @default(false)
   isPublished        Boolean  @default(false)
   isVerifiedPurchase Boolean  @default(false)

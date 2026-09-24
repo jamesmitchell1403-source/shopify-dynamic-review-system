@@ -18,7 +18,7 @@ export async function action({ request }: ActionFunctionArgs) {
   const shop = session.shop;
 
   const body = await request.json();
-  const { actionType, productId, imageBase64, imageMimeType, productImageUrl, description, notes, language, provider, saveReview, manualReview, reviewsPerProduct } = body;
+  const { actionType, productId, imageBase64, imageMimeType, productImageUrl, description, notes, language, provider, saveReview, manualReview, reviewsPerProduct, mediaOption } = body;
 
   // Helper: fetch an image URL and convert to base64
   async function fetchImageAsBase64(url: string): Promise<{ base64: string; mimeType: string } | null> {
@@ -50,6 +50,8 @@ export async function action({ request }: ActionFunctionArgs) {
         rating: Number(manualReview.rating) || 5,
         bodyShort: manualReview.bodyShort || manualReview.bodyFull.substring(0, 100),
         bodyFull: manualReview.bodyFull,
+        imageUrl: manualReview.imageUrl || null,
+        videoUrl: manualReview.videoUrl || null,
         source: "MANUAL",
         isAiGenerated: false,
         isPublished: Boolean(manualReview.isPublished),
@@ -80,6 +82,8 @@ export async function action({ request }: ActionFunctionArgs) {
         rating: saveReview.rating || 5,
         bodyShort: saveReview.bodyShort || "",
         bodyFull: saveReview.bodyFull || "",
+        imageUrl: saveReview.imageUrl || null,
+        videoUrl: saveReview.videoUrl || null,
         source: "AI_GENERATED",
         isAiGenerated: true,
         isPublished: false,
@@ -182,6 +186,7 @@ export async function action({ request }: ActionFunctionArgs) {
             description: prodDescription,
             notes: prodNotes,
             language: language || "en",
+            mediaOption: mediaOption || "none",
           },
           provider
         );
@@ -197,6 +202,8 @@ export async function action({ request }: ActionFunctionArgs) {
               rating: rev.rating || 5,
               bodyShort: rev.bodyShort || "",
               bodyFull: rev.bodyFull || "",
+              imageUrl: rev.imageUrl || null,
+              videoUrl: rev.videoUrl || null,
               source: "AI_GENERATED",
               isAiGenerated: true,
               isPublished: false,
@@ -269,6 +276,7 @@ export async function action({ request }: ActionFunctionArgs) {
         notes,
         language: language || "en",
         avoidPhrasing: body.avoidPhrasing || [],
+        mediaOption: mediaOption || "none",
       },
       provider
     );

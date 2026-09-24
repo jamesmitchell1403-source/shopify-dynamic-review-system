@@ -18,6 +18,8 @@ import {
   Tabs,
   Checkbox,
   ProgressBar,
+  Modal,
+  ChoiceList,
 } from "@shopify/polaris";
 import { MagicIcon, ClipboardIcon, PlusIcon, EditIcon, CheckIcon } from "@shopify/polaris-icons";
 import { authenticate } from "../shopify.server";
@@ -155,6 +157,11 @@ export default function AiGeneratorPage() {
 
   const initialProvider = getInitialActiveProvider();
 
+  // --- STATE FOR MEDIA GENERATION MODAL ---
+  const [isMediaModalOpen, setIsMediaModalOpen] = useState<boolean>(false);
+  const [selectedMediaOption, setSelectedMediaOption] = useState<string>("image_video");
+  const [pendingGenType, setPendingGenType] = useState<"bulk" | "single" | "single_more" | null>(null);
+
   // --- STATE FOR BULK GENERATION FOR ALL PRODUCTS ---
   const [bulkProvider, setBulkProvider] = useState<string>(initialProvider);
   const [bulkLanguage, setBulkLanguage] = useState<string>("en");
@@ -250,8 +257,24 @@ export default function AiGeneratorPage() {
     }
   };
 
+  const openMediaModal = (type: "bulk" | "single" | "single_more") => {
+    setPendingGenType(type);
+    setIsMediaModalOpen(true);
+  };
+
+  const handleConfirmMediaGen = () => {
+    setIsMediaModalOpen(false);
+    if (pendingGenType === "bulk") {
+      handleBulkGenerateAll(selectedMediaOption);
+    } else if (pendingGenType === "single") {
+      handleGenerate(false, selectedMediaOption);
+    } else if (pendingGenType === "single_more") {
+      handleGenerate(true, selectedMediaOption);
+    }
+  };
+
   // Run Bulk AI Generation for ALL Products
-  const handleBulkGenerateAll = async () => {
+  const handleBulkGenerateAll = async (mediaOpt = selectedMediaOption) => {
     setBulkLoading(true);
     setBulkErrorMessage(null);
     setBulkSuccessResult(null);
@@ -265,6 +288,7 @@ export default function AiGeneratorPage() {
           provider: bulkProvider,
           language: bulkLanguage,
           reviewsPerProduct: Number(reviewsPerProduct),
+          mediaOption: mediaOpt,
         }),
       });
 
@@ -282,7 +306,7 @@ export default function AiGeneratorPage() {
   };
 
   // Run Single Product AI Generation
-  const handleGenerate = async (isMore = false) => {
+  const handleGenerate = async (isMore = false, mediaOpt = selectedMediaOption) => {
     setLoading(true);
     setErrorMessage(null);
 
@@ -303,6 +327,7 @@ export default function AiGeneratorPage() {
           language,
           provider,
           avoidPhrasing,
+          mediaOption: mediaOpt,
         }),
       });
 
@@ -401,6 +426,55 @@ export default function AiGeneratorPage() {
   return (
     <Page fullWidth title="AI & Custom Review Generator (Module B)">
       <BlockStack gap="500">
+        {/* Media Generation Selection Modal */}
+        <Modal
+          open={isMediaModalOpen}
+          onClose={() => setIsMediaModalOpen(false)}
+          title="Select Review Media Generation Option"
+          primaryAction={{
+            content: "Generate Reviews",
+            onAction: handleConfirmMediaGen,
+          }}
+          secondaryActions={[
+            {
+              content: "Cancel",
+              onAction: () => setIsMediaModalOpen(false),
+            },
+          ]}
+        >
+          <Modal.Section>
+            <BlockStack gap="400">
+              <Text as="p" tone="subdued">
+                Select the media type you want to generate alongside your customer reviews. Media is automatically matched to product features and category.
+              </Text>
+
+              <ChoiceList
+                title="Select Media Type"
+                choices={[
+                  {
+                    label: "1. Image – Generate a review with an AI-generated product image.",
+                    value: "image",
+                  },
+                  {
+                    label: "2. Video – Generate a review with an AI-generated product video.",
+                    value: "video",
+                  },
+                  {
+                    label: "3. Image + Video – Generate the review with both an image and a video.",
+                    value: "image_video",
+                  },
+                  {
+                    label: "4. No Image & Video – Generate only the text review without any image or video.",
+                    value: "none",
+                  },
+                ]}
+                selected={[selectedMediaOption]}
+                onChange={(val) => setSelectedMediaOption(val[0])}
+              />
+            </BlockStack>
+          </Modal.Section>
+        </Modal>
+
         {isScopeForbidden && (
           <Banner
             title="Updated Product Access Permission Required"
@@ -519,7 +593,7 @@ export default function AiGeneratorPage() {
                       icon={MagicIcon}
                       loading={bulkLoading}
                       disabled={!aiConfig.hasAnyKey || !bulkProvider || (bulkProvider === "claude" && !aiConfig.hasClaudeKey) || (bulkProvider === "gemini" && !aiConfig.hasGeminiKey) || (bulkProvider === "openai" && !aiConfig.hasOpenaiKey)}
-                      onClick={handleBulkGenerateAll}
+                      onClick={() => openMediaModal("bulk")}
                     >
                       {`Generate Unique Reviews for ALL ${products.length} Products`}
                     </Button>
@@ -620,7 +694,7 @@ export default function AiGeneratorPage() {
                           icon={MagicIcon}
                           loading={loading}
                           disabled={!aiConfig.hasAnyKey || !provider || (provider === "claude" && !aiConfig.hasClaudeKey) || (provider === "gemini" && !aiConfig.hasGeminiKey) || (provider === "openai" && !aiConfig.hasOpenaiKey)}
-                          onClick={() => handleGenerate(false)}
+                          onClick={() => openMediaModal("single")}
                         >
                           Generate 5 Authentic Reviews
                         </Button>
@@ -642,7 +716,7 @@ export default function AiGeneratorPage() {
                             <Badge tone="info">{`Provider: ${providerUsed}`}</Badge>
                             <Badge tone="success">{`Model: ${modelUsed}`}</Badge>
                           </InlineStack>
-                          <Button icon={PlusIcon} onClick={() => handleGenerate(true)} loading={loading}>
+                          <Button icon={PlusIcon} onClick={() => openMediaModal("single_more")} loading={loading}>
                             Generate 5 More
                           </Button>
                         </InlineStack>
@@ -666,6 +740,8 @@ export default function AiGeneratorPage() {
                                 <Text as="span" fontWeight="bold" variant="headingSm">{rev.reviewerName}</Text>
                                 <Text as="span" tone="subdued">{`${rev.rating} ⭐`}</Text>
                                 <Badge tone="success">Verified Purchase</Badge>
+                                {rev.imageUrl && <Badge tone="attention">📸 Image</Badge>}
+                                {rev.videoUrl && <Badge tone="warning">🎥 Video</Badge>}
                               </InlineStack>
 
                               <InlineStack gap="200">
@@ -694,6 +770,20 @@ export default function AiGeneratorPage() {
                             </Text>
 
                             <Text as="p">{rev.bodyFull}</Text>
+
+                            {rev.imageUrl && (
+                              <div style={{ marginTop: "8px" }}>
+                                <Text as="p" variant="bodyXs" fontWeight="bold" tone="subdued">Attached Product Image:</Text>
+                                <img src={rev.imageUrl} alt="Review attachment" style={{ marginTop: "4px", width: "120px", height: "120px", objectFit: "cover", borderRadius: "8px", border: "1px solid #ddd" }} />
+                              </div>
+                            )}
+
+                            {rev.videoUrl && (
+                              <div style={{ marginTop: "8px" }}>
+                                <Text as="p" variant="bodyXs" fontWeight="bold" tone="subdued">Attached Product Video:</Text>
+                                <video src={rev.videoUrl} controls style={{ marginTop: "4px", width: "220px", borderRadius: "8px", border: "1px solid #ddd" }} />
+                              </div>
+                            )}
 
                             {rev.tags && rev.tags.length > 0 && (
                               <InlineStack gap="100">

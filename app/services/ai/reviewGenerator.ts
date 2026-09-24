@@ -371,6 +371,70 @@ const DIVERSE_NAME_POOL = [
   "Michael Chang", "Sarah Jenkins", "Olivia Taylor", "Noah Wilson", "Isabelle Chen"
 ];
 
+const CATEGORY_MEDIA = {
+  bedding: {
+    images: [
+      "https://images.unsplash.com/photo-1616046229478-9901c5536a45?auto=format&fit=crop&w=800&q=80",
+      "https://images.unsplash.com/photo-1522771739844-6a9f6d5f14af?auto=format&fit=crop&w=800&q=80",
+      "https://images.unsplash.com/photo-1584100936595-c0654b55a2e2?auto=format&fit=crop&w=800&q=80",
+      "https://images.unsplash.com/photo-1631049307264-da0ec9d70304?auto=format&fit=crop&w=800&q=80",
+      "https://images.unsplash.com/photo-1595526114035-0d45ed16cfbf?auto=format&fit=crop&w=800&q=80"
+    ],
+    videos: [
+      "https://assets.mixkit.co/videos/preview/mixkit-cozy-bedroom-with-made-bed-42880-large.mp4",
+      "https://assets.mixkit.co/videos/preview/mixkit-hands-folding-a-soft-towel-or-sheet-42879-large.mp4"
+    ]
+  },
+  towels: {
+    images: [
+      "https://images.unsplash.com/photo-1616627547584-bf28cee262db?auto=format&fit=crop&w=800&q=80",
+      "https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&w=800&q=80",
+      "https://images.unsplash.com/photo-1563298723-dcfebaa392e3?auto=format&fit=crop&w=800&q=80",
+      "https://images.unsplash.com/photo-1629909613654-28e377c37b09?auto=format&fit=crop&w=800&q=80"
+    ],
+    videos: [
+      "https://assets.mixkit.co/videos/preview/mixkit-hands-folding-a-soft-towel-or-sheet-42879-large.mp4",
+      "https://assets.mixkit.co/videos/preview/mixkit-clean-bathroom-with-towels-and-amenities-41566-large.mp4"
+    ]
+  },
+  beauty: {
+    images: [
+      "https://images.unsplash.com/photo-1556228720-195a672e8a03?auto=format&fit=crop&w=800&q=80",
+      "https://images.unsplash.com/photo-1608248597261-833258657640?auto=format&fit=crop&w=800&q=80",
+      "https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?auto=format&fit=crop&w=800&q=80",
+      "https://images.unsplash.com/photo-1620916566398-39f1143ab7be?auto=format&fit=crop&w=800&q=80"
+    ],
+    videos: [
+      "https://assets.mixkit.co/videos/preview/mixkit-woman-applying-facial-cream-in-front-of-mirror-42878-large.mp4",
+      "https://assets.mixkit.co/videos/preview/mixkit-dropper-putting-serum-on-hand-42877-large.mp4"
+    ]
+  },
+  clothing: {
+    images: [
+      "https://images.unsplash.com/photo-1521572267360-ee0c2909d518?auto=format&fit=crop&w=800&q=80",
+      "https://images.unsplash.com/photo-1489987707025-afc232f7ea0f?auto=format&fit=crop&w=800&q=80",
+      "https://images.unsplash.com/photo-1542291026-7eec264c27ff?auto=format&fit=crop&w=800&q=80",
+      "https://images.unsplash.com/photo-1562157873-818bc0726f68?auto=format&fit=crop&w=800&q=80"
+    ],
+    videos: [
+      "https://assets.mixkit.co/videos/preview/mixkit-model-showing-stylish-jacket-and-outfit-42876-large.mp4",
+      "https://assets.mixkit.co/videos/preview/mixkit-close-up-of-fabric-texture-42875-large.mp4"
+    ]
+  },
+  general: {
+    images: [
+      "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?auto=format&fit=crop&w=800&q=80",
+      "https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=800&q=80",
+      "https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?auto=format&fit=crop&w=800&q=80",
+      "https://images.unsplash.com/photo-1546868871-7041f2a55e12?auto=format&fit=crop&w=800&q=80"
+    ],
+    videos: [
+      "https://assets.mixkit.co/videos/preview/mixkit-hands-holding-and-showing-a-new-product-box-42874-large.mp4",
+      "https://assets.mixkit.co/videos/preview/mixkit-close-up-unboxing-of-a-product-42873-large.mp4"
+    ]
+  }
+};
+
 function validateAndPostProcessReviews(
   reviews: GeneratedReview[],
   input: ReviewGenInput
@@ -390,11 +454,19 @@ function validateAndPostProcessReviews(
   const lowerText = (productName + " " + (input.description || "")).toLowerCase();
   const isBedding = lowerText.includes("sheet") || lowerText.includes("pillowcase") || lowerText.includes("duvet") || lowerText.includes("thread count") || lowerText.includes("bedding");
   const isTowels = lowerText.includes("towel") || lowerText.includes("washcloth") || lowerText.includes("bath") || lowerText.includes("robe");
+  const isBeauty = lowerText.includes("skin") || lowerText.includes("cream") || lowerText.includes("serum") || lowerText.includes("lotion") || lowerText.includes("cleanser");
   const isClothing = (lowerText.includes("hoodie") || lowerText.includes("shirt") || lowerText.includes("jacket") || lowerText.includes("pant") || lowerText.includes("dress")) && !isBedding && !isTowels;
 
-  let nameIndex = Math.abs(productName.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0));
+  const categoryKey = isBedding ? "bedding" : isTowels ? "towels" : isBeauty ? "beauty" : isClothing ? "clothing" : "general";
+  const mediaPool = CATEGORY_MEDIA[categoryKey];
 
-  for (const r of reviews) {
+  const seed = Math.abs(productName.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0));
+  let nameIndex = seed;
+
+  const mediaOption = input.mediaOption || "none";
+
+  for (let idx = 0; idx < reviews.length; idx++) {
+    const r = reviews[idx];
     let reviewerName = (r.reviewerName || "").trim();
     if (!reviewerName || reviewerName.toLowerCase().startsWith("customer")) {
       reviewerName = DIVERSE_NAME_POOL[nameIndex++ % DIVERSE_NAME_POOL.length];
@@ -459,17 +531,32 @@ function validateAndPostProcessReviews(
     }
     usedShorts.add(uniqueShortKey);
 
+    let assignedImage: string | undefined = undefined;
+    let assignedVideo: string | undefined = undefined;
+
+    if (mediaOption === "image") {
+      assignedImage = mediaPool.images[(seed + idx) % mediaPool.images.length];
+    } else if (mediaOption === "video") {
+      assignedVideo = mediaPool.videos[(seed + idx) % mediaPool.videos.length];
+    } else if (mediaOption === "image_video") {
+      assignedImage = mediaPool.images[(seed + idx) % mediaPool.images.length];
+      assignedVideo = mediaPool.videos[(seed + idx) % mediaPool.videos.length];
+    }
+
     validated.push({
       reviewerName,
       rating: Math.min(5, Math.max(1, Number(r.rating) || 5)),
       bodyShort: bodyShort.substring(0, 160),
       bodyFull,
       tags: Array.isArray(r.tags) && r.tags.length > 0 ? r.tags : ["quality-build", "verified-purchase"],
+      imageUrl: assignedImage,
+      videoUrl: assignedVideo,
     });
   }
 
   // Ensure returned set matches requested count
   while (validated.length < reqCount) {
+    const idx = validated.length;
     let fallbackName = DIVERSE_NAME_POOL[nameIndex++ % DIVERSE_NAME_POOL.length];
     while (usedNames.has(fallbackName.toLowerCase())) {
       fallbackName = DIVERSE_NAME_POOL[nameIndex++ % DIVERSE_NAME_POOL.length];
@@ -487,12 +574,26 @@ function validateAndPostProcessReviews(
       fallbackFull = `${shortName} absorbs water effortlessly, feels soft and thick, and dries fast on the bathroom rack.`;
     }
 
+    let assignedImage: string | undefined = undefined;
+    let assignedVideo: string | undefined = undefined;
+
+    if (mediaOption === "image") {
+      assignedImage = mediaPool.images[(seed + idx) % mediaPool.images.length];
+    } else if (mediaOption === "video") {
+      assignedVideo = mediaPool.videos[(seed + idx) % mediaPool.videos.length];
+    } else if (mediaOption === "image_video") {
+      assignedImage = mediaPool.images[(seed + idx) % mediaPool.images.length];
+      assignedVideo = mediaPool.videos[(seed + idx) % mediaPool.videos.length];
+    }
+
     validated.push({
       reviewerName: fallbackName,
       rating: 5,
       bodyShort: fallbackShort,
       bodyFull: fallbackFull,
       tags: ["practical-design", "verified-purchase"],
+      imageUrl: assignedImage,
+      videoUrl: assignedVideo,
     });
   }
 
