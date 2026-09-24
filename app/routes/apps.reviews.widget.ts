@@ -149,6 +149,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
       isVerifiedPurchase: r.isVerifiedPurchase,
       source: r.source,
       externalUrl: r.externalUrl || null,
+      imageUrl: r.imageUrl || null,
+      videoUrl: r.videoUrl || null,
       tags: parsedTags,
     };
   });
