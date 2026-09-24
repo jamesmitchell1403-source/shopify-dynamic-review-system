@@ -76,20 +76,8 @@
     });
   }
 
-  // Detect origin from script src so widget fetch works on Shopify app proxy AND external React apps
-  let scriptOrigin = '';
-  if (document.currentScript && document.currentScript.src) {
-    try {
-      const u = new URL(document.currentScript.src);
-      if (u.origin && u.origin !== window.location.origin) {
-        scriptOrigin = u.origin;
-      }
-    } catch (e) {}
-  }
-
   function fetchReviews(pid) {
-    const baseUrl = scriptOrigin ? `${scriptOrigin}/apps/reviews/widget` : `/apps/reviews/widget`;
-    const endpoint = `${baseUrl}?productId=${encodeURIComponent(pid)}&productHandle=${encodeURIComponent(productHandle || '')}&shop=${encodeURIComponent(shop || '')}&customerTags=${encodeURIComponent(JSON.stringify(customerTags))}`;
+    const endpoint = `/apps/reviews/widget?productId=${encodeURIComponent(pid)}&productHandle=${encodeURIComponent(productHandle || '')}&shop=${encodeURIComponent(shop || '')}&customerTags=${encodeURIComponent(JSON.stringify(customerTags))}`;
     return fetch(endpoint).then((res) => res.json());
   }
 
