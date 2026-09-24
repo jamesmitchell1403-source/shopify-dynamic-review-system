@@ -39,9 +39,108 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const sourceFilter = url.searchParams.get("source") || "ALL";
   const statusFilter = url.searchParams.get("status") || "ALL";
   const searchQuery = url.searchParams.get("search") || "";
+  const productFilter = url.searchParams.get("product") || "ALL";
+  const productSearchQuery = url.searchParams.get("productSearch") || "";
   const page = Math.max(Number(url.searchParams.get("page")) || 1, 1);
   const pageSize = 10;
 
+  // 1. Fetch catalog products to build product title mapping
+  const catalogProductMap = new Map<string, string>();
+  try {
+    const res = await admin.graphql(`
+      #graphql
+      query getProductsForReviewsList {
+        products(first: 250) {
+          nodes {
+            id
+            title
+            handle
+          }
+        }
+      }
+    `);
+    const data = await res.json();
+    const nodes = data?.data?.products?.nodes || [];
+    for (const node of nodes) {
+      catalogProductMap.set(node.id, node.title);
+      const rawId = node.id.replace("gid://shopify/Product/", "");
+      catalogProductMap.set(rawId, node.title);
+      if (node.handle) {
+        catalogProductMap.set(node.handle, node.title);
+      }
+    }
+  } catch (err) {
+    console.warn("GraphQL product fetch warning in reviews loader:", err);
+  }
+
+  // Helper function to resolve product title for a review record
+  const resolveProductTitle = (r: any): string => {
+    if (r.productId && catalogProductMap.has(r.productId)) {
+      return catalogProductMap.get(r.productId)!;
+    }
+    const rawId = r.productId ? r.productId.replace(/^gid:\/\/shopify\/Product\//, "") : "";
+    if (rawId && catalogProductMap.has(rawId)) {
+      return catalogProductMap.get(rawId)!;
+    }
+    if (r.productHandle && catalogProductMap.has(r.productHandle)) {
+      return catalogProductMap.get(r.productHandle)!;
+    }
+
+    // Parse snippet " on <Product Title>" if present
+    const match = (r.bodyShort || "").match(/\son\s+(.+?)(?:\.|\,|$)/i);
+    if (match && match[1] && match[1].trim().length > 2) {
+      return match[1].trim();
+    }
+
+    if (r.productHandle && r.productHandle !== "all") {
+      return r.productHandle.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+    }
+
+    return "General Store Product";
+  };
+
+  // 2. Fetch all reviews for this shop to compute product summary stats
+  let allShopReviews: any[] = [];
+  try {
+    allShopReviews = await db.review.findMany({
+      where: { shop },
+      select: {
+        id: true,
+        productId: true,
+        productHandle: true,
+        bodyShort: true,
+        isPublished: true,
+      },
+    });
+  } catch (e) {
+    console.error("Error fetching all reviews for stats:", e);
+  }
+
+  // Group stats by product title
+  const productStatsMap = new Map<string, { title: string; count: number; published: number; pending: number }>();
+  
+  for (const r of allShopReviews) {
+    const title = resolveProductTitle(r);
+    if (!productStatsMap.has(title)) {
+      productStatsMap.set(title, { title, count: 0, published: 0, pending: 0 });
+    }
+    const stat = productStatsMap.get(title)!;
+    stat.count += 1;
+    if (r.isPublished) stat.published += 1;
+    else stat.pending += 1;
+  }
+
+  // Build sorted product options list for dropdown
+  let productOptionsList = Array.from(productStatsMap.values()).sort((a, b) => b.count - a.count);
+
+  // If user searched for product title via productSearchQuery, filter the dropdown options
+  if (productSearchQuery.trim() !== "") {
+    productOptionsList = productOptionsList.filter((p) =>
+      p.title.toLowerCase().includes(productSearchQuery.toLowerCase().trim())
+    );
+  }
+
+  // 3. Construct database query for reviews table
   const whereClause: any = { shop };
   if (sourceFilter !== "ALL") whereClause.source = sourceFilter;
   if (statusFilter === "PUBLISHED") whereClause.isPublished = true;
@@ -60,17 +159,47 @@ export async function loader({ request }: LoaderFunctionArgs) {
   let reviews: any[] = [];
 
   try {
-    totalReviewsCount = await db.review.count({ where: whereClause });
-    totalPages = Math.ceil(totalReviewsCount / pageSize) || 1;
-
-    reviews = await db.review.findMany({
+    const rawReviews = await db.review.findMany({
       where: whereClause,
       orderBy: { createdAt: "desc" },
-      skip: (page - 1) * pageSize,
-      take: pageSize,
     });
+
+    // Attach computed productTitle to every review
+    let enrichedReviews = rawReviews.map((r) => ({
+      ...r,
+      productTitle: resolveProductTitle(r),
+    }));
+
+    // Filter by selected productTitle if productFilter is active
+    if (productFilter !== "ALL") {
+      enrichedReviews = enrichedReviews.filter((r) =>
+        r.productTitle.toLowerCase() === productFilter.toLowerCase() ||
+        r.productId === productFilter ||
+        r.productHandle === productFilter
+      );
+    }
+
+    // Filter by product search query if typed
+    if (productSearchQuery.trim() !== "") {
+      enrichedReviews = enrichedReviews.filter((r) =>
+        r.productTitle.toLowerCase().includes(productSearchQuery.toLowerCase().trim())
+      );
+    }
+
+    totalReviewsCount = enrichedReviews.length;
+    totalPages = Math.ceil(totalReviewsCount / pageSize) || 1;
+
+    // Apply pagination slice
+    const startIndex = (page - 1) * pageSize;
+    reviews = enrichedReviews.slice(startIndex, startIndex + pageSize);
   } catch (err) {
     console.error("Reviews loader DB error:", err);
+  }
+
+  // Get selected product summary if a product filter is active
+  let selectedProductSummary = null;
+  if (productFilter !== "ALL" && productStatsMap.has(productFilter)) {
+    selectedProductSummary = productStatsMap.get(productFilter);
   }
 
   return json({
@@ -78,10 +207,15 @@ export async function loader({ request }: LoaderFunctionArgs) {
     sourceFilter,
     statusFilter,
     searchQuery,
+    productFilter,
+    productSearchQuery,
+    productOptionsList,
+    selectedProductSummary,
     page,
     pageSize,
     totalReviewsCount,
     totalPages,
+    totalShopReviewsCount: allShopReviews.length,
   });
 }
 
@@ -157,10 +291,15 @@ export default function ReviewsPage() {
     sourceFilter,
     statusFilter,
     searchQuery,
+    productFilter,
+    productSearchQuery,
+    productOptionsList,
+    selectedProductSummary,
     page,
     pageSize,
     totalReviewsCount,
     totalPages,
+    totalShopReviewsCount,
   } = useLoaderData<typeof loader>();
 
   const submit = useSubmit();
@@ -168,6 +307,7 @@ export default function ReviewsPage() {
   const isSubmitting = navigation.state === "submitting";
 
   const [searchValue, setSearchValue] = useState<string>(searchQuery);
+  const [productSearchValue, setProductSearchValue] = useState<string>(productSearchQuery);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   // EDIT MODAL STATE
@@ -209,10 +349,10 @@ export default function ReviewsPage() {
     setEditModalOpen(false);
   };
 
-  const allCurrentIds = reviews.map((r) => r.id);
+  const allCurrentIds = reviews.map((r: any) => r.id);
   const allSelected =
     allCurrentIds.length > 0 &&
-    allCurrentIds.every((id) => selectedIds.has(id));
+    allCurrentIds.every((id: string) => selectedIds.has(id));
   const someSelected = selectedIds.size > 0;
 
   const toggleSelectAll = useCallback(() => {
@@ -243,9 +383,11 @@ export default function ReviewsPage() {
     navigate(`/app/reviews?${params.toString()}`);
   };
 
-  const handleSourceChange = (val: string) => updateFilters({ source: val });
-  const handleStatusChange = (val: string) => updateFilters({ status: val });
-  const handleSearchSubmit = () => updateFilters({ search: searchValue });
+  const handleProductChange = (val: string) => updateFilters({ product: val, page: "1" });
+  const handleSourceChange = (val: string) => updateFilters({ source: val, page: "1" });
+  const handleStatusChange = (val: string) => updateFilters({ status: val, page: "1" });
+  const handleSearchSubmit = () => updateFilters({ search: searchValue, page: "1" });
+  const handleProductSearchSubmit = () => updateFilters({ productSearch: productSearchValue, page: "1" });
 
   const handleTogglePublish = (id: string) => {
     const fd = new FormData();
@@ -300,7 +442,7 @@ export default function ReviewsPage() {
     }
   };
 
-  const startRecord = (page - 1) * pageSize + 1;
+  const startRecord = totalReviewsCount > 0 ? (page - 1) * pageSize + 1 : 0;
   const endRecord = Math.min(page * pageSize, totalReviewsCount);
 
   // Select-all header checkbox cell
@@ -315,7 +457,7 @@ export default function ReviewsPage() {
     </div>
   );
 
-  const rows = reviews.map((r) => [
+  const rows = reviews.map((r: any) => [
     <div
       key={`cb-${r.id}`}
       style={{ display: "flex", alignItems: "center", paddingLeft: "2px" }}
@@ -335,6 +477,12 @@ export default function ReviewsPage() {
       {r.isVerifiedPurchase && (
         <Badge tone="success">Verified Purchase</Badge>
       )}
+    </BlockStack>,
+
+    <BlockStack key={`p-${r.id}`} gap="050">
+      <Text as="span" fontWeight="bold" variant="bodySm">
+        {r.productTitle}
+      </Text>
     </BlockStack>,
 
     `${r.rating} ⭐`,
@@ -397,25 +545,48 @@ export default function ReviewsPage() {
       <BlockStack gap="500">
         <Banner title="Review Moderation Queue" tone="info">
           <p>
-            Manage, verify, edit, approve, and publish customer reviews. Use the full-width management table to filter reviews by marketplace source or moderation status.
+            Manage, verify, edit, approve, and publish customer reviews. Use the full-width management table to filter reviews by product title, marketplace source, or moderation status.
           </p>
         </Banner>
+
+        {selectedProductSummary && (
+          <Banner tone="info" title={`Product Overview: ${selectedProductSummary.title}`}>
+            <p style={{ fontWeight: 600 }}>
+              Total Reviews for this Product: {selectedProductSummary.count} review{selectedProductSummary.count > 1 ? "s" : ""} 
+              ({selectedProductSummary.published} Published, {selectedProductSummary.pending} Pending)
+            </p>
+          </Banner>
+        )}
 
         <Card padding="500">
           <BlockStack gap="400">
             {/* SEARCH AND BULK ACTIONS */}
             <InlineStack align="space-between" blockAlign="center">
-              <div style={{ width: "380px" }}>
-                <TextField
-                  label=""
-                  labelHidden
-                  placeholder="Search by reviewer name, keyword, or snippet..."
-                  value={searchValue}
-                  onChange={setSearchValue}
-                  prefix={<SearchIcon />}
-                  onBlur={handleSearchSubmit}
-                  autoComplete="off"
-                />
+              <div style={{ display: "flex", gap: "12px", width: "650px" }}>
+                <div style={{ flex: 1 }}>
+                  <TextField
+                    label=""
+                    labelHidden
+                    placeholder="Search by Product Title (e.g. Hoodie, Sheet Set)..."
+                    value={productSearchValue}
+                    onChange={setProductSearchValue}
+                    prefix={<SearchIcon />}
+                    onBlur={handleProductSearchSubmit}
+                    autoComplete="off"
+                  />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <TextField
+                    label=""
+                    labelHidden
+                    placeholder="Search by reviewer name or text snippet..."
+                    value={searchValue}
+                    onChange={setSearchValue}
+                    prefix={<SearchIcon />}
+                    onBlur={handleSearchSubmit}
+                    autoComplete="off"
+                  />
+                </div>
               </div>
 
               <InlineStack gap="200">
@@ -449,7 +620,20 @@ export default function ReviewsPage() {
             </InlineStack>
 
             {/* FILTERS */}
-            <InlineGrid columns={2} gap="400">
+            <InlineGrid columns={3} gap="400">
+              <Select
+                label="Filter by Product Title"
+                options={[
+                  { label: `All Products (${totalShopReviewsCount} Total Reviews)`, value: "ALL" },
+                  ...productOptionsList.map((p: any) => ({
+                    label: `${p.title} (${p.count} review${p.count > 1 ? "s" : ""})`,
+                    value: p.title,
+                  })),
+                ]}
+                value={productFilter}
+                onChange={handleProductChange}
+              />
+
               <Select
                 label="Filter by Source"
                 options={[
@@ -459,7 +643,6 @@ export default function ReviewsPage() {
                   { label: "Amazon Imported", value: "IMPORTED_AMAZON" },
                   { label: "Flipkart Imported", value: "IMPORTED_FLIPKART" },
                   { label: "Alibaba Imported", value: "IMPORTED_ALIBABA" },
-                  { label: "QR Code Submissions", value: "QR_SUBMITTED" },
                 ]}
                 value={sourceFilter}
                 onChange={handleSourceChange}
@@ -510,10 +693,11 @@ export default function ReviewsPage() {
               </Text>
             ) : (
               <DataTable
-                columnContentTypes={["text", "text", "text", "text", "text", "text", "text"]}
+                columnContentTypes={["text", "text", "text", "text", "text", "text", "text", "text"]}
                 headings={[
                   selectAllCell,
                   "Reviewer",
+                  "Product Title",
                   "Rating",
                   "Snippet & Review Text",
                   "Source",
@@ -605,7 +789,6 @@ export default function ReviewsPage() {
                   { label: "Amazon Imported", value: "IMPORTED_AMAZON" },
                   { label: "Flipkart Imported", value: "IMPORTED_FLIPKART" },
                   { label: "Alibaba Imported", value: "IMPORTED_ALIBABA" },
-                  { label: "QR Code Submitted", value: "QR_SUBMITTED" },
                 ]}
                 value={editSource}
                 onChange={setEditSource}
