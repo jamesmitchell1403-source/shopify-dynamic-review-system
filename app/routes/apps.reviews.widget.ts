@@ -48,7 +48,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   if (isAllProductsRequest) {
     productReviews = await db.review.findMany({
       where: {
-        shop,
+        ...(shop ? { shop } : {}),
         isPublished: true,
       },
       orderBy: { createdAt: "desc" },
@@ -57,13 +57,25 @@ export async function loader({ request }: LoaderFunctionArgs) {
   } else {
     productReviews = await db.review.findMany({
       where: {
-        shop,
+        ...(shop ? { shop } : {}),
         isPublished: true,
         ...(whereProductMatch.length > 0 ? { OR: whereProductMatch } : {}),
       },
       orderBy: { createdAt: "desc" },
       take: 100,
     });
+
+    // Fall back to shop's overall published reviews if product-specific reviews are 0
+    if (productReviews.length === 0) {
+      productReviews = await db.review.findMany({
+        where: {
+          ...(shop ? { shop } : {}),
+          isPublished: true,
+        },
+        orderBy: { createdAt: "desc" },
+        take: 100,
+      });
+    }
   }
 
   const safeProductReviews = productReviews.filter((r) => r.isPublished);
