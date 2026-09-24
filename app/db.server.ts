@@ -75,6 +75,8 @@ export async function ensureTablesExist() {
             bodyFull TEXT,
             source TEXT DEFAULT 'MANUAL',
             externalUrl TEXT,
+            imageUrl TEXT,
+            videoUrl TEXT,
             isAiGenerated INTEGER DEFAULT 0,
             isPublished INTEGER DEFAULT 0,
             isVerifiedPurchase INTEGER DEFAULT 0,
@@ -85,6 +87,13 @@ export async function ensureTablesExist() {
             updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
           );
         `);
+
+        try {
+          await prisma.$executeRawUnsafe(`ALTER TABLE Review ADD COLUMN imageUrl TEXT;`);
+        } catch (_) {}
+        try {
+          await prisma.$executeRawUnsafe(`ALTER TABLE Review ADD COLUMN videoUrl TEXT;`);
+        } catch (_) {}
 
         await prisma.$executeRawUnsafe(`
           CREATE TABLE IF NOT EXISTS ImportBatch (
