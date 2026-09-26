@@ -421,7 +421,6 @@ export function getAmazonReviewStylePhotoUrl(
   const isTowels = combinedText.includes("towel") || combinedText.includes("washcloth") || combinedText.includes("bath") || combinedText.includes("shower") || combinedText.includes("robe");
   const isBeauty = combinedText.includes("skin") || combinedText.includes("cream") || combinedText.includes("serum") || combinedText.includes("lotion") || combinedText.includes("cleanser") || combinedText.includes("moisturizer") || combinedText.includes("cosmetic");
   const isClothing = (combinedText.includes("hoodie") || combinedText.includes("sweatpants") || combinedText.includes("shirt") || combinedText.includes("jacket") || combinedText.includes("pant") || combinedText.includes("suit") || combinedText.includes("dress") || combinedText.includes("wear") || combinedText.includes("shoe") || combinedText.includes("sneaker") || combinedText.includes("apparel") || combinedText.includes("coat") || combinedText.includes("top")) && !isBedding && !isTowels;
-  const isWax = combinedText.includes("wax") || combinedText.includes("tuning") || combinedText.includes("glide") || combinedText.includes("snowboard") || combinedText.includes("ski");
 
   const cleanName = productName
     .replace(/^gid:\/\/shopify\/Product\//, "")
@@ -432,31 +431,19 @@ export function getAmazonReviewStylePhotoUrl(
     ? Math.abs(seedInput)
     : Math.abs(String(seedInput).split("").reduce((acc, c) => acc + c.charCodeAt(0), 0));
 
-  // Determine photorealistic pool for category
   let pool = REAL_HUMAN_GENERAL_PHOTOS;
-  let fluxPrompt = `raw 35mm photo of real human person holding and using ${cleanName}, authentic Amazon customer review upload, real face, natural room lighting, unedited iPhone snapshot, no cartoon, no anime, no 3d render`;
-
   if (isClothing) {
     pool = REAL_HUMAN_CLOTHING_PHOTOS;
-    fluxPrompt = `raw 35mm smartphone mirror selfie of real human person wearing ${cleanName} hoodie apparel, authentic Amazon customer review upload, real face, natural indoor room lighting, unedited iPhone snapshot, sharp focus on fabric texture, no cartoon, no anime, no 3d render, no digital art`;
   } else if (isBeauty) {
     pool = REAL_HUMAN_BEAUTY_PHOTOS;
-    fluxPrompt = `raw 35mm photo of real human hand holding ${cleanName} skincare product container in bathroom, authentic Amazon customer review photo, natural indoor lighting, unedited smartphone photo, no cartoon, no anime`;
   } else if (isBedding) {
     pool = REAL_HUMAN_BEDDING_PHOTOS;
-    fluxPrompt = `raw 35mm photo of ${cleanName} spread neatly on a bedroom mattress, authentic Amazon customer review upload, cozy home bedroom, unedited smartphone photo, no cartoon, no anime`;
   } else if (isTowels) {
     pool = REAL_HUMAN_TOWELS_PHOTOS;
-    fluxPrompt = `raw 35mm photo of soft plush ${cleanName} hanging in bathroom, authentic Amazon customer review upload, real home bathroom, unedited smartphone photo, no cartoon, no anime`;
   }
 
-  // Alternate between Flux photorealistic AI prompt and curated real-human photography pool to ensure zero cartoon look
-  if (numSeed % 2 === 0) {
-    return `https://image.pollinations.ai/prompt/${encodeURIComponent(fluxPrompt)}?width=800&height=800&seed=${numSeed}&model=flux&nologo=true`;
-  } else {
-    const selectedPhoto = pool[numSeed % pool.length];
-    return `${selectedPhoto}&prod=${encodeURIComponent(cleanName)}&sig=${numSeed}`;
-  }
+  const selectedPhoto = pool[numSeed % pool.length];
+  return `${selectedPhoto}&prod=${encodeURIComponent(cleanName)}&sig=${numSeed}`;
 }
 
 const CATEGORY_MEDIA = {

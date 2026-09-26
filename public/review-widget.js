@@ -317,6 +317,29 @@
       }
     }
 
+    function displayReviewWithMediaPreload(review, showCallback) {
+      renderReview(review);
+
+      const imgEl = card.querySelector('.rw-media-left img, .rw-carousel-track img');
+      if (imgEl && imgEl.src) {
+        if (imgEl.complete && imgEl.naturalWidth > 0) {
+          showCallback();
+        } else {
+          let timer = setTimeout(showCallback, 1200);
+          imgEl.onload = function () {
+            clearTimeout(timer);
+            showCallback();
+          };
+          imgEl.onerror = function () {
+            clearTimeout(timer);
+            showCallback();
+          };
+        }
+      } else {
+        showCallback();
+      }
+    }
+
     function scheduleNext() {
       if (!reviews || reviews.length === 0) return;
 
@@ -325,8 +348,14 @@
 
       setTimeout(() => {
         const review = reviews[currentIndex % reviews.length];
-        renderReview(review);
-        card.classList.add('rw-visible');
+        let hasShown = false;
+        const triggerShow = () => {
+          if (hasShown) return;
+          hasShown = true;
+          card.classList.add('rw-visible');
+        };
+
+        displayReviewWithMediaPreload(review, triggerShow);
         currentIndex++;
 
         setTimeout(() => {
