@@ -364,16 +364,24 @@
         return;
       }
 
-      let loaded = 0;
+      let loadedCount = 0;
       let hasCalled = false;
 
       const done = () => {
         if (hasCalled) return;
-        loaded++;
-        if (loaded >= urls.length) {
+        loadedCount++;
+        if (loadedCount >= urls.length) {
           hasCalled = true;
           renderReview(review);
-          showCallback();
+          if (window.requestAnimationFrame) {
+            requestAnimationFrame(() => {
+              requestAnimationFrame(() => {
+                showCallback();
+              });
+            });
+          } else {
+            showCallback();
+          }
         }
       };
 
@@ -383,15 +391,25 @@
           renderReview(review);
           showCallback();
         }
-      }, 2500);
+      }, 3000);
 
       urls.forEach(function (url) {
         const img = new Image();
-        img.onload = done;
+        img.onload = function() {
+          if (img.decode) {
+            img.decode().then(done).catch(done);
+          } else {
+            done();
+          }
+        };
         img.onerror = done;
         img.src = url;
         if (img.complete && img.naturalWidth > 0) {
-          done();
+          if (img.decode) {
+            img.decode().then(done).catch(done);
+          } else {
+            done();
+          }
         }
       });
     }
@@ -409,18 +427,18 @@
           if (hasShown) return;
           hasShown = true;
           card.classList.add('rw-visible');
+
+          // Start display duration timer ONLY AFTER card becomes visible!
+          setTimeout(() => {
+            card.classList.remove('rw-visible');
+            setTimeout(() => {
+              scheduleNext();
+            }, 500);
+          }, durationMs);
         };
 
         displayReviewWithMediaPreload(review, triggerShow);
         currentIndex++;
-
-        setTimeout(() => {
-          card.classList.remove('rw-visible');
-          // Allow 500ms for exit fade-out transition before scheduling next cycle
-          setTimeout(() => {
-            scheduleNext();
-          }, 500);
-        }, durationMs);
       }, waitTime);
     }
 

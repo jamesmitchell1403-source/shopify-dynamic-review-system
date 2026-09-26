@@ -18,7 +18,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     const link = document.createElement('link');
     link.id = 'rw-widget-style';
     link.rel = 'stylesheet';
-    link.href = '/apps/reviews/widget.css?v=3.5';
+    link.href = '/apps/reviews/widget.css?v=4.0';
     document.head.appendChild(link);
   }
 })();
