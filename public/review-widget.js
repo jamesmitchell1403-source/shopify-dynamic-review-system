@@ -133,6 +133,20 @@
     let currentIndex = 0;
     let isFirstShow = true;
 
+    // Preload ALL review images and avatars in advance at startup
+    if (reviews && reviews.length > 0) {
+      reviews.forEach(function (r) {
+        if (r.imageUrl) {
+          const img1 = new Image();
+          img1.src = r.imageUrl;
+        }
+        if (r.avatarUrl) {
+          const img2 = new Image();
+          img2.src = r.avatarUrl;
+        }
+      });
+    }
+
     // Check if card already exists to avoid duplicate widgets
     let card = document.querySelector('.rw-notification-card');
     if (!card) {
@@ -154,6 +168,11 @@
       const hasVideo = !!review.videoUrl;
       const isLayout2 = hasImage && hasVideo; // Image + Video
       const isLayout1 = (hasImage || hasVideo) && !isLayout2; // Image OR Video
+
+      const avatarPhoto = review.avatarUrl || (review.imageUrl && !isLayout1 && !isLayout2 ? review.imageUrl : null);
+      const avatarHtml = avatarPhoto
+        ? `<img src="${escapeHtml(avatarPhoto)}" alt="${escapeHtml(name)}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;display:block;" onerror="this.style.display='none';" />`
+        : escapeHtml(initials);
 
       if (isLayout1) {
         card.classList.add('rw-has-media-1');
@@ -188,7 +207,7 @@
             <div class="rw-media-right">
               <div class="rw-header" style="margin-bottom: 4px;">
                 <div class="rw-user-info">
-                  <div class="rw-avatar">${escapeHtml(initials)}</div>
+                  <div class="rw-avatar">${avatarHtml}</div>
                   <div>
                     <div class="rw-reviewer-title">
                       <span class="rw-reviewer">${escapeHtml(name)}</span>
@@ -229,7 +248,7 @@
 
             <div class="rw-header" style="margin-bottom: 4px;">
               <div class="rw-user-info">
-                <div class="rw-avatar">${escapeHtml(initials)}</div>
+                <div class="rw-avatar">${avatarHtml}</div>
                 <div>
                   <div class="rw-reviewer-title">
                     <span class="rw-reviewer">${escapeHtml(name)}</span>
@@ -257,6 +276,7 @@
           </div>
           <div class="rw-header" style="margin-bottom: 6px;">
             <div class="rw-user-info">
+              <div class="rw-avatar">${avatarHtml}</div>
               <div class="rw-reviewer-title">
                 <span class="rw-reviewer">${escapeHtml(name)}</span>
                 <span class="rw-stars">${stars}</span>
@@ -274,7 +294,7 @@
         contentHtml = `
           <div class="rw-header">
             <div class="rw-user-info">
-              <div class="rw-avatar">${escapeHtml(initials)}</div>
+              <div class="rw-avatar">${avatarHtml}</div>
               <div>
                 <div class="rw-reviewer-title">
                   <span class="rw-reviewer">${escapeHtml(name)}</span>
@@ -318,24 +338,32 @@
     }
 
     function displayReviewWithMediaPreload(review, showCallback) {
-      renderReview(review);
+      const mediaUrl = review.imageUrl || review.avatarUrl;
 
-      const imgEl = card.querySelector('.rw-media-left img, .rw-carousel-track img');
-      if (imgEl && imgEl.src) {
-        if (imgEl.complete && imgEl.naturalWidth > 0) {
+      if (mediaUrl) {
+        const img = new Image();
+        let hasCalled = false;
+
+        const done = () => {
+          if (hasCalled) return;
+          hasCalled = true;
+          renderReview(review);
           showCallback();
-        } else {
-          let timer = setTimeout(showCallback, 1200);
-          imgEl.onload = function () {
-            clearTimeout(timer);
-            showCallback();
-          };
-          imgEl.onerror = function () {
-            clearTimeout(timer);
-            showCallback();
-          };
+        };
+
+        if (img.complete && img.naturalWidth > 0) {
+          done();
+          return;
         }
+
+        img.onload = done;
+        img.onerror = done;
+
+        // Safety timeout fallback (3000ms max) in case network request stalls
+        setTimeout(done, 3000);
+        img.src = mediaUrl;
       } else {
+        renderReview(review);
         showCallback();
       }
     }

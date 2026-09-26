@@ -160,6 +160,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
       imageUrl = getAmazonReviewStylePhotoUrl(prodName, r.id || idx, bodyShort);
     }
 
+    const avatarUrl = r.avatarUrl || imageUrl || null;
+
     return {
       id: r.id,
       reviewerName: r.reviewerName || "Verified Customer",
@@ -170,6 +172,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       source: r.source,
       externalUrl: r.externalUrl || null,
       imageUrl: imageUrl || null,
+      avatarUrl: avatarUrl || null,
       videoUrl: r.videoUrl || null,
       tags: parsedTags,
     };
