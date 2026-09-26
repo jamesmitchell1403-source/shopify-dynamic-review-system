@@ -187,7 +187,7 @@
       const avatarPhoto = review.avatarUrl || (review.imageUrl && !isLayout1 && !isLayout2 ? review.imageUrl : null);
       const avatarClass = avatarPhoto ? 'rw-avatar has-photo' : 'rw-avatar';
       const avatarHtml = avatarPhoto
-        ? `<img src="${escapeHtml(avatarPhoto)}" alt="${escapeHtml(name)}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;display:block;" />`
+        ? `<img src="${escapeHtml(avatarPhoto)}" alt="${escapeHtml(name)}" loading="eager" fetchpriority="high" style="width:100%;height:100%;object-fit:cover;border-radius:50%;display:block;" />`
         : escapeHtml(initials);
 
       if (isLayout1) {
@@ -248,7 +248,7 @@
             <div class="rw-carousel-header">
               <div class="rw-carousel-track">
                 <div class="rw-carousel-item">
-                  <img src="${escapeHtml(review.imageUrl)}" alt="Product photo" />
+                  <img src="${escapeHtml(review.imageUrl)}" alt="Product photo" loading="eager" fetchpriority="high" />
                 </div>
                 <div class="rw-carousel-item">
                   <video src="${escapeHtml(review.videoUrl)}" muted playsinline></video>
@@ -353,26 +353,63 @@
       }
     }
 
+    function preloadSingleImage(url) {
+      return new Promise(function(resolve) {
+        if (!url || typeof url !== 'string' || !url.trim().startsWith('http')) {
+          resolve();
+          return;
+        }
+
+        const img = new Image();
+        let isDone = false;
+
+        const finish = function() {
+          if (isDone) return;
+          isDone = true;
+          resolve();
+        };
+
+        img.onload = function() {
+          if (typeof img.decode === 'function') {
+            img.decode().then(finish).catch(finish);
+          } else {
+            finish();
+          }
+        };
+
+        img.onerror = finish;
+        img.src = url;
+
+        if (img.complete && img.naturalWidth > 0) {
+          if (typeof img.decode === 'function') {
+            img.decode().then(finish).catch(finish);
+          } else {
+            finish();
+          }
+        }
+      });
+    }
+
     function displayReviewWithMediaPreload(review, showCallback) {
-      const urls = [];
       const isValidUrl = function(url) { return typeof url === 'string' && url.trim().startsWith('http'); };
+      const imagePromises = [];
 
-      if (isValidUrl(review.imageUrl)) urls.push(review.imageUrl);
-      if (isValidUrl(review.avatarUrl) && review.avatarUrl !== review.imageUrl) urls.push(review.avatarUrl);
-
-      if (urls.length === 0) {
-        renderReview(review);
-        showCallback();
-        return;
+      if (isValidUrl(review.imageUrl)) {
+        imagePromises.push(preloadSingleImage(review.imageUrl));
+      }
+      if (isValidUrl(review.avatarUrl) && review.avatarUrl !== review.imageUrl) {
+        imagePromises.push(preloadSingleImage(review.avatarUrl));
       }
 
-      let loadedCount = 0;
-      let hasCalled = false;
+      let hasTriggered = false;
+      const executeShow = function() {
+        if (hasTriggered) return;
+        hasTriggered = true;
 
-      const triggerDone = function() {
-        if (hasCalled) return;
-        hasCalled = true;
+        // Render HTML into card element offscreen while card is invisible
         renderReview(review);
+
+        // Allow browser layout engine 2 animation frames to paint image textures before making card visible
         if (window.requestAnimationFrame) {
           requestAnimationFrame(function() {
             requestAnimationFrame(function() {
@@ -384,38 +421,25 @@
         }
       };
 
-      const checkAll = function() {
-        loadedCount++;
-        if (loadedCount >= urls.length) {
-          triggerDone();
-        }
-      };
+      if (imagePromises.length === 0) {
+        executeShow();
+        return;
+      }
 
+      // Safety timeout: Never hang card indefinitely if network fails
       const safetyTimer = setTimeout(function() {
-        triggerDone();
-      }, 4000);
+        executeShow();
+      }, 3000);
 
-      urls.forEach(function (url) {
-        const img = new Image();
-        img.onload = function() {
-          if (img.decode) {
-            img.decode().then(checkAll).catch(checkAll);
-          } else {
-            checkAll();
-          }
-        };
-        img.onerror = function() {
-          checkAll();
-        };
-        img.src = url;
-        if (img.complete && img.naturalWidth > 0) {
-          if (img.decode) {
-            img.decode().then(checkAll).catch(checkAll);
-          } else {
-            checkAll();
-          }
-        }
-      });
+      Promise.all(imagePromises)
+        .then(function() {
+          clearTimeout(safetyTimer);
+          executeShow();
+        })
+        .catch(function() {
+          clearTimeout(safetyTimer);
+          executeShow();
+        });
     }
 
     function scheduleNext() {
@@ -424,18 +448,21 @@
       const waitTime = isFirstShow ? delayMs : rotationMs;
       isFirstShow = false;
 
-      setTimeout(() => {
+      setTimeout(function() {
         const review = reviews[currentIndex % reviews.length];
         let hasShown = false;
-        const triggerShow = () => {
+        const triggerShow = function() {
           if (hasShown) return;
           hasShown = true;
           card.classList.add('rw-visible');
 
           // Start display duration timer ONLY AFTER card becomes visible!
-          setTimeout(() => {
+          setTimeout(function() {
             card.classList.remove('rw-visible');
-            setTimeout(() => {
+            setTimeout(function() {
+              // Completely clear card DOM content off-screen while invisible so previous content never flickers
+              card.innerHTML = '';
+              card.className = `rw-notification-card rw-pos-${position} rw-layout-${layoutStyle}`;
               scheduleNext();
             }, 500);
           }, durationMs);
