@@ -212,7 +212,7 @@
               ? `<video src="${escapeHtml(review.videoUrl)}" muted playsinline></video>
                  <div class="rw-media-play-icon">▶</div>
                  <div class="rw-media-time-pill">0:12</div>`
-              : `<img src="${escapeHtml(review.imageUrl)}" alt="Review product photo" />`
+              : `<img src="${escapeHtml(review.imageUrl)}" alt="Review product photo" loading="eager" fetchpriority="high" style="width:100%;height:100%;object-fit:cover;display:block;" />`
             }
           </div>
         `;
@@ -355,8 +355,10 @@
 
     function displayReviewWithMediaPreload(review, showCallback) {
       const urls = [];
-      if (review.imageUrl) urls.push(review.imageUrl);
-      if (review.avatarUrl && review.avatarUrl !== review.imageUrl) urls.push(review.avatarUrl);
+      const isValidUrl = function(url) { return typeof url === 'string' && url.trim().startsWith('http'); };
+
+      if (isValidUrl(review.imageUrl)) urls.push(review.imageUrl);
+      if (isValidUrl(review.avatarUrl) && review.avatarUrl !== review.imageUrl) urls.push(review.avatarUrl);
 
       if (urls.length === 0) {
         renderReview(review);
@@ -367,48 +369,50 @@
       let loadedCount = 0;
       let hasCalled = false;
 
-      const done = () => {
+      const triggerDone = function() {
         if (hasCalled) return;
-        loadedCount++;
-        if (loadedCount >= urls.length) {
-          hasCalled = true;
-          renderReview(review);
-          if (window.requestAnimationFrame) {
-            requestAnimationFrame(() => {
-              requestAnimationFrame(() => {
-                showCallback();
-              });
+        hasCalled = true;
+        renderReview(review);
+        if (window.requestAnimationFrame) {
+          requestAnimationFrame(function() {
+            requestAnimationFrame(function() {
+              showCallback();
             });
-          } else {
-            showCallback();
-          }
+          });
+        } else {
+          showCallback();
         }
       };
 
-      const safetyTimer = setTimeout(() => {
-        if (!hasCalled) {
-          hasCalled = true;
-          renderReview(review);
-          showCallback();
+      const checkAll = function() {
+        loadedCount++;
+        if (loadedCount >= urls.length) {
+          triggerDone();
         }
-      }, 3000);
+      };
+
+      const safetyTimer = setTimeout(function() {
+        triggerDone();
+      }, 4000);
 
       urls.forEach(function (url) {
         const img = new Image();
         img.onload = function() {
           if (img.decode) {
-            img.decode().then(done).catch(done);
+            img.decode().then(checkAll).catch(checkAll);
           } else {
-            done();
+            checkAll();
           }
         };
-        img.onerror = done;
+        img.onerror = function() {
+          checkAll();
+        };
         img.src = url;
         if (img.complete && img.naturalWidth > 0) {
           if (img.decode) {
-            img.decode().then(done).catch(done);
+            img.decode().then(checkAll).catch(checkAll);
           } else {
-            done();
+            checkAll();
           }
         }
       });
