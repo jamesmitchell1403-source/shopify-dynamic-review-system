@@ -155,9 +155,15 @@ export async function loader({ request }: LoaderFunctionArgs) {
     let imageUrl = r.imageUrl;
 
     // Self-healing: Ensure EVERY review returned has a valid product-specific Amazon customer review photo URL if imageUrl is missing
-    if (!imageUrl && (r.isAiGenerated || widgetConfig.layoutStyle === "layout-1" || widgetConfig.layoutStyle === "layout-2")) {
+    if (!imageUrl) {
       const prodName = productHandle || r.productHandle || rawId || r.productId || "Product";
       imageUrl = getAmazonReviewStylePhotoUrl(prodName, r.id || idx, bodyShort);
+
+      // Asynchronously heal database record
+      db.review.update({
+        where: { id: r.id },
+        data: { imageUrl }
+      }).catch(() => {});
     }
 
     const avatarUrl = r.avatarUrl || getReviewerAvatarPhotoUrl(r.reviewerName || "Verified Customer");

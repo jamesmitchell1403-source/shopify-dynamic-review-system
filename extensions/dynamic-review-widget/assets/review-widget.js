@@ -135,7 +135,20 @@
 
     // Preload ALL review images and avatars in advance at startup
     if (reviews && reviews.length > 0) {
-      reviews.forEach(function (r) {
+      reviews.forEach(function (r, idx) {
+        if (!r.imageUrl) {
+          const prodName = productHandle || productId || "Product";
+          const seedStr = (r.id || r.reviewerName || ("rev_" + idx)) + "";
+          const numSeed = Math.abs(seedStr.split("").reduce(function (acc, c) { return acc + c.charCodeAt(0); }, 0));
+          const samplePhotos = [
+            "https://images.unsplash.com/photo-1556905055-8f358a7a47b2?auto=format&fit=crop&w=800&q=80",
+            "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=800&q=80",
+            "https://images.unsplash.com/photo-1521572267360-ee0c2909d518?auto=format&fit=crop&w=800&q=80",
+            "https://images.unsplash.com/photo-1503342217505-b0a15ec3261c?auto=format&fit=crop&w=800&q=80",
+            "https://images.unsplash.com/photo-1542291026-7eec264c27ff?auto=format&fit=crop&w=800&q=80"
+          ];
+          r.imageUrl = samplePhotos[numSeed % samplePhotos.length] + "&prod=" + encodeURIComponent(prodName);
+        }
         if (r.imageUrl) {
           const img1 = new Image();
           img1.src = r.imageUrl;
@@ -372,12 +385,11 @@
 
       urls.forEach(function (url) {
         const img = new Image();
+        img.onload = done;
+        img.onerror = done;
+        img.src = url;
         if (img.complete && img.naturalWidth > 0) {
           done();
-        } else {
-          img.onload = done;
-          img.onerror = done;
-          img.src = url;
         }
       });
     }
