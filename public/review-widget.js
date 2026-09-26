@@ -187,6 +187,19 @@
       const marketplaceBadge = getMarketplaceBadgeHtml(review.source, review.externalUrl);
 
       const isValidUrl = function(url) { return typeof url === 'string' && url.trim().startsWith('http'); };
+      if (!isValidUrl(review.imageUrl)) {
+        const prodName = productHandle || productId || "Product";
+        const seedStr = (review.id || review.reviewerName || "rev") + "";
+        const numSeed = Math.abs(seedStr.split("").reduce(function (acc, c) { return acc + c.charCodeAt(0); }, 0));
+        const samplePhotos = [
+          "https://images.unsplash.com/photo-1556905055-8f358a7a47b2?auto=format&fit=crop&w=800&q=80",
+          "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=800&q=80",
+          "https://images.unsplash.com/photo-1521572267360-ee0c2909d518?auto=format&fit=crop&w=800&q=80",
+          "https://images.unsplash.com/photo-1503342217505-b0a15ec3261c?auto=format&fit=crop&w=800&q=80",
+          "https://images.unsplash.com/photo-1509967419530-da38b4704bc6?auto=format&fit=crop&w=800&q=80"
+        ];
+        review.imageUrl = samplePhotos[numSeed % samplePhotos.length] + "&prod=" + encodeURIComponent(prodName);
+      }
       const hasImage = isValidUrl(review.imageUrl);
       const hasVideo = isValidUrl(review.videoUrl);
       const isLayout2 = hasImage && hasVideo; // Image + Video
