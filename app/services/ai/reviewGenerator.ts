@@ -429,15 +429,21 @@ export function getReviewerAvatarPhotoUrl(reviewerName: string): string {
   }
 }
 
-const REAL_HUMAN_CLOTHING_PHOTOS = [
+const REAL_HUMAN_HOODIE_PHOTOS = [
   "https://images.unsplash.com/photo-1556905055-8f358a7a47b2?auto=format&fit=crop&w=800&q=80",
   "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=800&q=80",
   "https://images.unsplash.com/photo-1521572267360-ee0c2909d518?auto=format&fit=crop&w=800&q=80",
   "https://images.unsplash.com/photo-1503342217505-b0a15ec3261c?auto=format&fit=crop&w=800&q=80",
   "https://images.unsplash.com/photo-1489987707025-afc232f7ea0f?auto=format&fit=crop&w=800&q=80",
-  "https://images.unsplash.com/photo-1542291026-7eec264c27ff?auto=format&fit=crop&w=800&q=80",
   "https://images.unsplash.com/photo-1562157873-818bc0726f68?auto=format&fit=crop&w=800&q=80",
-  "https://images.unsplash.com/photo-1578632767115-351597cf2477?auto=format&fit=crop&w=800&q=80"
+  "https://images.unsplash.com/photo-1578632767115-351597cf2477?auto=format&fit=crop&w=800&q=80",
+  "https://images.unsplash.com/photo-1509967419530-da38b4704bc6?auto=format&fit=crop&w=800&q=80"
+];
+
+const REAL_HUMAN_FOOTWEAR_PHOTOS = [
+  "https://images.unsplash.com/photo-1542291026-7eec264c27ff?auto=format&fit=crop&w=800&q=80",
+  "https://images.unsplash.com/photo-1595950653106-6c9ebd614d3a?auto=format&fit=crop&w=800&q=80",
+  "https://images.unsplash.com/photo-1525966222134-fcfa99b8ae77?auto=format&fit=crop&w=800&q=80"
 ];
 
 const REAL_HUMAN_BEAUTY_PHOTOS = [
@@ -478,7 +484,9 @@ export function getAmazonReviewStylePhotoUrl(
   const isBedding = combinedText.includes("sheet") || combinedText.includes("pillowcase") || combinedText.includes("duvet") || combinedText.includes("comforter") || combinedText.includes("thread count") || combinedText.includes("bedding") || combinedText.includes("bed ");
   const isTowels = combinedText.includes("towel") || combinedText.includes("washcloth") || combinedText.includes("bath") || combinedText.includes("shower") || combinedText.includes("robe");
   const isBeauty = combinedText.includes("skin") || combinedText.includes("cream") || combinedText.includes("serum") || combinedText.includes("lotion") || combinedText.includes("cleanser") || combinedText.includes("moisturizer") || combinedText.includes("cosmetic");
-  const isClothing = (combinedText.includes("hoodie") || combinedText.includes("sweatpants") || combinedText.includes("shirt") || combinedText.includes("jacket") || combinedText.includes("pant") || combinedText.includes("suit") || combinedText.includes("dress") || combinedText.includes("wear") || combinedText.includes("shoe") || combinedText.includes("sneaker") || combinedText.includes("apparel") || combinedText.includes("coat") || combinedText.includes("top")) && !isBedding && !isTowels;
+  const isFootwear = combinedText.includes("shoe") || combinedText.includes("sneaker") || combinedText.includes("boot") || combinedText.includes("footwear") || combinedText.includes("cleat");
+  const isHoodie = combinedText.includes("hoodie") || combinedText.includes("sweatshirt") || combinedText.includes("fleece") || combinedText.includes("zip") || combinedText.includes("sweater") || combinedText.includes("pullover");
+  const isClothing = (isHoodie || combinedText.includes("shirt") || combinedText.includes("jacket") || combinedText.includes("pant") || combinedText.includes("suit") || combinedText.includes("dress") || combinedText.includes("wear") || combinedText.includes("apparel") || combinedText.includes("coat") || combinedText.includes("top")) && !isBedding && !isTowels && !isFootwear;
 
   const cleanName = productName
     .replace(/^gid:\/\/shopify\/Product\//, "")
@@ -490,8 +498,12 @@ export function getAmazonReviewStylePhotoUrl(
     : Math.abs(String(seedInput).split("").reduce((acc, c) => acc + c.charCodeAt(0), 0));
 
   let pool = REAL_HUMAN_GENERAL_PHOTOS;
-  if (isClothing) {
-    pool = REAL_HUMAN_CLOTHING_PHOTOS;
+  if (isHoodie) {
+    pool = REAL_HUMAN_HOODIE_PHOTOS;
+  } else if (isFootwear) {
+    pool = REAL_HUMAN_FOOTWEAR_PHOTOS;
+  } else if (isClothing) {
+    pool = REAL_HUMAN_HOODIE_PHOTOS;
   } else if (isBeauty) {
     pool = REAL_HUMAN_BEAUTY_PHOTOS;
   } else if (isBedding) {
