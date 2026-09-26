@@ -153,9 +153,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
     }
 
     let imageUrl = r.imageUrl;
+    const isValidUrl = (url: any) => typeof url === "string" && url.trim().startsWith("http");
 
-    // Self-healing: Ensure EVERY review returned has a valid product-specific Amazon customer review photo URL if imageUrl is missing
-    if (!imageUrl) {
+    // Self-healing: Ensure EVERY review returned has a valid product-specific Amazon customer review photo URL if imageUrl is missing or invalid
+    if (!isValidUrl(imageUrl)) {
       const prodName = productHandle || r.productHandle || rawId || r.productId || "Product";
       imageUrl = getAmazonReviewStylePhotoUrl(prodName, r.id || idx, bodyShort);
 

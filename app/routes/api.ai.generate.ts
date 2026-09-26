@@ -1,6 +1,6 @@
 import { json, ActionFunctionArgs } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
-import { generateReviewsForShop } from "../services/ai/reviewGenerator";
+import { generateReviewsForShop, getAmazonReviewStylePhotoUrl } from "../services/ai/reviewGenerator";
 import db from "../db.server";
 import { syncReviewsToShopify, syncAiJobsToShopify } from "../services/reviewPersistence.server";
 
@@ -42,6 +42,8 @@ export async function action({ request }: ActionFunctionArgs) {
       return json({ success: false, error: "Missing required review fields." }, { status: 400 });
     }
 
+    const finalManualImg = manualReview.imageUrl || getAmazonReviewStylePhotoUrl(manualReview.productId, Date.now(), manualReview.bodyShort || "");
+
     const created = await db.review.create({
       data: {
         shop,
@@ -50,7 +52,7 @@ export async function action({ request }: ActionFunctionArgs) {
         rating: Number(manualReview.rating) || 5,
         bodyShort: manualReview.bodyShort || manualReview.bodyFull.substring(0, 100),
         bodyFull: manualReview.bodyFull,
-        imageUrl: manualReview.imageUrl || null,
+        imageUrl: finalManualImg,
         videoUrl: manualReview.videoUrl || null,
         source: "MANUAL",
         isAiGenerated: false,
@@ -74,6 +76,8 @@ export async function action({ request }: ActionFunctionArgs) {
       return json({ success: false, error: "Missing review data or productId" }, { status: 400 });
     }
 
+    const finalSaveImg = saveReview.imageUrl || getAmazonReviewStylePhotoUrl(productId, Date.now(), saveReview.bodyShort || "");
+
     const created = await db.review.create({
       data: {
         shop,
@@ -82,7 +86,7 @@ export async function action({ request }: ActionFunctionArgs) {
         rating: saveReview.rating || 5,
         bodyShort: saveReview.bodyShort || "",
         bodyFull: saveReview.bodyFull || "",
-        imageUrl: saveReview.imageUrl || null,
+        imageUrl: finalSaveImg,
         videoUrl: saveReview.videoUrl || null,
         source: "AI_GENERATED",
         isAiGenerated: true,
@@ -186,7 +190,7 @@ export async function action({ request }: ActionFunctionArgs) {
             description: prodDescription,
             notes: prodNotes,
             language: language || "en",
-            mediaOption: mediaOption || "none",
+            mediaOption: mediaOption || "image",
           },
           provider
         );
@@ -194,6 +198,7 @@ export async function action({ request }: ActionFunctionArgs) {
         const reviewsToSave = result.reviews.slice(0, countPerProduct);
 
         for (const rev of reviewsToSave) {
+          const finalBulkImg = rev.imageUrl || getAmazonReviewStylePhotoUrl(prod.title || prod.id, totalGeneratedCount + 100, rev.bodyShort || "");
           await db.review.create({
             data: {
               shop,
@@ -202,7 +207,7 @@ export async function action({ request }: ActionFunctionArgs) {
               rating: rev.rating || 5,
               bodyShort: rev.bodyShort || "",
               bodyFull: rev.bodyFull || "",
-              imageUrl: rev.imageUrl || null,
+              imageUrl: finalBulkImg,
               videoUrl: rev.videoUrl || null,
               source: "AI_GENERATED",
               isAiGenerated: true,
@@ -276,7 +281,7 @@ export async function action({ request }: ActionFunctionArgs) {
         notes,
         language: language || "en",
         avoidPhrasing: body.avoidPhrasing || [],
-        mediaOption: mediaOption || "none",
+        mediaOption: mediaOption || "image",
       },
       provider
     );

@@ -136,7 +136,8 @@
     // Preload ALL review images and avatars in advance at startup
     if (reviews && reviews.length > 0) {
       reviews.forEach(function (r, idx) {
-        if (!r.imageUrl) {
+        const isValidUrl = function(url) { return typeof url === 'string' && url.trim().startsWith('http'); };
+        if (!isValidUrl(r.imageUrl)) {
           const prodName = productHandle || productId || "Product";
           const seedStr = (r.id || r.reviewerName || ("rev_" + idx)) + "";
           const numSeed = Math.abs(seedStr.split("").reduce(function (acc, c) { return acc + c.charCodeAt(0); }, 0));
@@ -177,8 +178,9 @@
       const bodyText = review.bodyShort || review.bodyFull || '';
       const marketplaceBadge = getMarketplaceBadgeHtml(review.source, review.externalUrl);
 
-      const hasImage = !!review.imageUrl;
-      const hasVideo = !!review.videoUrl;
+      const isValidUrl = function(url) { return typeof url === 'string' && url.trim().startsWith('http'); };
+      const hasImage = isValidUrl(review.imageUrl);
+      const hasVideo = isValidUrl(review.videoUrl);
       const isLayout2 = hasImage && hasVideo; // Image + Video
       const isLayout1 = (hasImage || hasVideo) && !isLayout2; // Image OR Video
 
