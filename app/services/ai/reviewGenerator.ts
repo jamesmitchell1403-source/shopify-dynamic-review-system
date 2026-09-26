@@ -371,6 +371,45 @@ const DIVERSE_NAME_POOL = [
   "Michael Chang", "Sarah Jenkins", "Olivia Taylor", "Noah Wilson", "Isabelle Chen"
 ];
 
+const REAL_HUMAN_CLOTHING_PHOTOS = [
+  "https://images.unsplash.com/photo-1556905055-8f358a7a47b2?auto=format&fit=crop&w=800&q=80",
+  "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=800&q=80",
+  "https://images.unsplash.com/photo-1521572267360-ee0c2909d518?auto=format&fit=crop&w=800&q=80",
+  "https://images.unsplash.com/photo-1503342217505-b0a15ec3261c?auto=format&fit=crop&w=800&q=80",
+  "https://images.unsplash.com/photo-1489987707025-afc232f7ea0f?auto=format&fit=crop&w=800&q=80",
+  "https://images.unsplash.com/photo-1542291026-7eec264c27ff?auto=format&fit=crop&w=800&q=80",
+  "https://images.unsplash.com/photo-1512436991641-6745cdb1723f?auto=format&fit=crop&w=800&q=80",
+  "https://images.unsplash.com/photo-1562157873-818bc0726f68?auto=format&fit=crop&w=800&q=80"
+];
+
+const REAL_HUMAN_BEAUTY_PHOTOS = [
+  "https://images.unsplash.com/photo-1556228720-195a672e8a03?auto=format&fit=crop&w=800&q=80",
+  "https://images.unsplash.com/photo-1608248597261-833258657640?auto=format&fit=crop&w=800&q=80",
+  "https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?auto=format&fit=crop&w=800&q=80",
+  "https://images.unsplash.com/photo-1620916566398-39f1143ab7be?auto=format&fit=crop&w=800&q=80"
+];
+
+const REAL_HUMAN_BEDDING_PHOTOS = [
+  "https://images.unsplash.com/photo-1616046229478-9901c5536a45?auto=format&fit=crop&w=800&q=80",
+  "https://images.unsplash.com/photo-1522771739844-6a9f6d5f14af?auto=format&fit=crop&w=800&q=80",
+  "https://images.unsplash.com/photo-1584100936595-c0654b55a2e2?auto=format&fit=crop&w=800&q=80",
+  "https://images.unsplash.com/photo-1631049307264-da0ec9d70304?auto=format&fit=crop&w=800&q=80"
+];
+
+const REAL_HUMAN_TOWELS_PHOTOS = [
+  "https://images.unsplash.com/photo-1616627547584-bf28cee262db?auto=format&fit=crop&w=800&q=80",
+  "https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&w=800&q=80",
+  "https://images.unsplash.com/photo-1563298723-dcfebaa392e3?auto=format&fit=crop&w=800&q=80",
+  "https://images.unsplash.com/photo-1629909613654-28e377c37b09?auto=format&fit=crop&w=800&q=80"
+];
+
+const REAL_HUMAN_GENERAL_PHOTOS = [
+  "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?auto=format&fit=crop&w=800&q=80",
+  "https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=800&q=80",
+  "https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?auto=format&fit=crop&w=800&q=80",
+  "https://images.unsplash.com/photo-1546868871-7041f2a55e12?auto=format&fit=crop&w=800&q=80"
+];
+
 export function getAmazonReviewStylePhotoUrl(
   productName: string,
   seedInput: string | number,
@@ -393,22 +432,31 @@ export function getAmazonReviewStylePhotoUrl(
     ? Math.abs(seedInput)
     : Math.abs(String(seedInput).split("").reduce((acc, c) => acc + c.charCodeAt(0), 0));
 
-  let prompt = "";
+  // Determine photorealistic pool for category
+  let pool = REAL_HUMAN_GENERAL_PHOTOS;
+  let fluxPrompt = `raw 35mm photo of real human person holding and using ${cleanName}, authentic Amazon customer review upload, real face, natural room lighting, unedited iPhone snapshot, no cartoon, no anime, no 3d render`;
+
   if (isClothing) {
-    prompt = `authentic Amazon customer review photo, real person wearing ${cleanName}, casual indoor mirror selfie snapshot, natural lighting, high resolution user photo`;
+    pool = REAL_HUMAN_CLOTHING_PHOTOS;
+    fluxPrompt = `raw 35mm smartphone mirror selfie of real human person wearing ${cleanName} hoodie apparel, authentic Amazon customer review upload, real face, natural indoor room lighting, unedited iPhone snapshot, sharp focus on fabric texture, no cartoon, no anime, no 3d render, no digital art`;
   } else if (isBeauty) {
-    prompt = `authentic Amazon customer review photo, real hand holding ${cleanName} skincare product container in bathroom, candid user upload photo`;
+    pool = REAL_HUMAN_BEAUTY_PHOTOS;
+    fluxPrompt = `raw 35mm photo of real human hand holding ${cleanName} skincare product container in bathroom, authentic Amazon customer review photo, natural indoor lighting, unedited smartphone photo, no cartoon, no anime`;
   } else if (isBedding) {
-    prompt = `authentic Amazon customer review photo, ${cleanName} spread neatly on a bedroom bed, cozy bedroom, candid smartphone picture`;
+    pool = REAL_HUMAN_BEDDING_PHOTOS;
+    fluxPrompt = `raw 35mm photo of ${cleanName} spread neatly on a bedroom mattress, authentic Amazon customer review upload, cozy home bedroom, unedited smartphone photo, no cartoon, no anime`;
   } else if (isTowels) {
-    prompt = `authentic Amazon customer review photo, soft plush ${cleanName} hanging in bathroom, authentic customer upload snapshot`;
-  } else if (isWax) {
-    prompt = `authentic Amazon customer review photo, person tuning snowboard ski using ${cleanName}, outdoor snow setting, customer review photo`;
-  } else {
-    prompt = `authentic Amazon customer review photo, real person holding and using ${cleanName} product at home, candid smartphone snapshot photo`;
+    pool = REAL_HUMAN_TOWELS_PHOTOS;
+    fluxPrompt = `raw 35mm photo of soft plush ${cleanName} hanging in bathroom, authentic Amazon customer review upload, real home bathroom, unedited smartphone photo, no cartoon, no anime`;
   }
 
-  return `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=800&height=800&seed=${numSeed}&nologo=true`;
+  // Alternate between Flux photorealistic AI prompt and curated real-human photography pool to ensure zero cartoon look
+  if (numSeed % 2 === 0) {
+    return `https://image.pollinations.ai/prompt/${encodeURIComponent(fluxPrompt)}?width=800&height=800&seed=${numSeed}&model=flux&nologo=true`;
+  } else {
+    const selectedPhoto = pool[numSeed % pool.length];
+    return `${selectedPhoto}&prod=${encodeURIComponent(cleanName)}&sig=${numSeed}`;
+  }
 }
 
 const CATEGORY_MEDIA = {
