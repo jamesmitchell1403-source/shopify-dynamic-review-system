@@ -1,6 +1,11 @@
 (function () {
   'use strict';
 
+  if (window.__rw_widget_initialized) {
+    return; // Strictly prevent duplicate script execution / multiple popup loops
+  }
+  window.__rw_widget_initialized = true;
+
   // Strictly restrict popup widget to Product pages (/products/*)
   const isProductPage = window.location.pathname.includes('/products/') ||
                         (window.ShopifyAnalytics && window.ShopifyAnalytics.meta && window.ShopifyAnalytics.meta.page && window.ShopifyAnalytics.meta.page.pageType === 'product') ||
@@ -121,6 +126,9 @@
   }
 
   function initWidget(reviews, settings) {
+    if (window.__rw_widget_running) return;
+    window.__rw_widget_running = true;
+
     let position = settings.position || 'bottom-left';
     if (position === 'bottom-right') {
       position = 'bottom-left';
