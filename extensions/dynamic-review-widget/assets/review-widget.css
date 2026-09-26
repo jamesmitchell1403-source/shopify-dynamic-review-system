@@ -84,6 +84,20 @@
   justify-content: center;
   letter-spacing: 0.5px;
   box-shadow: 0 2px 6px rgba(232, 121, 158, 0.3);
+  overflow: hidden !important;
+}
+
+.rw-avatar.has-photo {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.rw-avatar img {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+  border-radius: 50% !important;
+  display: block !important;
 }
 
 .rw-reviewer-title {

@@ -170,8 +170,9 @@
       const isLayout1 = (hasImage || hasVideo) && !isLayout2; // Image OR Video
 
       const avatarPhoto = review.avatarUrl || (review.imageUrl && !isLayout1 && !isLayout2 ? review.imageUrl : null);
+      const avatarClass = avatarPhoto ? 'rw-avatar has-photo' : 'rw-avatar';
       const avatarHtml = avatarPhoto
-        ? `<img src="${escapeHtml(avatarPhoto)}" alt="${escapeHtml(name)}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;display:block;" onerror="this.style.display='none';" />`
+        ? `<img src="${escapeHtml(avatarPhoto)}" alt="${escapeHtml(name)}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;display:block;" />`
         : escapeHtml(initials);
 
       if (isLayout1) {
@@ -207,7 +208,7 @@
             <div class="rw-media-right">
               <div class="rw-header" style="margin-bottom: 4px;">
                 <div class="rw-user-info">
-                  <div class="rw-avatar">${avatarHtml}</div>
+                  <div class="${avatarClass}">${avatarHtml}</div>
                   <div>
                     <div class="rw-reviewer-title">
                       <span class="rw-reviewer">${escapeHtml(name)}</span>
@@ -248,7 +249,7 @@
 
             <div class="rw-header" style="margin-bottom: 4px;">
               <div class="rw-user-info">
-                <div class="rw-avatar">${avatarHtml}</div>
+                <div class="${avatarClass}">${avatarHtml}</div>
                 <div>
                   <div class="rw-reviewer-title">
                     <span class="rw-reviewer">${escapeHtml(name)}</span>
@@ -276,7 +277,7 @@
           </div>
           <div class="rw-header" style="margin-bottom: 6px;">
             <div class="rw-user-info">
-              <div class="rw-avatar">${avatarHtml}</div>
+              <div class="${avatarClass}">${avatarHtml}</div>
               <div class="rw-reviewer-title">
                 <span class="rw-reviewer">${escapeHtml(name)}</span>
                 <span class="rw-stars">${stars}</span>
@@ -294,7 +295,7 @@
         contentHtml = `
           <div class="rw-header">
             <div class="rw-user-info">
-              <div class="rw-avatar">${avatarHtml}</div>
+              <div class="${avatarClass}">${avatarHtml}</div>
               <div>
                 <div class="rw-reviewer-title">
                   <span class="rw-reviewer">${escapeHtml(name)}</span>
@@ -338,34 +339,47 @@
     }
 
     function displayReviewWithMediaPreload(review, showCallback) {
-      const mediaUrl = review.imageUrl || review.avatarUrl;
+      const urls = [];
+      if (review.imageUrl) urls.push(review.imageUrl);
+      if (review.avatarUrl && review.avatarUrl !== review.imageUrl) urls.push(review.avatarUrl);
 
-      if (mediaUrl) {
-        const img = new Image();
-        let hasCalled = false;
+      if (urls.length === 0) {
+        renderReview(review);
+        showCallback();
+        return;
+      }
 
-        const done = () => {
-          if (hasCalled) return;
+      let loaded = 0;
+      let hasCalled = false;
+
+      const done = () => {
+        if (hasCalled) return;
+        loaded++;
+        if (loaded >= urls.length) {
           hasCalled = true;
           renderReview(review);
           showCallback();
-        };
+        }
+      };
 
+      const safetyTimer = setTimeout(() => {
+        if (!hasCalled) {
+          hasCalled = true;
+          renderReview(review);
+          showCallback();
+        }
+      }, 2500);
+
+      urls.forEach(function (url) {
+        const img = new Image();
         if (img.complete && img.naturalWidth > 0) {
           done();
-          return;
+        } else {
+          img.onload = done;
+          img.onerror = done;
+          img.src = url;
         }
-
-        img.onload = done;
-        img.onerror = done;
-
-        // Safety timeout fallback (3000ms max) in case network request stalls
-        setTimeout(done, 3000);
-        img.src = mediaUrl;
-      } else {
-        renderReview(review);
-        showCallback();
-      }
+      });
     }
 
     function scheduleNext() {

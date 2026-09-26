@@ -371,6 +371,64 @@ const DIVERSE_NAME_POOL = [
   "Michael Chang", "Sarah Jenkins", "Olivia Taylor", "Noah Wilson", "Isabelle Chen"
 ];
 
+const FEMALE_NAMES = [
+  "Rachel Vance", "Priya Sharma", "Sophia Martinez", "Jessica Patel", 
+  "Emily Clarke", "Hannah Wright", "Chloe Dupont", "Elena Rostova", 
+  "Kavya Menon", "Amanda Foster", "Sarah Jenkins", "Olivia Taylor", 
+  "Isabelle Chen", "Zoe Bennett", "Nina Rossi"
+];
+
+const REAL_HUMAN_FEMALE_AVATARS = [
+  "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80",
+  "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=400&q=80",
+  "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=400&q=80",
+  "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=400&q=80",
+  "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=400&q=80",
+  "https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&w=400&q=80",
+  "https://images.unsplash.com/photo-1508214751196-bcfd4ca60f91?auto=format&fit=crop&w=400&q=80",
+  "https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?auto=format&fit=crop&w=400&q=80",
+  "https://images.unsplash.com/photo-1556905055-8f358a7a47b2?auto=format&fit=crop&w=400&q=80",
+  "https://images.unsplash.com/photo-1488426862026-3ee34a7d66df?auto=format&fit=crop&w=400&q=80",
+  "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=400&q=80",
+  "https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&w=400&q=80",
+  "https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?auto=format&fit=crop&w=400&q=80",
+  "https://images.unsplash.com/photo-1567532939604-b6b5b0db2604?auto=format&fit=crop&w=400&q=80"
+];
+
+const REAL_HUMAN_MALE_AVATARS = [
+  "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=400&q=80",
+  "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=400&q=80",
+  "https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?auto=format&fit=crop&w=400&q=80",
+  "https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&w=400&q=80",
+  "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=400&q=80",
+  "https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?auto=format&fit=crop&w=400&q=80",
+  "https://images.unsplash.com/photo-1521572267360-ee0c2909d518?auto=format&fit=crop&w=400&q=80",
+  "https://images.unsplash.com/photo-1562157873-818bc0726f68?auto=format&fit=crop&w=400&q=80",
+  "https://images.unsplash.com/photo-1503342217505-b0a15ec3261c?auto=format&fit=crop&w=400&q=80",
+  "https://images.unsplash.com/photo-1489987707025-afc232f7ea0f?auto=format&fit=crop&w=400&q=80",
+  "https://images.unsplash.com/photo-1501196354995-cbb51c65aaea?auto=format&fit=crop&w=400&q=80",
+  "https://images.unsplash.com/photo-1496345875659-11f7dd282d1d?auto=format&fit=crop&w=400&q=80",
+  "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=400&q=80"
+];
+
+export function getReviewerAvatarPhotoUrl(reviewerName: string): string {
+  const name = (reviewerName || "").trim();
+  const lowerName = name.toLowerCase();
+
+  const isFemale = FEMALE_NAMES.some((f) => lowerName.includes(f.toLowerCase())) ||
+                   /^(zoe|rachel|priya|sophia|jessica|emily|hannah|chloe|elena|kavya|amanda|sarah|olivia|isabelle|nina|laura|maria|anna|kate|claire|emma)/i.test(name);
+
+  const hash = Math.abs(name.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0));
+
+  if (isFemale) {
+    const idx = hash % REAL_HUMAN_FEMALE_AVATARS.length;
+    return `${REAL_HUMAN_FEMALE_AVATARS[idx]}&reviewer=${encodeURIComponent(name)}`;
+  } else {
+    const idx = hash % REAL_HUMAN_MALE_AVATARS.length;
+    return `${REAL_HUMAN_MALE_AVATARS[idx]}&reviewer=${encodeURIComponent(name)}`;
+  }
+}
+
 const REAL_HUMAN_CLOTHING_PHOTOS = [
   "https://images.unsplash.com/photo-1556905055-8f358a7a47b2?auto=format&fit=crop&w=800&q=80",
   "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=800&q=80",
@@ -378,8 +436,8 @@ const REAL_HUMAN_CLOTHING_PHOTOS = [
   "https://images.unsplash.com/photo-1503342217505-b0a15ec3261c?auto=format&fit=crop&w=800&q=80",
   "https://images.unsplash.com/photo-1489987707025-afc232f7ea0f?auto=format&fit=crop&w=800&q=80",
   "https://images.unsplash.com/photo-1542291026-7eec264c27ff?auto=format&fit=crop&w=800&q=80",
-  "https://images.unsplash.com/photo-1512436991641-6745cdb1723f?auto=format&fit=crop&w=800&q=80",
-  "https://images.unsplash.com/photo-1562157873-818bc0726f68?auto=format&fit=crop&w=800&q=80"
+  "https://images.unsplash.com/photo-1562157873-818bc0726f68?auto=format&fit=crop&w=800&q=80",
+  "https://images.unsplash.com/photo-1578632767115-351597cf2477?auto=format&fit=crop&w=800&q=80"
 ];
 
 const REAL_HUMAN_BEAUTY_PHOTOS = [

@@ -1,7 +1,7 @@
 import { json, LoaderFunctionArgs } from "@remix-run/node";
 import db from "../db.server";
 import { ensureReviewsAndSettingsRestored } from "../services/reviewPersistence.server";
-import { getAmazonReviewStylePhotoUrl } from "../services/ai/reviewGenerator";
+import { getAmazonReviewStylePhotoUrl, getReviewerAvatarPhotoUrl } from "../services/ai/reviewGenerator";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const url = new URL(request.url);
@@ -160,7 +160,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       imageUrl = getAmazonReviewStylePhotoUrl(prodName, r.id || idx, bodyShort);
     }
 
-    const avatarUrl = r.avatarUrl || imageUrl || null;
+    const avatarUrl = r.avatarUrl || getReviewerAvatarPhotoUrl(r.reviewerName || "Verified Customer");
 
     return {
       id: r.id,
@@ -172,7 +172,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       source: r.source,
       externalUrl: r.externalUrl || null,
       imageUrl: imageUrl || null,
-      avatarUrl: avatarUrl || null,
+      avatarUrl: avatarUrl,
       videoUrl: r.videoUrl || null,
       tags: parsedTags,
     };
