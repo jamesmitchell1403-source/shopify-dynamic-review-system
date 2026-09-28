@@ -1,11 +1,25 @@
+﻿/**
+ * reviewPersistence.server.ts
+ *
+ * CORE RULE (Permanent, applies to ALL stores):
+ * Reviews MUST NEVER be automatically deleted or reset by:
+ *   - Code changes / feature updates / deployments
+ *   - Layout or JavaScript changes
+ *   - AI review generation or CSV import
+ *   - Server restarts / Render redeploys
+ *
+ * Reviews are ONLY removed when an Admin explicitly deletes them via the Admin panel.
+ * Each store is fully isolated by shop domain. This applies to all current and future stores.
+ */
+
 import db from "../db.server";
 import fs from "fs";
 import path from "path";
+import { getShopWhereClause, canonicalizeShopDomain } from "./shopDomain.server";
 
 const LOCAL_BACKUP_PATH = path.join(process.cwd(), "reviews_backup_data.json");
-const ADMIN_TOKEN = process.env.SHOPIFY_ADMIN_ACCESS_TOKEN || ("shpat_" + "619247c484119ab17aa96895bc8d90ef");
-
-import { getShopWhereClause, canonicalizeShopDomain } from "./shopDomain.server";
+const ADMIN_TOKEN =
+  process.env.SHOPIFY_ADMIN_ACCESS_TOKEN || "";
 
 function readLocalBackup(): any[] {
   try {
@@ -20,32 +34,35 @@ function readLocalBackup(): any[] {
   return [];
 }
 
-function writeLocalBackup(reviews: any[], shop?: string, allowEmptySync: boolean = false) {
+/**
+ * Write reviews for one shop into backup JSON without overwriting other stores.
+ * explicitWipe=true only when Admin deliberately deleted ALL reviews for this shop.
+ */
+function writeLocalBackup(reviews: any[], shop: string, explicitWipe: boolean = false): void {
   try {
-    if (!shop) {
-      fs.writeFileSync(LOCAL_BACKUP_PATH, JSON.stringify(reviews, null, 2), "utf-8");
-      return;
-    }
-
     const shopCanonical = canonicalizeShopDomain(shop);
     const existing = readLocalBackup();
 
-    // Preserve reviews belonging to OTHER stores
     const otherShopReviews = existing.filter((item: any) => {
-      const itemShopCanonical = canonicalizeShopDomain(item.shop || "");
-      return itemShopCanonical !== shopCanonical;
+      const itemCanonical = canonicalizeShopDomain(item.shop || "");
+      return itemCanonical !== shopCanonical;
     });
 
     let merged: any[];
-    if (reviews.length === 0 && !allowEmptySync) {
-      // Keep existing reviews for this shop if allowEmptySync is false
+    if (reviews.length === 0 && !explicitWipe) {
       const existingShopReviews = existing.filter((item: any) => {
-        const itemShopCanonical = canonicalizeShopDomain(item.shop || "");
-        return itemShopCanonical === shopCanonical;
+        const itemCanonical = canonicalizeShopDomain(item.shop || "");
+        return itemCanonical === shopCanonical;
       });
       merged = [...otherShopReviews, ...existingShopReviews];
+      console.log(
+        `[Persistence] DB empty for ${shop} (no explicit wipe) — keeping ${existingShopReviews.length} backup records.`
+      );
     } else {
       merged = [...otherShopReviews, ...reviews];
+      console.log(
+        `[Persistence] Saved ${reviews.length} reviews for ${shop} to backup (${otherShopReviews.length} other-store reviews preserved).`
+      );
     }
 
     fs.writeFileSync(LOCAL_BACKUP_PATH, JSON.stringify(merged, null, 2), "utf-8");
@@ -54,8 +71,11 @@ function writeLocalBackup(reviews: any[], shop?: string, allowEmptySync: boolean
   }
 }
 
-// Helper: Query shop metafield value via GraphQL or REST fallback
-async function fetchShopMetafieldValue(admin: any, shop: string, key: string): Promise<string | null> {
+async function fetchShopMetafieldValue(
+  admin: any,
+  shop: string,
+  key: string
+): Promise<string | null> {
   if (admin) {
     try {
       const res = await admin.graphql(
@@ -77,7 +97,6 @@ async function fetchShopMetafieldValue(admin: any, shop: string, key: string): P
     }
   }
 
-  // REST Fallback using shop's token from db.session or ADMIN_TOKEN
   try {
     const session = await db.session.findFirst({ where: { shop } }).catch(() => null);
     const token = session?.accessToken || ADMIN_TOKEN;
@@ -102,29 +121,39 @@ async function fetchShopMetafieldValue(admin: any, shop: string, key: string): P
   return null;
 }
 
+/**
+ * CORE RESTORE FUNCTION
+ * Auto-restores reviews and settings if DB is empty for a shop.
+ * NEVER deletes existing reviews.
+ */
 export async function ensureReviewsAndSettingsRestored(admin: any, shop: string) {
   if (!shop) return;
 
   try {
-    // 1. Check/restore shop settings
-    let settings = await db.shopSettings.findFirst({ where: getShopWhereClause(shop) }).catch(() => null);
+    // Restore shop settings if missing
+    let settings = await db.shopSettings
+      .findFirst({ where: getShopWhereClause(shop) })
+      .catch(() => null);
+
     if (!settings) {
       const metaVal = await fetchShopMetafieldValue(admin, shop, "widget_settings");
       if (metaVal) {
         try {
           const parsed = JSON.parse(metaVal);
-          settings = await db.shopSettings.create({
-            data: {
-              shop,
-              widgetPosition: parsed.widgetPosition || "bottom-left",
-              widgetLayoutStyle: parsed.widgetLayoutStyle || "layout-1",
-              widgetDelaySeconds: parsed.widgetDelaySeconds ?? 1,
-              widgetDisplayDuration: parsed.widgetDisplayDuration ?? 10,
-              widgetRotationInterval: parsed.widgetRotationInterval ?? 2,
-              widgetMaxPerSession: parsed.widgetMaxPerSession ?? 20,
-              widgetEnabled: parsed.widgetEnabled ?? true,
-            },
-          }).catch(() => null);
+          settings = await db.shopSettings
+            .create({
+              data: {
+                shop,
+                widgetPosition: parsed.widgetPosition || "bottom-left",
+                widgetLayoutStyle: parsed.widgetLayoutStyle || "layout-1",
+                widgetDelaySeconds: parsed.widgetDelaySeconds ?? 1,
+                widgetDisplayDuration: parsed.widgetDisplayDuration ?? 10,
+                widgetRotationInterval: parsed.widgetRotationInterval ?? 2,
+                widgetMaxPerSession: parsed.widgetMaxPerSession ?? 20,
+                widgetEnabled: parsed.widgetEnabled ?? true,
+              },
+            })
+            .catch(() => null);
         } catch (e) {
           console.error("[Persistence] Error parsing widget_settings metafield:", e);
         }
@@ -132,38 +161,65 @@ export async function ensureReviewsAndSettingsRestored(admin: any, shop: string)
     }
 
     if (!settings) {
-      await db.shopSettings.create({
-        data: {
-          shop,
-          widgetPosition: "bottom-left",
-          widgetLayoutStyle: "layout-1",
-          widgetDelaySeconds: 1,
-          widgetDisplayDuration: 10,
-          widgetRotationInterval: 2,
-          widgetMaxPerSession: 20,
-          widgetEnabled: true,
-        },
-      }).catch(() => null);
+      await db.shopSettings
+        .create({
+          data: {
+            shop,
+            widgetPosition: "bottom-left",
+            widgetLayoutStyle: "layout-1",
+            widgetDelaySeconds: 1,
+            widgetDisplayDuration: 10,
+            widgetRotationInterval: 2,
+            widgetMaxPerSession: 20,
+            widgetEnabled: true,
+          },
+        })
+        .catch(() => null);
     }
 
-    // 2. Check/restore reviews backup if SQLite is empty for this shop domain
+    // Restore reviews if DB is empty for this shop
     const shopWhere = getShopWhereClause(shop);
     const reviewCount = await db.review.count({ where: shopWhere }).catch(() => 0);
+
     if (reviewCount === 0) {
-      const localBackup = readLocalBackup();
       const shopCanonical = canonicalizeShopDomain(shop);
-      const matchingBackupItems = localBackup.filter((item: any) => {
-        const itemShopCanonical = canonicalizeShopDomain(item.shop || "");
-        return itemShopCanonical === shopCanonical;
+
+      // Try local backup first
+      const localBackup = readLocalBackup();
+      const matchingItems = localBackup.filter((item: any) => {
+        const itemCanonical = canonicalizeShopDomain(item.shop || "");
+        return itemCanonical === shopCanonical;
       });
 
-      if (matchingBackupItems && matchingBackupItems.length > 0) {
-        console.log(`[Persistence] Restoring ${matchingBackupItems.length} reviews from backup JSON for ${shop}...`);
-        for (const item of matchingBackupItems) {
+      let itemsToRestore = matchingItems;
+
+      // Fall back to Shopify metafield
+      if (itemsToRestore.length === 0) {
+        const metaVal = await fetchShopMetafieldValue(admin, shop, "reviews_backup");
+        if (metaVal) {
+          try {
+            const parsed = JSON.parse(metaVal);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              itemsToRestore = parsed;
+              console.log(
+                `[Persistence] No local backup for ${shop} — using Shopify metafield (${parsed.length} reviews).`
+              );
+            }
+          } catch (e) {
+            console.warn("[Persistence] Error parsing metafield reviews_backup:", e);
+          }
+        }
+      }
+
+      if (itemsToRestore.length > 0) {
+        console.log(
+          `[Persistence] Restoring ${itemsToRestore.length} reviews from backup for ${shop}...`
+        );
+        for (const item of itemsToRestore) {
           try {
             await db.review.upsert({
               where: { id: item.id },
-              update: { shop: item.shop || shop },
+              update: {}, // Never overwrite restored reviews
               create: {
                 id: item.id,
                 shop: item.shop || shop,
@@ -181,7 +237,10 @@ export async function ensureReviewsAndSettingsRestored(admin: any, shop: string)
                 isPublished: item.isPublished ?? true,
                 isVerifiedPurchase: item.isVerifiedPurchase ?? true,
                 language: item.language || "en",
-                tags: typeof item.tags === "string" ? item.tags : JSON.stringify(item.tags || []),
+                tags:
+                  typeof item.tags === "string"
+                    ? item.tags
+                    : JSON.stringify(item.tags || []),
                 orderId: item.orderId || null,
                 createdAt: item.createdAt ? new Date(item.createdAt) : new Date(),
                 updatedAt: item.updatedAt ? new Date(item.updatedAt) : new Date(),
@@ -191,6 +250,9 @@ export async function ensureReviewsAndSettingsRestored(admin: any, shop: string)
             console.warn("[Persistence] Review single item restore error:", e);
           }
         }
+        console.log(`[Persistence] Restore complete for ${shop}.`);
+      } else {
+        console.log(`[Persistence] No backup for ${shop} — fresh install.`);
       }
     }
   } catch (err) {
@@ -198,7 +260,18 @@ export async function ensureReviewsAndSettingsRestored(admin: any, shop: string)
   }
 }
 
-export async function syncReviewsToShopify(admin: any, shop: string, allowEmptySync: boolean = false) {
+/**
+ * CORE SYNC FUNCTION
+ * Call after every review write operation (create / update / delete).
+ *
+ * @param explicitWipe Set to TRUE only when Admin explicitly clicked "Delete All Reviews".
+ *                     For individual/bulk/pending deletes leave as FALSE.
+ */
+export async function syncReviewsToShopify(
+  admin: any,
+  shop: string,
+  explicitWipe: boolean = false
+) {
   if (!shop) return;
   try {
     const shopWhere = getShopWhereClause(shop);
@@ -207,27 +280,23 @@ export async function syncReviewsToShopify(admin: any, shop: string, allowEmptyS
       orderBy: { createdAt: "desc" },
     });
 
-    if (allReviews.length > 0) {
-      writeLocalBackup(allReviews, shop, allowEmptySync);
-    } else if (allowEmptySync) {
-      writeLocalBackup([], shop, true);
-    }
+    // Always update local backup with correct multi-store logic
+    writeLocalBackup(allReviews, shop, explicitWipe);
 
-    // Safety guard: If DB is empty and allowEmptySync is false, do not wipe backup!
-    if (allReviews.length === 0 && !allowEmptySync) {
+    // Safety: if DB is empty but not an explicit wipe, auto-restore
+    if (allReviews.length === 0 && !explicitWipe) {
+      console.log(`[Persistence] DB empty for ${shop} (no explicit wipe) — triggering restore...`);
       await ensureReviewsAndSettingsRestored(admin, shop);
       return;
     }
 
-    // 1. Save via GraphQL if admin exists
+    // Sync to Shopify metafield as secondary backup
     if (admin) {
       try {
         const shopRes = await admin.graphql(
           `#graphql
           query getShopId {
-            shop {
-              id
-            }
+            shop { id }
           }`
         );
         const shopJson = await shopRes.json();
@@ -237,10 +306,7 @@ export async function syncReviewsToShopify(admin: any, shop: string, allowEmptyS
             `#graphql
             mutation saveReviewsBackup($metafields: [MetafieldsSetInput!]!) {
               metafieldsSet(metafields: $metafields) {
-                userErrors {
-                  field
-                  message
-                }
+                userErrors { field message }
               }
             }`,
             {
@@ -264,7 +330,6 @@ export async function syncReviewsToShopify(admin: any, shop: string, allowEmptyS
       }
     }
 
-    // 2. REST Fallback using ADMIN_TOKEN
     try {
       await fetch(`https://${shop}/admin/api/2025-01/metafields.json`, {
         method: "POST",
@@ -296,9 +361,7 @@ export async function syncSettingsToShopify(admin: any, shop: string, settingsDa
       const shopRes = await admin.graphql(
         `#graphql
         query getShopId {
-          shop {
-            id
-          }
+          shop { id }
         }`
       );
       const shopJson = await shopRes.json();
@@ -308,10 +371,7 @@ export async function syncSettingsToShopify(admin: any, shop: string, settingsDa
           `#graphql
           mutation saveSettingsMetafield($metafields: [MetafieldsSetInput!]!) {
             metafieldsSet(metafields: $metafields) {
-              userErrors {
-                field
-                message
-              }
+              userErrors { field message }
             }
           }`,
           {
@@ -332,7 +392,6 @@ export async function syncSettingsToShopify(admin: any, shop: string, settingsDa
       }
     }
 
-    // REST Fallback using ADMIN_TOKEN
     await fetch(`https://${shop}/admin/api/2025-01/metafields.json`, {
       method: "POST",
       headers: {
@@ -396,7 +455,11 @@ export async function ensureAiJobsRestored(admin: any, shop: string) {
   }
 }
 
-export async function syncAiJobsToShopify(admin: any, shop: string, allowEmptySync: boolean = false) {
+export async function syncAiJobsToShopify(
+  admin: any,
+  shop: string,
+  allowEmptySync: boolean = false
+) {
   if (!shop) return;
   try {
     const allJobs = await db.aiGenerationJob.findMany({
@@ -414,9 +477,7 @@ export async function syncAiJobsToShopify(admin: any, shop: string, allowEmptySy
         const shopRes = await admin.graphql(
           `#graphql
           query getShopId {
-            shop {
-              id
-            }
+            shop { id }
           }`
         );
         const shopJson = await shopRes.json();
@@ -426,10 +487,7 @@ export async function syncAiJobsToShopify(admin: any, shop: string, allowEmptySy
             `#graphql
             mutation saveAiJobsBackup($metafields: [MetafieldsSetInput!]!) {
               metafieldsSet(metafields: $metafields) {
-                userErrors {
-                  field
-                  message
-                }
+                userErrors { field message }
               }
             }`,
             {
@@ -453,7 +511,6 @@ export async function syncAiJobsToShopify(admin: any, shop: string, allowEmptySy
       }
     }
 
-    // REST Fallback using ADMIN_TOKEN
     await fetch(`https://${shop}/admin/api/2025-01/metafields.json`, {
       method: "POST",
       headers: {
@@ -473,4 +530,3 @@ export async function syncAiJobsToShopify(admin: any, shop: string, allowEmptySy
     console.error("[Persistence] Error syncing AI jobs to Shopify Metafield:", err);
   }
 }
-
