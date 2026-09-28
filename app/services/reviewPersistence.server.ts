@@ -5,6 +5,8 @@ import path from "path";
 const LOCAL_BACKUP_PATH = path.join(process.cwd(), "reviews_backup_data.json");
 const ADMIN_TOKEN = process.env.SHOPIFY_ADMIN_ACCESS_TOKEN || ("shpat_" + "619247c484119ab17aa96895bc8d90ef");
 
+import { getShopWhereClause, canonicalizeShopDomain } from "./shopDomain.server";
+
 function readLocalBackup(): any[] {
   try {
     if (fs.existsSync(LOCAL_BACKUP_PATH)) {
@@ -18,9 +20,35 @@ function readLocalBackup(): any[] {
   return [];
 }
 
-function writeLocalBackup(reviews: any[]) {
+function writeLocalBackup(reviews: any[], shop?: string, allowEmptySync: boolean = false) {
   try {
-    fs.writeFileSync(LOCAL_BACKUP_PATH, JSON.stringify(reviews, null, 2), "utf-8");
+    if (!shop) {
+      fs.writeFileSync(LOCAL_BACKUP_PATH, JSON.stringify(reviews, null, 2), "utf-8");
+      return;
+    }
+
+    const shopCanonical = canonicalizeShopDomain(shop);
+    const existing = readLocalBackup();
+
+    // Preserve reviews belonging to OTHER stores
+    const otherShopReviews = existing.filter((item: any) => {
+      const itemShopCanonical = canonicalizeShopDomain(item.shop || "");
+      return itemShopCanonical !== shopCanonical;
+    });
+
+    let merged: any[];
+    if (reviews.length === 0 && !allowEmptySync) {
+      // Keep existing reviews for this shop if allowEmptySync is false
+      const existingShopReviews = existing.filter((item: any) => {
+        const itemShopCanonical = canonicalizeShopDomain(item.shop || "");
+        return itemShopCanonical === shopCanonical;
+      });
+      merged = [...otherShopReviews, ...existingShopReviews];
+    } else {
+      merged = [...otherShopReviews, ...reviews];
+    }
+
+    fs.writeFileSync(LOCAL_BACKUP_PATH, JSON.stringify(merged, null, 2), "utf-8");
   } catch (e) {
     console.error("[Persistence] Error writing local JSON backup:", e);
   }
@@ -74,8 +102,6 @@ async function fetchShopMetafieldValue(admin: any, shop: string, key: string): P
   return null;
 }
 
-import { getShopWhereClause } from "./shopDomain.server";
-
 export async function ensureReviewsAndSettingsRestored(admin: any, shop: string) {
   if (!shop) return;
 
@@ -125,16 +151,22 @@ export async function ensureReviewsAndSettingsRestored(admin: any, shop: string)
     const reviewCount = await db.review.count({ where: shopWhere }).catch(() => 0);
     if (reviewCount === 0) {
       const localBackup = readLocalBackup();
-      if (localBackup && localBackup.length > 0) {
-        console.log(`[Persistence] Restoring ${localBackup.length} reviews from backup JSON for ${shop}...`);
-        for (const item of localBackup) {
+      const shopCanonical = canonicalizeShopDomain(shop);
+      const matchingBackupItems = localBackup.filter((item: any) => {
+        const itemShopCanonical = canonicalizeShopDomain(item.shop || "");
+        return itemShopCanonical === shopCanonical;
+      });
+
+      if (matchingBackupItems && matchingBackupItems.length > 0) {
+        console.log(`[Persistence] Restoring ${matchingBackupItems.length} reviews from backup JSON for ${shop}...`);
+        for (const item of matchingBackupItems) {
           try {
             await db.review.upsert({
               where: { id: item.id },
-              update: { shop: shop },
+              update: { shop: item.shop || shop },
               create: {
                 id: item.id,
-                shop: shop,
+                shop: item.shop || shop,
                 productId: item.productId || null,
                 productHandle: item.productHandle || null,
                 reviewerName: item.reviewerName || "Verified Customer",
@@ -176,9 +208,9 @@ export async function syncReviewsToShopify(admin: any, shop: string, allowEmptyS
     });
 
     if (allReviews.length > 0) {
-      writeLocalBackup(allReviews);
+      writeLocalBackup(allReviews, shop, allowEmptySync);
     } else if (allowEmptySync) {
-      writeLocalBackup([]);
+      writeLocalBackup([], shop, true);
     }
 
     // Safety guard: If DB is empty and allowEmptySync is false, do not wipe backup!
