@@ -195,11 +195,9 @@
       const isOption3 = hasImage && hasVideo;         // Option 3: Image + Video
       const isOption4 = !hasImage && !hasVideo;       // Option 4: No Image & Video (Text-Only)
 
-      const avatarPhoto = isValidUrl(review.avatarUrl) ? review.avatarUrl : null;
-      const avatarClass = avatarPhoto ? 'rw-avatar has-photo' : 'rw-avatar';
-      const avatarHtml = avatarPhoto
-        ? `<img src="${escapeHtml(avatarPhoto)}" alt="${escapeHtml(name)}" loading="eager" fetchpriority="high" style="width:100%;height:100%;object-fit:cover;border-radius:50%;display:block;" />`
-        : escapeHtml(initials);
+      // Always use circular initials badge generated from reviewer name (no photo avatar)
+      const avatarClass = 'rw-avatar';
+      const avatarHtml = escapeHtml(initials);
 
       // Add/remove layout modifier classes on card
       if (isOption1 || isOption2) {
