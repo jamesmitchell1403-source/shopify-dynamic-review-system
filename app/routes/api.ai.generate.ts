@@ -3,6 +3,7 @@ import { authenticate } from "../shopify.server";
 import { generateReviewsForShop, getAmazonReviewStylePhotoUrl } from "../services/ai/reviewGenerator";
 import db from "../db.server";
 import { syncReviewsToShopify, syncAiJobsToShopify } from "../services/reviewPersistence.server";
+import { canonicalizeShopDomain } from "../services/shopDomain.server";
 
 export async function action({ request }: ActionFunctionArgs) {
   let session: any;
@@ -15,7 +16,7 @@ export async function action({ request }: ActionFunctionArgs) {
     // API routes must return JSON — never redirect to HTML login page
     return json({ success: false, error: "Session expired. Please refresh the page and try again." }, { status: 401 });
   }
-  const shop = session.shop;
+  const shop = canonicalizeShopDomain(session.shop);
 
   const body = await request.json();
   const { actionType, productId, imageBase64, imageMimeType, productImageUrl, description, notes, language, provider, saveReview, manualReview, reviewsPerProduct, mediaOption } = body;

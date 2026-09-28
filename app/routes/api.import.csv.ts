@@ -4,6 +4,8 @@ import Papa from "papaparse";
 import db from "../db.server";
 import { syncReviewsToShopify } from "../services/reviewPersistence.server";
 
+import { canonicalizeShopDomain } from "../services/shopDomain.server";
+
 export async function action({ request }: ActionFunctionArgs) {
   let session: any;
   let admin: any;
@@ -14,7 +16,7 @@ export async function action({ request }: ActionFunctionArgs) {
   } catch {
     return json({ success: false, error: "Session expired. Please refresh the page." }, { status: 401 });
   }
-  const shop = session.shop;
+  const shop = canonicalizeShopDomain(session.shop);
 
   const formData = await request.formData();
   const file = formData.get("csvFile") as File;
