@@ -48,7 +48,16 @@ export async function loader({ request }: LoaderFunctionArgs) {
     enabled: settings?.widgetEnabled ?? true,
   };
 
-  // Fetch published reviews for this shop & product
+  // Build shop domain filter clause
+  const shopWhere: any[] = [];
+  if (shopParam) {
+    const cleanShop = shopParam.toLowerCase().trim();
+    shopWhere.push({ shop: cleanShop });
+    shopWhere.push({ shop: cleanShop.replace(/\.myshopify\.com$/, "") });
+    shopWhere.push({ shop: { contains: cleanShop.split(".")[0] } });
+  }
+
+  // Fetch published reviews strictly for this shop & product
   const rawId = productId ? productId.replace(/^gid:\/\/shopify\/Product\//, "") : "";
   const fullGid = rawId ? `gid://shopify/Product/${rawId}` : "";
 
@@ -65,34 +74,29 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const isAllProductsRequest = (productId === "all" || productHandle === "all");
 
   let productReviews: any[] = [];
+  const baseWhere: any = {
+    isPublished: true,
+    ...(shopWhere.length > 0 ? { OR: shopWhere } : {}),
+  };
+
   if (isAllProductsRequest) {
     productReviews = await db.review.findMany({
-      where: {
-        isPublished: true,
-      },
+      where: baseWhere,
       orderBy: { createdAt: "desc" },
       take: 100,
     });
   } else {
+    // Strictly filter by specific product ID or product Handle for this product page ONLY
     productReviews = await db.review.findMany({
       where: {
-        isPublished: true,
-        ...(whereProductMatch.length > 0 ? { OR: whereProductMatch } : {}),
+        AND: [
+          baseWhere,
+          whereProductMatch.length > 0 ? { OR: whereProductMatch } : {},
+        ],
       },
       orderBy: { createdAt: "desc" },
       take: 100,
     });
-
-    // If no product-specific reviews, fetch shop's published reviews
-    if (productReviews.length === 0) {
-      productReviews = await db.review.findMany({
-        where: {
-          isPublished: true,
-        },
-        orderBy: { createdAt: "desc" },
-        take: 100,
-      });
-    }
   }
 
   const safeProductReviews = productReviews.filter((r) => r.isPublished);

@@ -99,11 +99,20 @@ export async function loader({ request }: LoaderFunctionArgs) {
     return "General Store Product";
   };
 
-  // 2. Fetch all reviews for this shop to compute product summary stats
+  // 2. Fetch all reviews for this shop (with domain fallback) to compute product summary stats
   let allShopReviews: any[] = [];
+  const cleanShop = shop.toLowerCase().trim();
+  const shopWhereClause: any = {
+    OR: [
+      { shop: cleanShop },
+      { shop: cleanShop.replace(/\.myshopify\.com$/, "") },
+      { shop: { contains: cleanShop.split(".")[0] } },
+    ],
+  };
+
   try {
     allShopReviews = await db.review.findMany({
-      where: { shop },
+      where: shopWhereClause,
       select: {
         id: true,
         productId: true,
@@ -141,7 +150,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   }
 
   // 3. Construct database query for reviews table
-  const whereClause: any = { shop };
+  const whereClause: any = { ...shopWhereClause };
   if (sourceFilter !== "ALL") whereClause.source = sourceFilter;
   if (statusFilter === "PUBLISHED") whereClause.isPublished = true;
   if (statusFilter === "PENDING") whereClause.isPublished = false;

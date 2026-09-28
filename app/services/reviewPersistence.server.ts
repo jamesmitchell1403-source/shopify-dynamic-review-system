@@ -118,11 +118,45 @@ export async function ensureReviewsAndSettingsRestored(admin: any, shop: string)
       }).catch(() => null);
     }
 
-    // 2. Check/restore reviews backup
+    // 2. Check/restore reviews backup if SQLite is empty
     const reviewCount = await db.review.count({ where: { shop } }).catch(() => 0);
     if (reviewCount === 0) {
-      // Admin deleted all reviews — keep review count at 0 and do not auto-restore!
-      return;
+      const localBackup = readLocalBackup();
+      if (localBackup && localBackup.length > 0) {
+        console.log(`[Persistence] Restoring ${localBackup.length} reviews from backup JSON for ${shop}...`);
+        for (const item of localBackup) {
+          try {
+            await db.review.upsert({
+              where: { id: item.id },
+              update: { shop: shop },
+              create: {
+                id: item.id,
+                shop: shop,
+                productId: item.productId || null,
+                productHandle: item.productHandle || null,
+                reviewerName: item.reviewerName || "Verified Customer",
+                rating: item.rating || 5,
+                bodyShort: item.bodyShort || "",
+                bodyFull: item.bodyFull || "",
+                source: item.source || "AI_GENERATED",
+                externalUrl: item.externalUrl || null,
+                imageUrl: item.imageUrl || null,
+                videoUrl: item.videoUrl || null,
+                isAiGenerated: item.isAiGenerated ?? true,
+                isPublished: item.isPublished ?? true,
+                isVerifiedPurchase: item.isVerifiedPurchase ?? true,
+                language: item.language || "en",
+                tags: typeof item.tags === "string" ? item.tags : JSON.stringify(item.tags || []),
+                orderId: item.orderId || null,
+                createdAt: item.createdAt ? new Date(item.createdAt) : new Date(),
+                updatedAt: item.updatedAt ? new Date(item.updatedAt) : new Date(),
+              },
+            });
+          } catch (e) {
+            console.warn("[Persistence] Review single item restore error:", e);
+          }
+        }
+      }
     }
   } catch (err) {
     console.error("[Persistence] Error in ensureReviewsAndSettingsRestored:", err);
