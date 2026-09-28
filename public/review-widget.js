@@ -143,26 +143,13 @@
 
     // Preload ALL review images and avatars in advance at startup
     if (reviews && reviews.length > 0) {
-      reviews.forEach(function (r, idx) {
+      reviews.forEach(function (r) {
         const isValidUrl = function(url) { return typeof url === 'string' && url.trim().startsWith('http'); };
-        if (!isValidUrl(r.imageUrl)) {
-          const prodName = productHandle || productId || "Product";
-          const seedStr = (r.id || r.reviewerName || ("rev_" + idx)) + "";
-          const numSeed = Math.abs(seedStr.split("").reduce(function (acc, c) { return acc + c.charCodeAt(0); }, 0));
-          const samplePhotos = [
-            "https://images.unsplash.com/photo-1556905055-8f358a7a47b2?auto=format&fit=crop&w=800&q=80",
-            "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=800&q=80",
-            "https://images.unsplash.com/photo-1521572267360-ee0c2909d518?auto=format&fit=crop&w=800&q=80",
-            "https://images.unsplash.com/photo-1503342217505-b0a15ec3261c?auto=format&fit=crop&w=800&q=80",
-            "https://images.unsplash.com/photo-1509967419530-da38b4704bc6?auto=format&fit=crop&w=800&q=80"
-          ];
-          r.imageUrl = samplePhotos[numSeed % samplePhotos.length] + "&prod=" + encodeURIComponent(prodName);
-        }
-        if (r.imageUrl) {
+        if (isValidUrl(r.imageUrl)) {
           const img1 = new Image();
           img1.src = r.imageUrl;
         }
-        if (r.avatarUrl) {
+        if (isValidUrl(r.avatarUrl)) {
           const img2 = new Image();
           img2.src = r.avatarUrl;
         }
@@ -187,49 +174,44 @@
       const marketplaceBadge = getMarketplaceBadgeHtml(review.source, review.externalUrl);
 
       const isValidUrl = function(url) { return typeof url === 'string' && url.trim().startsWith('http'); };
-      if (!isValidUrl(review.imageUrl)) {
-        const prodName = productHandle || productId || "Product";
-        const seedStr = (review.id || review.reviewerName || "rev") + "";
-        const numSeed = Math.abs(seedStr.split("").reduce(function (acc, c) { return acc + c.charCodeAt(0); }, 0));
-        const samplePhotos = [
-          "https://images.unsplash.com/photo-1556905055-8f358a7a47b2?auto=format&fit=crop&w=800&q=80",
-          "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=800&q=80",
-          "https://images.unsplash.com/photo-1521572267360-ee0c2909d518?auto=format&fit=crop&w=800&q=80",
-          "https://images.unsplash.com/photo-1503342217505-b0a15ec3261c?auto=format&fit=crop&w=800&q=80",
-          "https://images.unsplash.com/photo-1509967419530-da38b4704bc6?auto=format&fit=crop&w=800&q=80"
-        ];
-        review.imageUrl = samplePhotos[numSeed % samplePhotos.length] + "&prod=" + encodeURIComponent(prodName);
-      }
       const hasImage = isValidUrl(review.imageUrl);
       const hasVideo = isValidUrl(review.videoUrl);
-      const isLayout2 = hasImage && hasVideo; // Image + Video
-      const isLayout1 = (hasImage || hasVideo) && !isLayout2; // Image OR Video
 
-      const avatarPhoto = review.avatarUrl || (review.imageUrl && !isLayout1 && !isLayout2 ? review.imageUrl : null);
+      // Determine Option 1, 2, 3 vs Option 4 layout
+      const isOption1 = hasImage && !hasVideo;        // Option 1: Image
+      const isOption2 = hasVideo && !hasImage;        // Option 2: Video
+      const isOption3 = hasImage && hasVideo;         // Option 3: Image + Video
+      const isOption4 = !hasImage && !hasVideo;       // Option 4: No Image & Video (Text-Only)
+
+      const avatarPhoto = isValidUrl(review.avatarUrl) ? review.avatarUrl : null;
       const avatarClass = avatarPhoto ? 'rw-avatar has-photo' : 'rw-avatar';
       const avatarHtml = avatarPhoto
         ? `<img src="${escapeHtml(avatarPhoto)}" alt="${escapeHtml(name)}" loading="eager" fetchpriority="high" style="width:100%;height:100%;object-fit:cover;border-radius:50%;display:block;" />`
         : escapeHtml(initials);
 
-      if (isLayout1) {
+      // Add/remove layout modifier classes on card
+      if (isOption1 || isOption2) {
         card.classList.add('rw-has-media-1');
         card.classList.remove('rw-has-media-2');
-      } else if (isLayout2) {
+      } else if (isOption3) {
         card.classList.add('rw-has-media-2');
         card.classList.remove('rw-has-media-1');
       } else {
+        // Option 4: No Image & Video - Text Only
         card.classList.remove('rw-has-media-1');
         card.classList.remove('rw-has-media-2');
       }
 
       let contentHtml = '';
 
-      if (isLayout1) {
-        // LAYOUT 1: Media on Left / Review on Right (Image OR Video)
-        const isVideoMedia = hasVideo && !hasImage;
+      if (isOption1 || isOption2) {
+        // =========================================================
+        // OPTIONS 1 & 2: MEDIA-BASED STRUCTURE (IMAGE OR VIDEO)
+        // Dynamically adjusts based on selected media type
+        // =========================================================
         const mediaHtml = `
           <div class="rw-media-left">
-            ${isVideoMedia
+            ${isOption2
               ? `<video src="${escapeHtml(review.videoUrl)}" muted playsinline></video>
                  <div class="rw-media-play-icon">▶</div>
                  <div class="rw-media-time-pill">0:12</div>`
@@ -262,8 +244,10 @@
             </div>
           </div>
         `;
-      } else if (isLayout2) {
-        // LAYOUT 2: Media Carousel on Top / Review Below (Image + Video)
+      } else if (isOption3) {
+        // =========================================================
+        // OPTION 3: MEDIA-BASED STRUCTURE (IMAGE + VIDEO)
+        // =========================================================
         contentHtml = `
           <div class="rw-layout-2-wrapper">
             <div class="rw-carousel-header">
@@ -304,51 +288,55 @@
             </div>
           </div>
         `;
-      } else if (layoutStyle === 'layout-4') {
-        // LAYOUT 4: ELEGANT QUOTE CARD (NO MEDIA)
-        contentHtml = `
-          <div class="rw-quote-header">
-            <div class="rw-quote-mark">“</div>
-            <button class="rw-close-btn" aria-label="Close review">&times;</button>
-          </div>
-          <div class="rw-header" style="margin-bottom: 6px;">
-            <div class="rw-user-info">
-              <div class="${avatarClass}">${avatarHtml}</div>
-              <div class="rw-reviewer-title">
-                <span class="rw-reviewer">${escapeHtml(name)}</span>
-                <span class="rw-stars">${stars}</span>
-              </div>
-            </div>
-          </div>
-          <div class="rw-body rw-quote-body">${escapeHtml(bodyText)}</div>
-          <div class="rw-footer" style="margin-top: 10px;">
-            <span class="rw-verified-badge">✓ Verified Purchase</span>
-            ${marketplaceBadge}
-          </div>
-        `;
       } else {
-        // NORMAL EXISTING REVIEW LAYOUT (NO MEDIA)
-        contentHtml = `
-          <div class="rw-header">
-            <div class="rw-user-info">
-              <div class="${avatarClass}">${avatarHtml}</div>
-              <div>
+        // =========================================================
+        // OPTION 4: SEPARATE TEXT-ONLY STRUCTURE (NO IMAGE & VIDEO)
+        // Completely separated from media elements
+        // =========================================================
+        if (layoutStyle === 'layout-4') {
+          contentHtml = `
+            <div class="rw-quote-header">
+              <div class="rw-quote-mark">“</div>
+              <button class="rw-close-btn" aria-label="Close review">&times;</button>
+            </div>
+            <div class="rw-header" style="margin-bottom: 6px;">
+              <div class="rw-user-info">
+                <div class="${avatarClass}">${avatarHtml}</div>
                 <div class="rw-reviewer-title">
                   <span class="rw-reviewer">${escapeHtml(name)}</span>
                   <span class="rw-stars">${stars}</span>
                 </div>
               </div>
             </div>
-            <button class="rw-close-btn" aria-label="Close review">&times;</button>
-          </div>
+            <div class="rw-body rw-quote-body">${escapeHtml(bodyText)}</div>
+            <div class="rw-footer" style="margin-top: 10px;">
+              <span class="rw-verified-badge">✓ Verified Purchase</span>
+              ${marketplaceBadge}
+            </div>
+          `;
+        } else {
+          contentHtml = `
+            <div class="rw-header">
+              <div class="rw-user-info">
+                <div class="${avatarClass}">${avatarHtml}</div>
+                <div>
+                  <div class="rw-reviewer-title">
+                    <span class="rw-reviewer">${escapeHtml(name)}</span>
+                    <span class="rw-stars">${stars}</span>
+                  </div>
+                </div>
+              </div>
+              <button class="rw-close-btn" aria-label="Close review">&times;</button>
+            </div>
 
-          <div class="rw-body">“${escapeHtml(bodyText)}”</div>
+            <div class="rw-body">“${escapeHtml(bodyText)}”</div>
 
-          <div class="rw-footer">
-            <span class="rw-verified-badge">✓ Verified Purchase</span>
-            ${marketplaceBadge}
-          </div>
-        `;
+            <div class="rw-footer">
+              <span class="rw-verified-badge">✓ Verified Purchase</span>
+              ${marketplaceBadge}
+            </div>
+          `;
+        }
       }
 
       card.innerHTML = contentHtml;

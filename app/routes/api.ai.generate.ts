@@ -42,7 +42,7 @@ export async function action({ request }: ActionFunctionArgs) {
       return json({ success: false, error: "Missing required review fields." }, { status: 400 });
     }
 
-    const finalManualImg = manualReview.imageUrl || getAmazonReviewStylePhotoUrl(manualReview.productId, Date.now(), manualReview.bodyShort || "");
+    const finalManualImg = manualReview.imageUrl || null;
 
     const created = await db.review.create({
       data: {
@@ -76,7 +76,7 @@ export async function action({ request }: ActionFunctionArgs) {
       return json({ success: false, error: "Missing review data or productId" }, { status: 400 });
     }
 
-    const finalSaveImg = saveReview.imageUrl || getAmazonReviewStylePhotoUrl(productId, Date.now(), saveReview.bodyShort || "");
+    const finalSaveImg = saveReview.imageUrl || null;
 
     const created = await db.review.create({
       data: {
@@ -198,7 +198,7 @@ export async function action({ request }: ActionFunctionArgs) {
         const reviewsToSave = result.reviews.slice(0, countPerProduct);
 
         for (const rev of reviewsToSave) {
-          const finalBulkImg = rev.imageUrl || getAmazonReviewStylePhotoUrl(prod.title || prod.id, totalGeneratedCount + 100, rev.bodyShort || "");
+          const finalBulkImg = rev.imageUrl || null;
           await db.review.create({
             data: {
               shop,

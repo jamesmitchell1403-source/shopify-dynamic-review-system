@@ -748,7 +748,7 @@ export default function AiGeneratorPage() {
                                   <Badge tone="success">Verified Purchase</Badge>
                                   {isLayout2 && <Badge tone="attention">Layout 2 (Image + Video Carousel)</Badge>}
                                   {isLayout1 && <Badge tone="info">{hasVid ? "Layout 1 (Video Left)" : "Layout 1 (Image Left)"}</Badge>}
-                                  {!hasImg && !hasVid && <Badge tone="subdued">Normal Existing Layout</Badge>}
+                                  {!hasImg && !hasVid && <Badge>Text-Only Layout (Option 4)</Badge>}
                                 </InlineStack>
 
                                 <InlineStack gap="200">
