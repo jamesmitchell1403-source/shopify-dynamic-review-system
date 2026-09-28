@@ -96,12 +96,20 @@
         initWidget(data.reviews, data.settings || {});
       } else {
         const card = document.querySelector('.rw-notification-card');
-        if (card) card.classList.remove('rw-visible');
+        if (card) {
+          card.classList.remove('rw-visible');
+          card.style.display = 'none';
+          card.innerHTML = '';
+        }
       }
     })
     .catch(() => {
       const card = document.querySelector('.rw-notification-card');
-      if (card) card.classList.remove('rw-visible');
+      if (card) {
+        card.classList.remove('rw-visible');
+        card.style.display = 'none';
+        card.innerHTML = '';
+      }
     });
 
   function getMarketplaceBadgeHtml(source, externalUrl) {
@@ -496,3 +504,4 @@
       .replace(/"/g, '&quot;');
   }
 })();
+
