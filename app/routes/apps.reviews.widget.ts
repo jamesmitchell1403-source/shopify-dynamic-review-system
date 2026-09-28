@@ -1,6 +1,7 @@
 import { json, LoaderFunctionArgs } from "@remix-run/node";
 import db from "../db.server";
 import { getReviewerAvatarPhotoUrl } from "../services/ai/reviewGenerator";
+import { getShopWhereClause } from "../services/shopDomain.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const url = new URL(request.url);
@@ -18,15 +19,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
   // Fetch shop settings with domain fallback
   let settings: any = null;
   if (shopParam) {
-    const cleanShop = shopParam.toLowerCase().trim();
     settings = await db.shopSettings.findFirst({
-      where: {
-        OR: [
-          { shop: cleanShop },
-          { shop: cleanShop.replace(/\.myshopify\.com$/, "") },
-          { shop: { contains: cleanShop.split(".")[0] } },
-        ],
-      },
+      where: getShopWhereClause(shopParam),
       orderBy: { updatedAt: "desc" },
     }).catch(() => null);
   }
@@ -49,13 +43,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   };
 
   // Build shop domain filter clause
-  const shopWhere: any[] = [];
-  if (shopParam) {
-    const cleanShop = shopParam.toLowerCase().trim();
-    shopWhere.push({ shop: cleanShop });
-    shopWhere.push({ shop: cleanShop.replace(/\.myshopify\.com$/, "") });
-    shopWhere.push({ shop: { contains: cleanShop.split(".")[0] } });
-  }
+  const shopWhereClause = getShopWhereClause(shopParam || "");
 
   // Fetch published reviews strictly for this shop & product
   const rawId = productId ? productId.replace(/^gid:\/\/shopify\/Product\//, "") : "";
@@ -76,7 +64,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   let productReviews: any[] = [];
   const baseWhere: any = {
     isPublished: true,
-    ...(shopWhere.length > 0 ? { OR: shopWhere } : {}),
+    ...shopWhereClause,
   };
 
   if (isAllProductsRequest) {

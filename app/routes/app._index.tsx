@@ -23,6 +23,7 @@ import {
 import { authenticate } from "../shopify.server";
 import db, { ensureTablesExist } from "../db.server";
 import { ensureReviewsAndSettingsRestored } from "../services/reviewPersistence.server";
+import { getShopWhereClause } from "../services/shopDomain.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   await ensureTablesExist();
@@ -43,26 +44,30 @@ export async function loader({ request }: LoaderFunctionArgs) {
   let totalQrScans = 0;
   let recentReviews: any[] = [];
 
+  const shopWhere = getShopWhereClause(shop);
+
   try {
-    totalReviews = await db.review.count({ where: { shop } });
-    publishedReviews = await db.review.count({ where: { shop, isPublished: true } });
-    pendingReviews = await db.review.count({ where: { shop, isPublished: false } });
-    aiGeneratedCount = await db.review.count({ where: { shop, isAiGenerated: true } });
+    totalReviews = await db.review.count({ where: shopWhere });
+    publishedReviews = await db.review.count({ where: { AND: [shopWhere, { isPublished: true }] } });
+    pendingReviews = await db.review.count({ where: { AND: [shopWhere, { isPublished: false }] } });
+    aiGeneratedCount = await db.review.count({ where: { AND: [shopWhere, { isAiGenerated: true }] } });
     importedCount = await db.review.count({
       where: {
-        shop,
-        source: { in: ["IMPORTED_AMAZON", "IMPORTED_FLIPKART", "IMPORTED_ALIBABA"] },
+        AND: [
+          shopWhere,
+          { source: { in: ["IMPORTED_AMAZON", "IMPORTED_FLIPKART", "IMPORTED_ALIBABA"] } },
+        ],
       },
     });
 
     const qrScansResult = await db.qrCodeRecord.aggregate({
-      where: { shop },
+      where: shopWhere,
       _sum: { scans: true },
     });
     totalQrScans = qrScansResult._sum.scans || 0;
 
     recentReviews = await db.review.findMany({
-      where: { shop },
+      where: shopWhere,
       orderBy: { createdAt: "desc" },
       take: 5,
     });

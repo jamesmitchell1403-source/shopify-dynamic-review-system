@@ -74,12 +74,14 @@ async function fetchShopMetafieldValue(admin: any, shop: string, key: string): P
   return null;
 }
 
+import { getShopWhereClause } from "./shopDomain.server";
+
 export async function ensureReviewsAndSettingsRestored(admin: any, shop: string) {
   if (!shop) return;
 
   try {
     // 1. Check/restore shop settings
-    let settings = await db.shopSettings.findUnique({ where: { shop } }).catch(() => null);
+    let settings = await db.shopSettings.findFirst({ where: getShopWhereClause(shop) }).catch(() => null);
     if (!settings) {
       const metaVal = await fetchShopMetafieldValue(admin, shop, "widget_settings");
       if (metaVal) {
@@ -118,8 +120,9 @@ export async function ensureReviewsAndSettingsRestored(admin: any, shop: string)
       }).catch(() => null);
     }
 
-    // 2. Check/restore reviews backup if SQLite is empty
-    const reviewCount = await db.review.count({ where: { shop } }).catch(() => 0);
+    // 2. Check/restore reviews backup if SQLite is empty for this shop domain
+    const shopWhere = getShopWhereClause(shop);
+    const reviewCount = await db.review.count({ where: shopWhere }).catch(() => 0);
     if (reviewCount === 0) {
       const localBackup = readLocalBackup();
       if (localBackup && localBackup.length > 0) {
@@ -166,8 +169,9 @@ export async function ensureReviewsAndSettingsRestored(admin: any, shop: string)
 export async function syncReviewsToShopify(admin: any, shop: string, allowEmptySync: boolean = false) {
   if (!shop) return;
   try {
+    const shopWhere = getShopWhereClause(shop);
     const allReviews = await db.review.findMany({
-      where: { shop },
+      where: shopWhere,
       orderBy: { createdAt: "desc" },
     });
 

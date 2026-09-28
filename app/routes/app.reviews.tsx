@@ -24,6 +24,8 @@ import { authenticate } from "../shopify.server";
 import db, { ensureTablesExist } from "../db.server";
 import { ensureReviewsAndSettingsRestored, syncReviewsToShopify } from "../services/reviewPersistence.server";
 
+import { getShopWhereClause } from "../services/shopDomain.server";
+
 export async function loader({ request }: LoaderFunctionArgs) {
   await ensureTablesExist();
   const { admin, session } = await authenticate.admin(request);
@@ -101,14 +103,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   // 2. Fetch all reviews for this shop (with domain fallback) to compute product summary stats
   let allShopReviews: any[] = [];
-  const cleanShop = shop.toLowerCase().trim();
-  const shopWhereClause: any = {
-    OR: [
-      { shop: cleanShop },
-      { shop: cleanShop.replace(/\.myshopify\.com$/, "") },
-      { shop: { contains: cleanShop.split(".")[0] } },
-    ],
-  };
+  const shopWhereClause = getShopWhereClause(shop);
 
   try {
     allShopReviews = await db.review.findMany({
@@ -156,10 +151,15 @@ export async function loader({ request }: LoaderFunctionArgs) {
   if (statusFilter === "PENDING") whereClause.isPublished = false;
 
   if (searchQuery.trim() !== "") {
-    whereClause.OR = [
-      { reviewerName: { contains: searchQuery } },
-      { bodyShort: { contains: searchQuery } },
-      { bodyFull: { contains: searchQuery } },
+    whereClause.AND = [
+      ...(whereClause.AND || []),
+      {
+        OR: [
+          { reviewerName: { contains: searchQuery } },
+          { bodyShort: { contains: searchQuery } },
+          { bodyFull: { contains: searchQuery } },
+        ],
+      },
     ];
   }
 
@@ -231,14 +231,15 @@ export async function loader({ request }: LoaderFunctionArgs) {
 export async function action({ request }: ActionFunctionArgs) {
   const { admin, session } = await authenticate.admin(request);
   const shop = session.shop;
+  const shopWhere = getShopWhereClause(shop);
 
   const formData = await request.formData();
   const intent = formData.get("intent");
   const reviewId = formData.get("reviewId") as string;
 
   if (intent === "togglePublish") {
-    const review = await db.review.findUnique({ where: { id: reviewId } });
-    if (review && review.shop === shop) {
+    const review = await db.review.findFirst({ where: { AND: [shopWhere, { id: reviewId }] } });
+    if (review) {
       await db.review.update({
         where: { id: reviewId },
         data: { isPublished: !review.isPublished },
@@ -246,24 +247,24 @@ export async function action({ request }: ActionFunctionArgs) {
     }
   } else if (intent === "approveAllPending") {
     await db.review.updateMany({
-      where: { shop, isPublished: false },
+      where: { AND: [shopWhere, { isPublished: false }] },
       data: { isPublished: true },
     });
   } else if (intent === "delete") {
     await db.review.deleteMany({
-      where: { id: reviewId, shop },
+      where: { AND: [shopWhere, { id: reviewId }] },
     });
   } else if (intent === "deleteAllPending") {
     await db.review.deleteMany({
-      where: { shop, isPublished: false },
+      where: { AND: [shopWhere, { isPublished: false }] },
     });
   } else if (intent === "deleteAll") {
-    await db.review.deleteMany({ where: { shop } });
+    await db.review.deleteMany({ where: shopWhere });
   } else if (intent === "deleteSelected") {
     const ids = formData.getAll("ids") as string[];
     if (ids.length > 0) {
       await db.review.deleteMany({
-        where: { id: { in: ids }, shop },
+        where: { AND: [shopWhere, { id: { in: ids } }] },
       });
     }
   } else if (intent === "edit") {
@@ -276,7 +277,7 @@ export async function action({ request }: ActionFunctionArgs) {
     const isVerifiedPurchase = formData.get("isVerifiedPurchase") === "true";
 
     await db.review.updateMany({
-      where: { id: reviewId, shop },
+      where: { AND: [shopWhere, { id: reviewId }] },
       data: {
         reviewerName,
         rating,
