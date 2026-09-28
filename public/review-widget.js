@@ -82,34 +82,26 @@
   }
 
   function fetchReviews(pid) {
-    const endpoint = `/apps/reviews/widget?productId=${encodeURIComponent(pid)}&productHandle=${encodeURIComponent(productHandle || '')}&shop=${encodeURIComponent(shop || '')}&customerTags=${encodeURIComponent(JSON.stringify(customerTags))}`;
-    return fetch(endpoint).then((res) => res.json());
+    const endpoint = `/apps/reviews/widget?productId=${encodeURIComponent(pid)}&productHandle=${encodeURIComponent(productHandle || '')}&shop=${encodeURIComponent(shop || '')}&customerTags=${encodeURIComponent(JSON.stringify(customerTags))}&_t=${Date.now()}`;
+    return fetch(endpoint, { cache: "no-store" }).then((res) => res.json());
   }
 
   fetchReviews(productId)
     .then((data) => {
-      const avg = data && data.averageRating ? data.averageRating : "5.0";
+      const avg = data && data.averageRating ? data.averageRating : "0.0";
       const count = data && data.totalCount !== undefined ? data.totalCount : (data && data.reviews ? data.reviews.length : 0);
       updateReviewBadges(avg, count);
 
       if (data && data.reviews && data.reviews.length > 0) {
         initWidget(data.reviews, data.settings || {});
       } else {
-        const card = document.querySelector('.rw-notification-card');
-        if (card) {
-          card.classList.remove('rw-visible');
-          card.style.display = 'none';
-          card.innerHTML = '';
-        }
+        const cards = document.querySelectorAll('.rw-notification-card');
+        cards.forEach((card) => card.remove());
       }
     })
     .catch(() => {
-      const card = document.querySelector('.rw-notification-card');
-      if (card) {
-        card.classList.remove('rw-visible');
-        card.style.display = 'none';
-        card.innerHTML = '';
-      }
+      const cards = document.querySelectorAll('.rw-notification-card');
+      cards.forEach((card) => card.remove());
     });
 
   function getMarketplaceBadgeHtml(source, externalUrl) {
