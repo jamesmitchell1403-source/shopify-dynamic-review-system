@@ -1,13 +1,12 @@
 import { json, LoaderFunctionArgs } from "@remix-run/node";
 import db from "../db.server";
-import { ensureReviewsAndSettingsRestored } from "../services/reviewPersistence.server";
-import { getAmazonReviewStylePhotoUrl, getReviewerAvatarPhotoUrl } from "../services/ai/reviewGenerator";
+import { getReviewerAvatarPhotoUrl } from "../services/ai/reviewGenerator";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const url = new URL(request.url);
   const productId = url.searchParams.get("productId");
   const productHandle = url.searchParams.get("productHandle");
-  const shop = url.searchParams.get("shop") || request.headers.get("x-shopify-shop-domain");
+  const shopParam = url.searchParams.get("shop") || request.headers.get("x-shopify-shop-domain");
   const customerTagsParam = url.searchParams.get("customerTags");
 
   if (!productId && !productHandle) {
@@ -16,18 +15,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
     });
   }
 
-  if (shop) {
-    try {
-      await ensureReviewsAndSettingsRestored(null, shop);
-    } catch (e) {
-      console.warn("Storefront widget review restore warning:", e);
-    }
-  }
-
   // Fetch shop settings with domain fallback
   let settings: any = null;
-  if (shop) {
-    const cleanShop = shop.toLowerCase().trim();
+  if (shopParam) {
+    const cleanShop = shopParam.toLowerCase().trim();
     settings = await db.shopSettings.findFirst({
       where: {
         OR: [
@@ -36,13 +27,28 @@ export async function loader({ request }: LoaderFunctionArgs) {
           { shop: { contains: cleanShop.split(".")[0] } },
         ],
       },
+      orderBy: { updatedAt: "desc" },
     }).catch(() => null);
   }
   if (!settings) {
-    settings = await db.shopSettings.findFirst().catch(() => null);
+    settings = await db.shopSettings.findFirst({ orderBy: { updatedAt: "desc" } }).catch(() => null);
   }
 
-  // Fetch published reviews for this product ID or handle
+  const rawPosition = settings?.widgetPosition || "bottom-left";
+  const rawStyle = settings?.widgetLayoutStyle || "layout-1";
+  const layoutStyle = rawStyle.startsWith("layout-") ? rawStyle : `layout-${rawStyle}`;
+
+  const widgetConfig = {
+    position: rawPosition === "bottom-right" ? "bottom-left" : rawPosition,
+    layoutStyle: layoutStyle,
+    delaySeconds: settings?.widgetDelaySeconds ?? 1,
+    displayDuration: settings?.widgetDisplayDuration ?? 10,
+    rotationInterval: settings?.widgetRotationInterval ?? 2,
+    maxPerSession: settings?.widgetMaxPerSession ?? 20,
+    enabled: settings?.widgetEnabled ?? true,
+  };
+
+  // Fetch published reviews for this shop & product
   const rawId = productId ? productId.replace(/^gid:\/\/shopify\/Product\//, "") : "";
   const fullGid = rawId ? `gid://shopify/Product/${rawId}` : "";
 
@@ -62,7 +68,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
   if (isAllProductsRequest) {
     productReviews = await db.review.findMany({
       where: {
-        ...(shop ? { shop } : {}),
         isPublished: true,
       },
       orderBy: { createdAt: "desc" },
@@ -71,7 +76,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
   } else {
     productReviews = await db.review.findMany({
       where: {
-        ...(shop ? { shop } : {}),
         isPublished: true,
         ...(whereProductMatch.length > 0 ? { OR: whereProductMatch } : {}),
       },
@@ -79,11 +83,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
       take: 100,
     });
 
-    // Fall back to shop's overall published reviews if product-specific reviews are 0
+    // If no product-specific reviews, fetch shop's published reviews
     if (productReviews.length === 0) {
       productReviews = await db.review.findMany({
         where: {
-          ...(shop ? { shop } : {}),
           isPublished: true,
         },
         orderBy: { createdAt: "desc" },
@@ -104,13 +107,24 @@ export async function loader({ request }: LoaderFunctionArgs) {
     const sumRating = safeProductReviews.reduce((sum, r) => sum + (r.rating || 5), 0);
     averageRating = (sumRating / totalCount).toFixed(1);
   } else {
-    // Product has 0 reviews for this shop -> Return 0 reviews, 0 count, no popup cards!
-    reviewsToReturn = [];
-    totalCount = 0;
-    averageRating = "0.0";
+    // If shop has 0 published reviews -> return empty array, 0 count, no popup!
+    return json(
+      {
+        reviews: [],
+        settings: widgetConfig,
+        averageRating: "0.0",
+        totalCount: 0,
+      },
+      {
+        headers: {
+          "Access-Control-Allow-Origin": "*",
+          "Cache-Control": "no-cache, no-store, must-revalidate",
+        },
+      }
+    );
   }
 
-  // Parsing customer tags if available (Module D Personalization)
+  // Parsing customer tags if available
   let customerTags: string[] = [];
   if (customerTagsParam) {
     try {
@@ -120,18 +134,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     }
   }
 
-  const rawPosition = settings?.widgetPosition || "bottom-left";
-  const widgetConfig = {
-    position: rawPosition === "bottom-right" ? "bottom-left" : rawPosition,
-    layoutStyle: settings?.widgetLayoutStyle || "layout-1",
-    delaySeconds: settings?.widgetDelaySeconds ?? 1,
-    displayDuration: settings?.widgetDisplayDuration ?? 10,
-    rotationInterval: settings?.widgetRotationInterval ?? 2,
-    maxPerSession: settings?.widgetMaxPerSession ?? 20,
-    enabled: settings?.widgetEnabled ?? true,
-  };
-
-  const formattedReviews = reviewsToReturn.map((r, idx) => {
+  const formattedReviews = reviewsToReturn.map((r) => {
     let parsedTags: string[] = [];
     try {
       parsedTags = JSON.parse(r.tags);
@@ -139,66 +142,25 @@ export async function loader({ request }: LoaderFunctionArgs) {
       parsedTags = [];
     }
 
-    let bodyShort = r.bodyShort || "";
-    let bodyFull = r.bodyFull || "";
-
-    // Self-healing check for legacy DB records that were generated with repetitive clothing templates ("super comfortable for daily wear")
-    const isDailyWear = /is super comfortable for daily wear|comfortable for daily wear|relaxed cut for daily wear/gi.test(bodyShort + " " + bodyFull);
-    
-    if (isDailyWear) {
-      const text = (bodyShort + " " + bodyFull).toLowerCase();
-      const isBedding = text.includes("thread count") || text.includes("sheet") || text.includes("pillow") || text.includes("bed");
-      const isTowels = text.includes("towel") || text.includes("washcloth") || text.includes("bath") || text.includes("cotton towel");
-
-      if (isBedding) {
-        bodyShort = bodyShort.replace(/is super comfortable for daily wear.*/gi, "feels silky smooth, highly breathable, and cool for night sleeping.");
-        bodyFull = bodyFull.replace(/is super comfortable for daily wear.*/gi, "The weave feels crisp and luxurious against skin, and deep corners fit our mattress securely.");
-      } else if (isTowels) {
-        bodyShort = bodyShort.replace(/is super comfortable for daily wear.*/gi, "is super absorbent, thick, plush, and quick-drying!");
-        bodyFull = bodyFull.replace(/is super comfortable for daily wear.*/gi, "These towels absorb moisture instantly, feel plush against skin, and dry fast on the towel bar.");
-      }
-
-      // Asynchronously heal database record
-      db.review.update({
-        where: { id: r.id },
-        data: { bodyShort, bodyFull }
-      }).catch(() => {});
-    }
-
-    let imageUrl = r.imageUrl;
     const isValidUrl = (url: any) => typeof url === "string" && url.trim().startsWith("http");
-
-    // Self-healing: Ensure EVERY review returned has a valid product-specific Amazon customer review photo URL if imageUrl is missing or invalid
-    if (!isValidUrl(imageUrl)) {
-      const prodName = productHandle || r.productHandle || rawId || r.productId || "Product";
-      imageUrl = getAmazonReviewStylePhotoUrl(prodName, r.id || idx, bodyShort);
-
-      // Asynchronously heal database record
-      db.review.update({
-        where: { id: r.id },
-        data: { imageUrl }
-      }).catch(() => {});
-    }
-
-    const avatarUrl = r.avatarUrl || getReviewerAvatarPhotoUrl(r.reviewerName || "Verified Customer");
 
     return {
       id: r.id,
       reviewerName: r.reviewerName || "Verified Customer",
-      rating: r.rating,
-      bodyShort,
-      bodyFull,
+      rating: r.rating || 5,
+      bodyShort: r.bodyShort || "",
+      bodyFull: r.bodyFull || "",
       isVerifiedPurchase: r.isVerifiedPurchase,
-      source: r.source,
+      source: r.source || "MANUAL",
       externalUrl: r.externalUrl || null,
-      imageUrl: imageUrl || null,
-      avatarUrl: avatarUrl,
-      videoUrl: r.videoUrl || null,
+      imageUrl: isValidUrl(r.imageUrl) ? r.imageUrl : null,
+      avatarUrl: isValidUrl(r.avatarUrl) ? r.avatarUrl : getReviewerAvatarPhotoUrl(r.reviewerName || "Verified Customer"),
+      videoUrl: isValidUrl(r.videoUrl) ? r.videoUrl : null,
       tags: parsedTags,
     };
   });
 
-  // Sort within priority tiers if customer tags exist
+  // Sort by customer tag matches if available
   if (customerTags.length > 0) {
     formattedReviews.sort((a, b) => {
       const aIsMarketplace = a.source.startsWith("IMPORTED");

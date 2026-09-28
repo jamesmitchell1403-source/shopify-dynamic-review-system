@@ -121,75 +121,8 @@ export async function ensureReviewsAndSettingsRestored(admin: any, shop: string)
     // 2. Check/restore reviews backup
     const reviewCount = await db.review.count({ where: { shop } }).catch(() => 0);
     if (reviewCount === 0) {
-      const backupVal = await fetchShopMetafieldValue(admin, shop, "reviews_backup");
-      let backupList: any[] = [];
-
-      if (backupVal === "[]") {
-        // Admin explicitly deleted all reviews for this shop — keep review count at 0!
-        return;
-      }
-
-      if (backupVal) {
-        try {
-          const parsed = JSON.parse(backupVal);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            backupList = parsed;
-          }
-        } catch (e) {
-          console.error("[Persistence] Error parsing reviews_backup metafield:", e);
-        }
-      }
-
-      // First-time setup for new shop where metafield is not set yet
-      if (backupList.length === 0 && backupVal === null) {
-        backupList = readLocalBackup();
-        if (backupList.length === 0) {
-          // Check if DB contains initial template reviews
-          const seedReviews = await db.review.findMany({ take: 100 });
-          if (seedReviews.length > 0) {
-            backupList = seedReviews;
-          }
-        }
-      }
-
-      if (backupList.length > 0) {
-        console.log(`[Persistence] Restoring ${backupList.length} reviews for ${shop}...`);
-        const shopPrefix = shop.split(".")[0];
-        for (const item of backupList) {
-          try {
-            const rawId = item.id || Math.random().toString(36).substring(7);
-            const itemId = rawId.startsWith(shopPrefix) ? rawId : `${shopPrefix}-${rawId}`;
-            await db.review.upsert({
-              where: { id: itemId },
-              update: {
-                isPublished: Boolean(item.isPublished),
-              },
-              create: {
-                id: itemId,
-                shop: shop,
-                productId: item.productId || "",
-                productHandle: item.productHandle || null,
-                reviewerName: item.reviewerName || "Verified Customer",
-                rating: item.rating || 5,
-                bodyShort: item.bodyShort || "",
-                bodyFull: item.bodyFull || null,
-                source: item.source || "MANUAL",
-                externalUrl: item.externalUrl || null,
-                isAiGenerated: item.isAiGenerated || false,
-                isPublished: Boolean(item.isPublished),
-                isVerifiedPurchase: item.isVerifiedPurchase || false,
-                language: item.language || "en",
-                tags: item.tags || "[]",
-                orderId: item.orderId || null,
-                createdAt: item.createdAt ? new Date(item.createdAt) : new Date(),
-              },
-            });
-          } catch (singleErr) {
-            console.warn("[Persistence] Single review restore skipped:", singleErr);
-          }
-        }
-        await syncReviewsToShopify(admin, shop);
-      }
+      // Admin deleted all reviews — keep review count at 0 and do not auto-restore!
+      return;
     }
   } catch (err) {
     console.error("[Persistence] Error in ensureReviewsAndSettingsRestored:", err);
