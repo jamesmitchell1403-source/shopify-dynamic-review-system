@@ -24,10 +24,23 @@ export async function loader({ request }: LoaderFunctionArgs) {
     }
   }
 
-  // Fetch shop settings
-  const settings = shop
-    ? await db.shopSettings.findUnique({ where: { shop } })
-    : null;
+  // Fetch shop settings with domain fallback
+  let settings: any = null;
+  if (shop) {
+    const cleanShop = shop.toLowerCase().trim();
+    settings = await db.shopSettings.findFirst({
+      where: {
+        OR: [
+          { shop: cleanShop },
+          { shop: cleanShop.replace(/\.myshopify\.com$/, "") },
+          { shop: { contains: cleanShop.split(".")[0] } },
+        ],
+      },
+    }).catch(() => null);
+  }
+  if (!settings) {
+    settings = await db.shopSettings.findFirst().catch(() => null);
+  }
 
   // Fetch published reviews for this product ID or handle
   const rawId = productId ? productId.replace(/^gid:\/\/shopify\/Product\//, "") : "";

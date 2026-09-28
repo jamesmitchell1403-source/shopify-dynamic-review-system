@@ -133,7 +133,10 @@
     if (position === 'bottom-right') {
       position = 'bottom-left';
     }
-    const layoutStyle = settings.layoutStyle || 'layout-1';
+    const rawStyle = settings.layoutStyle || 'layout-1';
+    const layoutStyle = rawStyle.startsWith('layout-') ? rawStyle : `layout-${rawStyle}`;
+    const layoutClass = `rw-layout-${layoutStyle}`;
+
     const delayMs = (settings.delaySeconds !== undefined ? settings.delaySeconds : 1) * 1000;
     const durationMs = (settings.displayDuration || 10) * 1000;
     const rotationMs = (settings.rotationInterval || 2) * 1000;
@@ -160,10 +163,10 @@
     let card = document.querySelector('.rw-notification-card');
     if (!card) {
       card = document.createElement('div');
-      card.className = `rw-notification-card rw-pos-${position} rw-layout-${layoutStyle}`;
+      card.className = `rw-notification-card rw-pos-${position} ${layoutClass}`;
       document.body.appendChild(card);
     } else {
-      card.className = `rw-notification-card rw-pos-${position} rw-layout-${layoutStyle}`;
+      card.className = `rw-notification-card rw-pos-${position} ${layoutClass}`;
     }
 
     function renderReview(review) {
@@ -471,7 +474,7 @@
             setTimeout(function() {
               // Completely clear card DOM content off-screen while invisible so previous content never flickers
               card.innerHTML = '';
-              card.className = `rw-notification-card rw-pos-${position} rw-layout-${layoutStyle}`;
+              card.className = `rw-notification-card rw-pos-${position} ${layoutClass}`;
               scheduleNext();
             }, 500);
           }, durationMs);

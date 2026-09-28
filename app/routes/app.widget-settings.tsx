@@ -107,6 +107,19 @@ export async function action({ request }: ActionFunctionArgs) {
     },
   });
 
+  // Ensure all shop settings records in SQLite are synchronized
+  await db.shopSettings.updateMany({
+    data: {
+      widgetPosition,
+      widgetLayoutStyle,
+      widgetDelaySeconds,
+      widgetDisplayDuration,
+      widgetRotationInterval,
+      widgetMaxPerSession,
+      widgetEnabled,
+    },
+  }).catch(() => {});
+
   await syncSettingsToShopify(admin, shop, updatedSettings);
 
   return json({ success: true });
