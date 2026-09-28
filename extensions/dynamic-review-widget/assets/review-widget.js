@@ -36,7 +36,16 @@
   if (!productId && window.ShopifyAnalytics && window.ShopifyAnalytics.meta && window.ShopifyAnalytics.meta.product) {
     productId = String(window.ShopifyAnalytics.meta.product.id);
   }
-  if (!productId) {
+  if (!productHandle && window.location && window.location.pathname && window.location.pathname.includes('/products/')) {
+    const parts = window.location.pathname.split('/products/');
+    if (parts[1]) {
+      productHandle = parts[1].split('/')[0].split('?')[0];
+    }
+  }
+  if (!productId && productHandle) {
+    productId = productHandle;
+  }
+  if (!productId && !productHandle) {
     productId = "all";
   }
 

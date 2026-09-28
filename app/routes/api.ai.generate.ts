@@ -119,6 +119,7 @@ export async function action({ request }: ActionFunctionArgs) {
               nodes {
                 id
                 title
+                handle
                 description
                 productType
                 tags
@@ -150,6 +151,7 @@ export async function action({ request }: ActionFunctionArgs) {
               productsList = restJson.products.map((p: any) => ({
                 id: p.admin_graphql_api_id || `gid://shopify/Product/${p.id}`,
                 title: p.title,
+                handle: p.handle || "",
                 description: p.body_html ? p.body_html.replace(/<[^>]*>?/gm, "") : p.title,
                 productType: p.product_type || "Store Product",
                 tags: p.tags ? p.tags.split(",").map((t: string) => t.trim()) : [],
@@ -203,6 +205,7 @@ export async function action({ request }: ActionFunctionArgs) {
             data: {
               shop,
               productId: prod.id,
+              productHandle: prod.handle || null,
               reviewerName: rev.reviewerName || "Verified Buyer",
               rating: rev.rating || 5,
               bodyShort: rev.bodyShort || "",

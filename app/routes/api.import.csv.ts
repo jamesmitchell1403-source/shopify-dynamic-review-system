@@ -37,10 +37,14 @@ export async function action({ request }: ActionFunctionArgs) {
 
         const externalUrl = reviewData.ExternalUrl || reviewData.external_url || reviewData.URL || reviewData.url || reviewData.Link || reviewData.link || "";
 
+        const matchedProd = shopifyProducts.find((p) => p.id === targetProductId);
+        const productHandle = matchedProd ? matchedProd.handle : null;
+
         await db.review.create({
           data: {
             shop,
             productId: targetProductId,
+            productHandle,
             reviewerName: reviewData.ReviewerName || "Marketplace Customer",
             rating: parseInt(reviewData.Rating || "5", 10),
             bodyShort,
