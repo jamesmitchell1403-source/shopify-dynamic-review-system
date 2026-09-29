@@ -38,12 +38,10 @@ function readLocalBackup(): any[] {
 
 /**
  * Write reviews for one shop into backup JSON without overwriting other stores.
- * explicitWipe=true only when Admin deliberately deleted ALL reviews for this shop.
  */
 function writeLocalBackup(
   reviews: any[],
   shop: string,
-  explicitWipe: boolean = false,
 ): void {
   try {
     const shopCanonical = canonicalizeShopDomain(shop);
@@ -54,22 +52,10 @@ function writeLocalBackup(
       return itemCanonical !== shopCanonical;
     });
 
-    let merged: any[];
-    if (reviews.length === 0 && !explicitWipe) {
-      const existingShopReviews = existing.filter((item: any) => {
-        const itemCanonical = canonicalizeShopDomain(item.shop || "");
-        return itemCanonical === shopCanonical;
-      });
-      merged = [...otherShopReviews, ...existingShopReviews];
-      console.log(
-        `[Persistence] DB empty for ${shop} (no explicit wipe) — keeping ${existingShopReviews.length} backup records.`,
-      );
-    } else {
-      merged = [...otherShopReviews, ...reviews];
-      console.log(
-        `[Persistence] Saved ${reviews.length} reviews for ${shop} to backup (${otherShopReviews.length} other-store reviews preserved).`,
-      );
-    }
+    const merged = [...otherShopReviews, ...reviews];
+    console.log(
+      `[Persistence] Saved ${reviews.length} reviews for ${shop} to backup (${otherShopReviews.length} other-store reviews preserved).`,
+    );
 
     fs.writeFileSync(
       LOCAL_BACKUP_PATH,
@@ -198,115 +184,6 @@ export async function ensureReviewsAndSettingsRestored(
         })
         .catch(() => null);
     }
-
-    // Restore reviews if DB is incomplete for this shop (< 250 reviews)
-    const shopWhere = getShopWhereClause(shop);
-    const reviewCount = await db.review
-      .count({ where: shopWhere })
-      .catch(() => 0);
-
-    if (reviewCount < 250) {
-      const shopCanonical = canonicalizeShopDomain(shop);
-
-      // Try local backup first
-      const localBackup = readLocalBackup();
-      let matchingItems = localBackup.filter((item: any) => {
-        const itemCanonical = canonicalizeShopDomain(item.shop || "");
-        return itemCanonical === shopCanonical;
-      });
-
-      // Filter out any mock marketplace reviews from auto-restore (marketplace reviews must only be user-imported)
-      matchingItems = matchingItems.filter(
-        (item: any) =>
-          ![
-            "IMPORTED_AMAZON",
-            "IMPORTED_FLIPKART",
-            "IMPORTED_ALIBABA",
-          ].includes(item.source),
-      );
-
-      let itemsToRestore = matchingItems;
-
-      // Fall back to Shopify metafield
-      if (itemsToRestore.length === 0) {
-        const metaVal = await fetchShopMetafieldValue(
-          admin,
-          shop,
-          "reviews_backup",
-        );
-        if (metaVal) {
-          try {
-            const parsed = JSON.parse(metaVal);
-            if (Array.isArray(parsed) && parsed.length > 0) {
-              itemsToRestore = parsed.filter(
-                (item: any) =>
-                  ![
-                    "IMPORTED_AMAZON",
-                    "IMPORTED_FLIPKART",
-                    "IMPORTED_ALIBABA",
-                  ].includes(item.source),
-              );
-              console.log(
-                `[Persistence] No local backup for ${shop} — using Shopify metafield (${itemsToRestore.length} reviews).`,
-              );
-            }
-          } catch (e) {
-            console.warn(
-              "[Persistence] Error parsing metafield reviews_backup:",
-              e,
-            );
-          }
-        }
-      }
-
-      if (itemsToRestore.length > 0) {
-        console.log(
-          `[Persistence] Restoring ${itemsToRestore.length} reviews from backup for ${shop}...`,
-        );
-        for (const item of itemsToRestore) {
-          try {
-            await db.review.upsert({
-              where: { id: item.id },
-              update: {}, // Never overwrite existing reviews
-              create: {
-                id: item.id,
-                shop: item.shop || shop,
-                productId: item.productId || null,
-                productHandle: item.productHandle || null,
-                reviewerName: item.reviewerName || "Verified Customer",
-                rating: item.rating || 5,
-                bodyShort: item.bodyShort || "",
-                bodyFull: item.bodyFull || "",
-                source: item.source || "AI_GENERATED",
-                externalUrl: item.externalUrl || null,
-                imageUrl: item.imageUrl || null,
-                videoUrl: item.videoUrl || null,
-                isAiGenerated: item.isAiGenerated ?? true,
-                isPublished: item.isPublished ?? true,
-                isVerifiedPurchase: item.isVerifiedPurchase ?? true,
-                language: item.language || "en",
-                tags:
-                  typeof item.tags === "string"
-                    ? item.tags
-                    : JSON.stringify(item.tags || []),
-                orderId: item.orderId || null,
-                createdAt: item.createdAt
-                  ? new Date(item.createdAt)
-                  : new Date(),
-                updatedAt: item.updatedAt
-                  ? new Date(item.updatedAt)
-                  : new Date(),
-              },
-            });
-          } catch (e) {
-            console.warn("[Persistence] Review single item restore error:", e);
-          }
-        }
-        console.log(`[Persistence] Restore complete for ${shop}.`);
-      } else {
-        console.log(`[Persistence] No backup for ${shop} — fresh install.`);
-      }
-    }
   } catch (err) {
     console.error(
       "[Persistence] Error in ensureReviewsAndSettingsRestored:",
@@ -325,7 +202,6 @@ export async function ensureReviewsAndSettingsRestored(
 export async function syncReviewsToShopify(
   admin: any,
   shop: string,
-  explicitWipe: boolean = false,
 ) {
   if (!shop) return;
   try {
@@ -335,17 +211,8 @@ export async function syncReviewsToShopify(
       orderBy: { createdAt: "desc" },
     });
 
-    // Always update local backup with correct multi-store logic
-    writeLocalBackup(allReviews, shop, explicitWipe);
-
-    // Safety: if DB is empty but not an explicit wipe, auto-restore
-    if (allReviews.length === 0 && !explicitWipe) {
-      console.log(
-        `[Persistence] DB empty for ${shop} (no explicit wipe) — triggering restore...`,
-      );
-      await ensureReviewsAndSettingsRestored(admin, shop);
-      return;
-    }
+    // Always update local backup with exact current DB state
+    writeLocalBackup(allReviews, shop);
 
     // Sync to Shopify metafield as secondary backup
     if (admin) {

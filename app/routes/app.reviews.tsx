@@ -290,10 +290,7 @@ export async function action({ request }: ActionFunctionArgs) {
     });
   }
 
-  // explicitWipe=true ONLY when Admin deliberately deleted ALL reviews
-  // Individual/bulk/pending deletes pass false to protect the backup
-  const explicitWipe = intent === "deleteAll";
-  await syncReviewsToShopify(admin, shop, explicitWipe);
+  await syncReviewsToShopify(admin, shop);
 
   return json({ success: true });
 }
