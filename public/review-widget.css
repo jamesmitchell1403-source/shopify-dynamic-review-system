@@ -588,6 +588,116 @@
 }
 
 /* ------------------------------------------------------------- */
+/* MOBILE COMPACT BOTTOM SHEET LAYOUT (SCREEN WIDTH <= 576PX)   */
+/* ------------------------------------------------------------- */
+@media (max-width: 576px) {
+  .rw-notification-card {
+    width: calc(100vw - 24px) !important;
+    max-width: 550px !important;
+    padding: 10px 12px !important;
+    border-radius: 16px !important;
+    left: 50% !important;
+    right: auto !important;
+    transform: translateX(-50%) translateY(20px) !important;
+  }
+
+  .rw-pos-bottom-left,
+  .rw-pos-bottom-right {
+    bottom: 12px !important;
+    top: auto !important;
+  }
+
+  .rw-pos-top-left,
+  .rw-pos-top-right {
+    top: 12px !important;
+    bottom: auto !important;
+  }
+
+  .rw-notification-card.rw-visible {
+    transform: translateX(-50%) translateY(0) !important;
+  }
+
+  .rw-notification-card.rw-has-media-1 {
+    width: calc(100vw - 24px) !important;
+    padding: 10px 12px !important;
+  }
+
+  .rw-notification-card.rw-has-media-2 {
+    width: calc(100vw - 24px) !important;
+    padding: 10px 12px !important;
+  }
+
+  /* Compact Media Thumbnail (65px) */
+  .rw-media-left {
+    width: 65px !important;
+    min-width: 65px !important;
+    height: 65px !important;
+    border-radius: 10px !important;
+  }
+
+  .rw-media-play-icon {
+    width: 22px !important;
+    height: 22px !important;
+    font-size: 9px !important;
+  }
+
+  .rw-media-time-pill {
+    font-size: 8px !important;
+    padding: 1px 3px !important;
+    bottom: 3px !important;
+    left: 3px !important;
+  }
+
+  .rw-layout-1-wrapper {
+    gap: 10px !important;
+  }
+
+  .rw-media-right .rw-user-info {
+    gap: 6px !important;
+  }
+
+  .rw-media-right .rw-avatar {
+    width: 24px !important;
+    height: 24px !important;
+    min-width: 24px !important;
+    font-size: 10px !important;
+  }
+
+  .rw-media-right .rw-reviewer {
+    font-size: 12.5px !important;
+    max-width: 110px !important;
+  }
+
+  .rw-media-right .rw-stars {
+    font-size: 11px !important;
+  }
+
+  .rw-media-right .rw-body {
+    font-size: 11.5px !important;
+    line-height: 1.3 !important;
+    margin: 1px 0 3px 0 !important;
+    -webkit-line-clamp: 2 !important;
+  }
+
+  .rw-media-right .rw-footer {
+    font-size: 9.5px !important;
+  }
+
+  .rw-close-btn {
+    font-size: 16px !important;
+    padding: 0 2px !important;
+  }
+
+  /* Layout 2 Carousel Mobile Sizing */
+  .rw-carousel-item {
+    width: 80px !important;
+    height: 80px !important;
+    min-width: 80px !important;
+    border-radius: 10px !important;
+  }
+}
+
+/* ------------------------------------------------------------- */
 /* DYNAMIC REVIEW BADGE APP BLOCK STYLES */
 /* ------------------------------------------------------------- */
 .dynamic-review-badge-wrapper {
