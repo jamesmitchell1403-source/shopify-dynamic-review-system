@@ -28,7 +28,7 @@ export class OpenAIProvider implements AIProvider {
 
     const openai = new OpenAI({ apiKey: key });
 
-    const reqCount = input.count || 1;
+    const reqCount = input.count || 5;
     const systemPrompt = `You are an expert e-commerce customer review generator. Every review MUST be product-specific, grounded in actual product data, and sound like a real customer experience.
 
 You MUST output ONLY a valid JSON array of exactly ${reqCount} review objects matching this JSON structure:

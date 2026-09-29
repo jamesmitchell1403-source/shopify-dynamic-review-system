@@ -43,6 +43,7 @@ export async function action({ request }: ActionFunctionArgs) {
     manualReview,
     reviewsPerProduct,
     mediaOption,
+    count,
   } = body;
 
   // Helper: fetch an image URL and convert to base64
@@ -365,6 +366,7 @@ export async function action({ request }: ActionFunctionArgs) {
     const result = await generateReviewsForShop(
       shop,
       {
+        count: count ? Number(count) : 5,
         imageBase64: finalImageBase64,
         imageMimeType: finalImageMimeType,
         description: finalDescription,

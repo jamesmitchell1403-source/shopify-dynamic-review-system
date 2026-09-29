@@ -176,6 +176,7 @@ export default function AiGeneratorPage() {
   const [productImageUrl, setProductImageUrl] = useState<string | null>(products[0]?.imageUrl || null);
   const [notes, setNotes] = useState<string>("");
   const [language, setLanguage] = useState<string>("en");
+  const [reviewCount, setReviewCount] = useState<string>("5");
   const [provider, setProvider] = useState<string>(initialProvider);
 
   // Select dropdown options — disable models without configured API keys
@@ -326,6 +327,7 @@ export default function AiGeneratorPage() {
           notes,
           language,
           provider,
+          count: Number(reviewCount),
           avoidPhrasing,
           mediaOption: mediaOpt,
         }),
@@ -638,7 +640,20 @@ export default function AiGeneratorPage() {
                           placeholder="e.g. 24-hr hydration, non-greasy, fast shipping..."
                         />
 
-                        <InlineGrid columns={2} gap="300">
+                        <InlineGrid columns={3} gap="300">
+                          <Select
+                            label="Number of Reviews"
+                            options={[
+                              { label: "1 Review", value: "1" },
+                              { label: "3 Reviews", value: "3" },
+                              { label: "5 Reviews", value: "5" },
+                              { label: "7 Reviews", value: "7" },
+                              { label: "10 Reviews", value: "10" },
+                            ]}
+                            value={reviewCount}
+                            onChange={setReviewCount}
+                          />
+
                           <Select
                             label="Target Language"
                             options={[
@@ -696,7 +711,7 @@ export default function AiGeneratorPage() {
                           disabled={!aiConfig.hasAnyKey || !provider || (provider === "claude" && !aiConfig.hasClaudeKey) || (provider === "gemini" && !aiConfig.hasGeminiKey) || (provider === "openai" && !aiConfig.hasOpenaiKey)}
                           onClick={() => openMediaModal("single")}
                         >
-                          Generate 5 Authentic Reviews
+                          {`Generate ${reviewCount} Authentic Review${reviewCount === "1" ? "" : "s"}`}
                         </Button>
                       </BlockStack>
                     </Card>
@@ -717,7 +732,7 @@ export default function AiGeneratorPage() {
                             <Badge tone="success">{`Model: ${modelUsed}`}</Badge>
                           </InlineStack>
                           <Button icon={PlusIcon} onClick={() => openMediaModal("single_more")} loading={loading}>
-                            Generate 5 More
+                            {`Generate ${reviewCount} More`}
                           </Button>
                         </InlineStack>
                       )}
@@ -726,7 +741,7 @@ export default function AiGeneratorPage() {
                         <Card padding="500">
                           <BlockStack gap="200" align="center">
                             <Text as="p" tone="subdued">
-                              Select a product on the left and click "Generate 5 Authentic Reviews" to preview customer feedback.
+                              {`Select a product on the left and click "Generate ${reviewCount} Authentic Review${reviewCount === "1" ? "" : "s"}" to preview customer feedback.`}
                             </Text>
                           </BlockStack>
                         </Card>
