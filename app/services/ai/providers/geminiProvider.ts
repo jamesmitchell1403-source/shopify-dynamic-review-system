@@ -27,21 +27,34 @@ export class GeminiProvider implements AIProvider {
     }
 
     const ai = new GoogleGenAI({ apiKey: key });
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash-image",
-      contents: [
-        {
-          role: "user",
-          parts: [
-            { inlineData: { mimeType: productImageMimeType, data: productImageBase64 } },
-            { text: prompt },
-          ],
-        },
-      ],
-      config: {
-        responseModalities: ["IMAGE"],
-      },
-    });
+    let response: any;
+    try {
+      response = await ai.models.generateContent({
+        model: "gemini-2.0-flash",
+        contents: [
+          {
+            role: "user",
+            parts: [
+              { inlineData: { mimeType: productImageMimeType, data: productImageBase64 } },
+              { text: prompt },
+            ],
+          },
+        ],
+      });
+    } catch {
+      response = await ai.models.generateContent({
+        model: "gemini-1.5-flash",
+        contents: [
+          {
+            role: "user",
+            parts: [
+              { inlineData: { mimeType: productImageMimeType, data: productImageBase64 } },
+              { text: prompt },
+            ],
+          },
+        ],
+      });
+    }
 
     const imagePart = response.candidates?.[0]?.content?.parts?.find((part) => part.inlineData?.data);
     if (!imagePart?.inlineData?.data) {
@@ -95,13 +108,24 @@ MANDATORY REQUIREMENTS:
 
     contents.push(promptText);
 
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents,
-      config: {
-        responseMimeType: "application/json",
-      },
-    });
+    let response: any;
+    try {
+      response = await ai.models.generateContent({
+        model: "gemini-2.0-flash",
+        contents,
+        config: {
+          responseMimeType: "application/json",
+        },
+      });
+    } catch {
+      response = await ai.models.generateContent({
+        model: "gemini-1.5-flash",
+        contents,
+        config: {
+          responseMimeType: "application/json",
+        },
+      });
+    }
 
     const textOutput = response.text || "";
     const cleanedText = textOutput.trim().replace(/^```json\s*/i, "").replace(/\s*```$/, "");
@@ -115,13 +139,24 @@ MANDATORY REQUIREMENTS:
 
     const ai = new GoogleGenAI({ apiKey: key });
 
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: `Extract 2 to 4 key product benefit/attribute tags from this review text: "${reviewText}". Output ONLY a JSON string array.`,
-      config: {
-        responseMimeType: "application/json",
-      },
-    });
+    let response: any;
+    try {
+      response = await ai.models.generateContent({
+        model: "gemini-2.0-flash",
+        contents: `Extract 2 to 4 key product benefit/attribute tags from this review text: "${reviewText}". Output ONLY a JSON string array.`,
+        config: {
+          responseMimeType: "application/json",
+        },
+      });
+    } catch {
+      response = await ai.models.generateContent({
+        model: "gemini-1.5-flash",
+        contents: `Extract 2 to 4 key product benefit/attribute tags from this review text: "${reviewText}". Output ONLY a JSON string array.`,
+        config: {
+          responseMimeType: "application/json",
+        },
+      });
+    }
 
     const textOutput = response.text || "";
     try {

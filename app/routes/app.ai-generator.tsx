@@ -187,7 +187,7 @@ export default function AiGeneratorPage() {
       disabled: !aiConfig.hasClaudeKey,
     },
     {
-      label: `Google Gemini (gemini-2.5-flash)${!aiConfig.hasGeminiKey ? " — Key Missing (Disabled)" : ""}`,
+      label: `Google Gemini (gemini-2.0-flash)${!aiConfig.hasGeminiKey ? " — Key Missing (Disabled)" : ""}`,
       value: "gemini",
       disabled: !aiConfig.hasGeminiKey,
     },

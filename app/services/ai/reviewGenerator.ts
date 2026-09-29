@@ -48,7 +48,7 @@ export async function generateReviewsForShop(
 
   const getModelName = (prov: string) => {
     if (prov === "claude") return "claude-3-5-sonnet-20241022";
-    if (prov === "gemini") return "gemini-2.5-flash";
+    if (prov === "gemini") return "gemini-2.0-flash";
     if (prov === "openai") return "gpt-4o-mini";
     return "Template Engine v1";
   };
