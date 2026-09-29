@@ -157,11 +157,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
   // Sort by customer tag matches if available
   if (customerTags.length > 0) {
     formattedReviews.sort((a, b) => {
-      const aIsMarketplace = a.source.startsWith("IMPORTED");
-      const bIsMarketplace = b.source.startsWith("IMPORTED");
-      if (aIsMarketplace && !bIsMarketplace) return -1;
-      if (!aIsMarketplace && bIsMarketplace) return 1;
-
       const aMatches = a.tags.filter((t) => customerTags.includes(t)).length;
       const bMatches = b.tags.filter((t) => customerTags.includes(t)).length;
       return bMatches - aMatches;

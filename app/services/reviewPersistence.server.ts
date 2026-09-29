@@ -1,4 +1,4 @@
-﻿/**
+/**
  * reviewPersistence.server.ts
  *
  * CORE RULE (Permanent, applies to ALL stores):
@@ -177,19 +177,22 @@ export async function ensureReviewsAndSettingsRestored(admin: any, shop: string)
         .catch(() => null);
     }
 
-    // Restore reviews if DB is empty for this shop
+    // Restore reviews if DB is incomplete for this shop (< 250 reviews)
     const shopWhere = getShopWhereClause(shop);
     const reviewCount = await db.review.count({ where: shopWhere }).catch(() => 0);
 
-    if (reviewCount === 0) {
+    if (reviewCount < 250) {
       const shopCanonical = canonicalizeShopDomain(shop);
 
       // Try local backup first
       const localBackup = readLocalBackup();
-      const matchingItems = localBackup.filter((item: any) => {
+      let matchingItems = localBackup.filter((item: any) => {
         const itemCanonical = canonicalizeShopDomain(item.shop || "");
         return itemCanonical === shopCanonical;
       });
+
+      // Filter out any mock marketplace reviews from auto-restore (marketplace reviews must only be user-imported)
+      matchingItems = matchingItems.filter((item: any) => !["IMPORTED_AMAZON", "IMPORTED_FLIPKART", "IMPORTED_ALIBABA"].includes(item.source));
 
       let itemsToRestore = matchingItems;
 
@@ -200,9 +203,9 @@ export async function ensureReviewsAndSettingsRestored(admin: any, shop: string)
           try {
             const parsed = JSON.parse(metaVal);
             if (Array.isArray(parsed) && parsed.length > 0) {
-              itemsToRestore = parsed;
+              itemsToRestore = parsed.filter((item: any) => !["IMPORTED_AMAZON", "IMPORTED_FLIPKART", "IMPORTED_ALIBABA"].includes(item.source));
               console.log(
-                `[Persistence] No local backup for ${shop} — using Shopify metafield (${parsed.length} reviews).`
+                `[Persistence] No local backup for ${shop} — using Shopify metafield (${itemsToRestore.length} reviews).`
               );
             }
           } catch (e) {
@@ -219,7 +222,7 @@ export async function ensureReviewsAndSettingsRestored(admin: any, shop: string)
           try {
             await db.review.upsert({
               where: { id: item.id },
-              update: {}, // Never overwrite restored reviews
+              update: {}, // Never overwrite existing reviews
               create: {
                 id: item.id,
                 shop: item.shop || shop,
