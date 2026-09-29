@@ -1,14 +1,22 @@
 import { json, LoaderFunctionArgs, ActionFunctionArgs } from "@remix-run/node";
 import { useLoaderData, useActionData, Form, useNavigation } from "@remix-run/react";
-import db from "../db.server";
+import db, { ensureTablesExist } from "../db.server";
 import { autoTagReviewText } from "../services/ai/autoTagger";
-import { syncReviewsToShopify } from "../services/reviewPersistence.server";
+import { syncReviewsToShopify, ensureReviewsAndSettingsRestored } from "../services/reviewPersistence.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
+  await ensureTablesExist();
+
   const url = new URL(request.url);
   const productId = url.searchParams.get("product") || url.searchParams.get("productId") || "";
   const orderId = url.searchParams.get("order") || url.searchParams.get("orderId") || "";
   const shop = url.searchParams.get("shop") || "";
+
+  if (shop) {
+    try {
+      await ensureReviewsAndSettingsRestored(null, shop);
+    } catch {}
+  }
 
   // Increment scan count if QR code record exists
   if (productId || orderId) {

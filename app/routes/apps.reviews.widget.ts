@@ -1,14 +1,25 @@
 import { json, LoaderFunctionArgs } from "@remix-run/node";
-import db from "../db.server";
+import db, { ensureTablesExist } from "../db.server";
 import { getReviewerAvatarPhotoUrl } from "../services/ai/reviewGenerator";
 import { getShopWhereClause } from "../services/shopDomain.server";
+import { ensureReviewsAndSettingsRestored } from "../services/reviewPersistence.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
+  await ensureTablesExist();
+
   const url = new URL(request.url);
   const productId = url.searchParams.get("productId");
   const productHandle = url.searchParams.get("productHandle");
   const shopParam = url.searchParams.get("shop") || request.headers.get("x-shopify-shop-domain");
   const customerTagsParam = url.searchParams.get("customerTags");
+
+  if (shopParam) {
+    try {
+      await ensureReviewsAndSettingsRestored(null, shopParam);
+    } catch (e) {
+      console.warn("Storefront widget loader auto-restore warning:", e);
+    }
+  }
 
   if (!productId && !productHandle) {
     return json({ reviews: [], settings: null, error: "Missing productId or productHandle" }, {
