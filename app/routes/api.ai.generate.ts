@@ -44,11 +44,13 @@ export async function action({ request }: ActionFunctionArgs) {
     }
 
     const finalManualImg = manualReview.imageUrl || null;
+    const manualHandle = manualReview.productHandle || manualReview.productId.replace(/^gid:\/\/shopify\/Product\//, "");
 
     const created = await db.review.create({
       data: {
         shop,
         productId: manualReview.productId,
+        productHandle: manualHandle,
         reviewerName: manualReview.reviewerName || "Verified Buyer",
         rating: Number(manualReview.rating) || 5,
         bodyShort: manualReview.bodyShort || manualReview.bodyFull.substring(0, 100),
@@ -78,11 +80,13 @@ export async function action({ request }: ActionFunctionArgs) {
     }
 
     const finalSaveImg = saveReview.imageUrl || null;
+    const saveHandle = saveReview.productHandle || productId.replace(/^gid:\/\/shopify\/Product\//, "");
 
     const created = await db.review.create({
       data: {
         shop,
         productId,
+        productHandle: saveHandle,
         reviewerName: saveReview.reviewerName || "Verified Buyer",
         rating: saveReview.rating || 5,
         bodyShort: saveReview.bodyShort || "",

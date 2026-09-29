@@ -98,7 +98,18 @@ export async function loader({ request }: LoaderFunctionArgs) {
     });
   }
 
-  const safeProductReviews = productReviews.filter((r) => r.isPublished);
+  let safeProductReviews = productReviews.filter((r) => r.isPublished);
+
+  // If no product-specific reviews match, fallback to published shop-wide reviews
+  // so stored reviews in Admin are always displayed on the storefront
+  if (safeProductReviews.length === 0) {
+    const fallbackReviews = await db.review.findMany({
+      where: baseWhere,
+      orderBy: { createdAt: "desc" },
+      take: 100,
+    }).catch(() => []);
+    safeProductReviews = fallbackReviews.filter((r) => r.isPublished);
+  }
 
   let reviewsToReturn: any[] = [];
   let totalCount = 0;
@@ -110,7 +121,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     const sumRating = safeProductReviews.reduce((sum, r) => sum + (r.rating || 5), 0);
     averageRating = (sumRating / totalCount).toFixed(1);
   } else {
-    // If shop has 0 published reviews -> return empty array, 0 count, no popup!
+    // If shop genuinely has 0 published reviews -> return empty array
     return json(
       {
         reviews: [],
