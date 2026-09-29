@@ -159,7 +159,7 @@ export default function AiGeneratorPage() {
 
   // --- STATE FOR MEDIA GENERATION MODAL ---
   const [isMediaModalOpen, setIsMediaModalOpen] = useState<boolean>(false);
-  const [selectedMediaOption, setSelectedMediaOption] = useState<string>("image_video");
+  const [selectedMediaOption, setSelectedMediaOption] = useState<string>("image");
   const [pendingGenType, setPendingGenType] = useState<"bulk" | "single" | "single_more" | null>(null);
 
   // --- STATE FOR BULK GENERATION FOR ALL PRODUCTS ---
@@ -458,15 +458,7 @@ export default function AiGeneratorPage() {
                     value: "image",
                   },
                   {
-                    label: "2. Video – Generate a review with an AI-generated product video.",
-                    value: "video",
-                  },
-                  {
-                    label: "3. Image + Video – Generate the review with both an image and a video.",
-                    value: "image_video",
-                  },
-                  {
-                    label: "4. No Image & Video – Generate only the text review without any image or video.",
+                    label: "2. No Image & Video – Generate only the text review without any image or video.",
                     value: "none",
                   },
                 ]}
