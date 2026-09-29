@@ -15,15 +15,20 @@ const ReviewArraySchema = z.array(ReviewSchema);
 export class OpenAIProvider implements AIProvider {
   public providerName = "openai" as const;
 
-  public async generateReviews(input: ReviewGenInput, apiKey?: string): Promise<GeneratedReview[]> {
+  public async generateReviews(
+    input: ReviewGenInput,
+    apiKey?: string,
+  ): Promise<GeneratedReview[]> {
     const key = apiKey || process.env.OPENAI_API_KEY;
     if (!key) {
-      throw new Error("OpenAI ChatGPT API key missing. Please provide it in AI Settings or OPENAI_API_KEY env variable.");
+      throw new Error(
+        "OpenAI ChatGPT API key missing. Please provide it in AI Settings or OPENAI_API_KEY env variable.",
+      );
     }
 
     const openai = new OpenAI({ apiKey: key });
 
-    const reqCount = input.count || 5;
+    const reqCount = input.count || 1;
     const systemPrompt = `You are an expert e-commerce customer review generator. Every review MUST be product-specific, grounded in actual product data, and sound like a real customer experience.
 
 You MUST output ONLY a valid JSON array of exactly ${reqCount} review objects matching this JSON structure:
@@ -92,12 +97,21 @@ All reviewer names in the generated array MUST be unique, natural human names.`;
     });
 
     const textOutput = response.choices[0]?.message?.content || "";
-    let cleanedText = textOutput.trim().replace(/^```json\s*/i, "").replace(/\s*```$/, "");
-    
+    let cleanedText = textOutput
+      .trim()
+      .replace(/^```json\s*/i, "")
+      .replace(/\s*```$/, "");
+
     // In json_object response format, OpenAI sometimes wraps the array inside an object key like { "reviews": [...] }
     let parsed = JSON.parse(cleanedText);
-    if (!Array.isArray(parsed) && typeof parsed === "object" && parsed !== null) {
-      const arrayKey = Object.keys(parsed).find((k) => Array.isArray(parsed[k]));
+    if (
+      !Array.isArray(parsed) &&
+      typeof parsed === "object" &&
+      parsed !== null
+    ) {
+      const arrayKey = Object.keys(parsed).find((k) =>
+        Array.isArray(parsed[k]),
+      );
       if (arrayKey) {
         parsed = parsed[arrayKey];
       }
@@ -106,7 +120,10 @@ All reviewer names in the generated array MUST be unique, natural human names.`;
     return ReviewArraySchema.parse(parsed);
   }
 
-  public async autoTagReview(reviewText: string, apiKey?: string): Promise<string[]> {
+  public async autoTagReview(
+    reviewText: string,
+    apiKey?: string,
+  ): Promise<string[]> {
     const key = apiKey || process.env.OPENAI_API_KEY;
     if (!key) return [];
 
@@ -117,7 +134,8 @@ All reviewer names in the generated array MUST be unique, natural human names.`;
       messages: [
         {
           role: "system",
-          content: "Extract 2 to 4 concise product attribute/USP tags from the review text. Output ONLY a JSON array of strings (e.g. [\"dry-skin\", \"moisturizing\"]).",
+          content:
+            'Extract 2 to 4 concise product attribute/USP tags from the review text. Output ONLY a JSON array of strings (e.g. ["dry-skin", "moisturizing"]).',
         },
         { role: "user", content: reviewText },
       ],
@@ -127,10 +145,19 @@ All reviewer names in the generated array MUST be unique, natural human names.`;
 
     const textOutput = response.choices[0]?.message?.content || "";
     try {
-      let cleaned = textOutput.trim().replace(/^```json\s*/i, "").replace(/\s*```$/, "");
+      let cleaned = textOutput
+        .trim()
+        .replace(/^```json\s*/i, "")
+        .replace(/\s*```$/, "");
       let parsed = JSON.parse(cleaned);
-      if (!Array.isArray(parsed) && typeof parsed === "object" && parsed !== null) {
-        const arrayKey = Object.keys(parsed).find((k) => Array.isArray(parsed[k]));
+      if (
+        !Array.isArray(parsed) &&
+        typeof parsed === "object" &&
+        parsed !== null
+      ) {
+        const arrayKey = Object.keys(parsed).find((k) =>
+          Array.isArray(parsed[k]),
+        );
         if (arrayKey) parsed = parsed[arrayKey];
       }
       if (Array.isArray(parsed)) return parsed.map(String);
