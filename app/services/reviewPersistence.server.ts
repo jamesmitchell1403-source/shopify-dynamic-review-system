@@ -15,11 +15,13 @@
 import db from "../db.server";
 import fs from "fs";
 import path from "path";
-import { getShopWhereClause, canonicalizeShopDomain } from "./shopDomain.server";
+import {
+  getShopWhereClause,
+  canonicalizeShopDomain,
+} from "./shopDomain.server";
 
 const LOCAL_BACKUP_PATH = path.join(process.cwd(), "reviews_backup_data.json");
-const ADMIN_TOKEN =
-  process.env.SHOPIFY_ADMIN_ACCESS_TOKEN || "";
+const ADMIN_TOKEN = process.env.SHOPIFY_ADMIN_ACCESS_TOKEN || "";
 
 function readLocalBackup(): any[] {
   try {
@@ -38,7 +40,11 @@ function readLocalBackup(): any[] {
  * Write reviews for one shop into backup JSON without overwriting other stores.
  * explicitWipe=true only when Admin deliberately deleted ALL reviews for this shop.
  */
-function writeLocalBackup(reviews: any[], shop: string, explicitWipe: boolean = false): void {
+function writeLocalBackup(
+  reviews: any[],
+  shop: string,
+  explicitWipe: boolean = false,
+): void {
   try {
     const shopCanonical = canonicalizeShopDomain(shop);
     const existing = readLocalBackup();
@@ -56,16 +62,20 @@ function writeLocalBackup(reviews: any[], shop: string, explicitWipe: boolean = 
       });
       merged = [...otherShopReviews, ...existingShopReviews];
       console.log(
-        `[Persistence] DB empty for ${shop} (no explicit wipe) — keeping ${existingShopReviews.length} backup records.`
+        `[Persistence] DB empty for ${shop} (no explicit wipe) — keeping ${existingShopReviews.length} backup records.`,
       );
     } else {
       merged = [...otherShopReviews, ...reviews];
       console.log(
-        `[Persistence] Saved ${reviews.length} reviews for ${shop} to backup (${otherShopReviews.length} other-store reviews preserved).`
+        `[Persistence] Saved ${reviews.length} reviews for ${shop} to backup (${otherShopReviews.length} other-store reviews preserved).`,
       );
     }
 
-    fs.writeFileSync(LOCAL_BACKUP_PATH, JSON.stringify(merged, null, 2), "utf-8");
+    fs.writeFileSync(
+      LOCAL_BACKUP_PATH,
+      JSON.stringify(merged, null, 2),
+      "utf-8",
+    );
   } catch (e) {
     console.error("[Persistence] Error writing local JSON backup:", e);
   }
@@ -74,7 +84,7 @@ function writeLocalBackup(reviews: any[], shop: string, explicitWipe: boolean = 
 async function fetchShopMetafieldValue(
   admin: any,
   shop: string,
-  key: string
+  key: string,
 ): Promise<string | null> {
   if (admin) {
     try {
@@ -87,7 +97,7 @@ async function fetchShopMetafieldValue(
             }
           }
         }`,
-        { variables: { key } }
+        { variables: { key } },
       );
       const jsonRes = await res.json();
       const val = jsonRes.data?.shop?.metafield?.value;
@@ -98,7 +108,9 @@ async function fetchShopMetafieldValue(
   }
 
   try {
-    const session = await db.session.findFirst({ where: { shop } }).catch(() => null);
+    const session = await db.session
+      .findFirst({ where: { shop } })
+      .catch(() => null);
     const token = session?.accessToken || ADMIN_TOKEN;
     if (token) {
       const restUrl = `https://${shop}/admin/api/2025-01/metafields.json?namespace=ai_review_system&key=${key}`;
@@ -126,7 +138,10 @@ async function fetchShopMetafieldValue(
  * Auto-restores reviews and settings if DB is empty for a shop.
  * NEVER deletes existing reviews.
  */
-export async function ensureReviewsAndSettingsRestored(admin: any, shop: string) {
+export async function ensureReviewsAndSettingsRestored(
+  admin: any,
+  shop: string,
+) {
   if (!shop) return;
 
   try {
@@ -136,7 +151,11 @@ export async function ensureReviewsAndSettingsRestored(admin: any, shop: string)
       .catch(() => null);
 
     if (!settings) {
-      const metaVal = await fetchShopMetafieldValue(admin, shop, "widget_settings");
+      const metaVal = await fetchShopMetafieldValue(
+        admin,
+        shop,
+        "widget_settings",
+      );
       if (metaVal) {
         try {
           const parsed = JSON.parse(metaVal);
@@ -155,7 +174,10 @@ export async function ensureReviewsAndSettingsRestored(admin: any, shop: string)
             })
             .catch(() => null);
         } catch (e) {
-          console.error("[Persistence] Error parsing widget_settings metafield:", e);
+          console.error(
+            "[Persistence] Error parsing widget_settings metafield:",
+            e,
+          );
         }
       }
     }
@@ -179,7 +201,9 @@ export async function ensureReviewsAndSettingsRestored(admin: any, shop: string)
 
     // Restore reviews if DB is incomplete for this shop (< 250 reviews)
     const shopWhere = getShopWhereClause(shop);
-    const reviewCount = await db.review.count({ where: shopWhere }).catch(() => 0);
+    const reviewCount = await db.review
+      .count({ where: shopWhere })
+      .catch(() => 0);
 
     if (reviewCount < 250) {
       const shopCanonical = canonicalizeShopDomain(shop);
@@ -192,31 +216,52 @@ export async function ensureReviewsAndSettingsRestored(admin: any, shop: string)
       });
 
       // Filter out any mock marketplace reviews from auto-restore (marketplace reviews must only be user-imported)
-      matchingItems = matchingItems.filter((item: any) => !["IMPORTED_AMAZON", "IMPORTED_FLIPKART", "IMPORTED_ALIBABA"].includes(item.source));
+      matchingItems = matchingItems.filter(
+        (item: any) =>
+          ![
+            "IMPORTED_AMAZON",
+            "IMPORTED_FLIPKART",
+            "IMPORTED_ALIBABA",
+          ].includes(item.source),
+      );
 
       let itemsToRestore = matchingItems;
 
       // Fall back to Shopify metafield
       if (itemsToRestore.length === 0) {
-        const metaVal = await fetchShopMetafieldValue(admin, shop, "reviews_backup");
+        const metaVal = await fetchShopMetafieldValue(
+          admin,
+          shop,
+          "reviews_backup",
+        );
         if (metaVal) {
           try {
             const parsed = JSON.parse(metaVal);
             if (Array.isArray(parsed) && parsed.length > 0) {
-              itemsToRestore = parsed.filter((item: any) => !["IMPORTED_AMAZON", "IMPORTED_FLIPKART", "IMPORTED_ALIBABA"].includes(item.source));
+              itemsToRestore = parsed.filter(
+                (item: any) =>
+                  ![
+                    "IMPORTED_AMAZON",
+                    "IMPORTED_FLIPKART",
+                    "IMPORTED_ALIBABA",
+                  ].includes(item.source),
+              );
               console.log(
-                `[Persistence] No local backup for ${shop} — using Shopify metafield (${itemsToRestore.length} reviews).`
+                `[Persistence] No local backup for ${shop} — using Shopify metafield (${itemsToRestore.length} reviews).`,
               );
             }
           } catch (e) {
-            console.warn("[Persistence] Error parsing metafield reviews_backup:", e);
+            console.warn(
+              "[Persistence] Error parsing metafield reviews_backup:",
+              e,
+            );
           }
         }
       }
 
       if (itemsToRestore.length > 0) {
         console.log(
-          `[Persistence] Restoring ${itemsToRestore.length} reviews from backup for ${shop}...`
+          `[Persistence] Restoring ${itemsToRestore.length} reviews from backup for ${shop}...`,
         );
         for (const item of itemsToRestore) {
           try {
@@ -245,8 +290,12 @@ export async function ensureReviewsAndSettingsRestored(admin: any, shop: string)
                     ? item.tags
                     : JSON.stringify(item.tags || []),
                 orderId: item.orderId || null,
-                createdAt: item.createdAt ? new Date(item.createdAt) : new Date(),
-                updatedAt: item.updatedAt ? new Date(item.updatedAt) : new Date(),
+                createdAt: item.createdAt
+                  ? new Date(item.createdAt)
+                  : new Date(),
+                updatedAt: item.updatedAt
+                  ? new Date(item.updatedAt)
+                  : new Date(),
               },
             });
           } catch (e) {
@@ -259,7 +308,10 @@ export async function ensureReviewsAndSettingsRestored(admin: any, shop: string)
       }
     }
   } catch (err) {
-    console.error("[Persistence] Error in ensureReviewsAndSettingsRestored:", err);
+    console.error(
+      "[Persistence] Error in ensureReviewsAndSettingsRestored:",
+      err,
+    );
   }
 }
 
@@ -273,7 +325,7 @@ export async function ensureReviewsAndSettingsRestored(admin: any, shop: string)
 export async function syncReviewsToShopify(
   admin: any,
   shop: string,
-  explicitWipe: boolean = false
+  explicitWipe: boolean = false,
 ) {
   if (!shop) return;
   try {
@@ -288,7 +340,9 @@ export async function syncReviewsToShopify(
 
     // Safety: if DB is empty but not an explicit wipe, auto-restore
     if (allReviews.length === 0 && !explicitWipe) {
-      console.log(`[Persistence] DB empty for ${shop} (no explicit wipe) — triggering restore...`);
+      console.log(
+        `[Persistence] DB empty for ${shop} (no explicit wipe) — triggering restore...`,
+      );
       await ensureReviewsAndSettingsRestored(admin, shop);
       return;
     }
@@ -300,7 +354,7 @@ export async function syncReviewsToShopify(
           `#graphql
           query getShopId {
             shop { id }
-          }`
+          }`,
         );
         const shopJson = await shopRes.json();
         const shopId = shopJson.data?.shop?.id;
@@ -324,12 +378,15 @@ export async function syncReviewsToShopify(
                   },
                 ],
               },
-            }
+            },
           );
           return;
         }
       } catch (gqlErr) {
-        console.warn("[Persistence] GraphQL save reviews backup warning:", gqlErr);
+        console.warn(
+          "[Persistence] GraphQL save reviews backup warning:",
+          gqlErr,
+        );
       }
     }
 
@@ -353,11 +410,133 @@ export async function syncReviewsToShopify(
       console.warn("[Persistence] REST save reviews backup warning:", restErr);
     }
   } catch (err) {
-    console.error("[Persistence] Error syncing reviews to Shopify Metafield:", err);
+    console.error(
+      "[Persistence] Error syncing reviews to Shopify Metafield:",
+      err,
+    );
   }
 }
 
-export async function syncSettingsToShopify(admin: any, shop: string, settingsData: any) {
+export async function uploadReviewImageToShopify(
+  admin: any,
+  dataUrl: string,
+  filename: string,
+): Promise<string | null> {
+  const match = dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+  if (!match) return null;
+
+  const [, mimeType, encodedImage] = match;
+  const stagedResponse = await admin.graphql(
+    `
+    #graphql
+    mutation stageReviewImage($input: [StagedUploadInput!]!) {
+      stagedUploadsCreate(input: $input) {
+        stagedTargets {
+          url
+          resourceUrl
+          parameters { name value }
+        }
+        userErrors { field message }
+      }
+    }
+  `,
+    {
+      variables: {
+        input: [{ filename, mimeType, httpMethod: "POST", resource: "IMAGE" }],
+      },
+    },
+  );
+  const stagedJson = await stagedResponse.json();
+  const staged = stagedJson.data?.stagedUploadsCreate;
+  if (staged?.userErrors?.length || !staged?.stagedTargets?.[0]) {
+    throw new Error(
+      staged?.userErrors?.[0]?.message ||
+        "Shopify image upload could not be staged.",
+    );
+  }
+
+  const target = staged.stagedTargets[0];
+  const form = new FormData();
+  for (const parameter of target.parameters)
+    form.append(parameter.name, parameter.value);
+  form.append(
+    "file",
+    new Blob([Buffer.from(encodedImage, "base64")], { type: mimeType }),
+    filename,
+  );
+
+  const uploadResponse = await fetch(target.url, {
+    method: "POST",
+    body: form,
+  });
+  if (!uploadResponse.ok) {
+    throw new Error(
+      `Shopify staged image upload failed with status ${uploadResponse.status}.`,
+    );
+  }
+
+  const fileResponse = await admin.graphql(
+    `
+    #graphql
+    mutation createReviewImage($files: [FileCreateInput!]!) {
+      fileCreate(files: $files) {
+        files { id fileStatus }
+        userErrors { field message }
+      }
+    }
+  `,
+    {
+      variables: {
+        files: [
+          {
+            contentType: "IMAGE",
+            originalSource: target.resourceUrl,
+            filename,
+          },
+        ],
+      },
+    },
+  );
+  const fileJson = await fileResponse.json();
+  const createdFile = fileJson.data?.fileCreate;
+  if (createdFile?.userErrors?.length || !createdFile?.files?.[0]?.id) {
+    throw new Error(
+      createdFile?.userErrors?.[0]?.message ||
+        "Shopify could not create the review image.",
+    );
+  }
+
+  const fileId = createdFile.files[0].id;
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const statusResponse = await admin.graphql(
+      `
+      #graphql
+      query reviewImageStatus($id: ID!) {
+        node(id: $id) {
+          ... on MediaImage {
+            fileStatus
+            image { url }
+          }
+        }
+      }
+    `,
+      { variables: { id: fileId } },
+    );
+    const statusJson = await statusResponse.json();
+    const image = statusJson.data?.node;
+    if (image?.image?.url) return image.image.url;
+    if (image?.fileStatus === "FAILED") break;
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+
+  return null;
+}
+
+export async function syncSettingsToShopify(
+  admin: any,
+  shop: string,
+  settingsData: any,
+) {
   if (!shop) return;
   try {
     if (admin) {
@@ -365,7 +544,7 @@ export async function syncSettingsToShopify(admin: any, shop: string, settingsDa
         `#graphql
         query getShopId {
           shop { id }
-        }`
+        }`,
       );
       const shopJson = await shopRes.json();
       const shopId = shopJson.data?.shop?.id;
@@ -389,7 +568,7 @@ export async function syncSettingsToShopify(admin: any, shop: string, settingsDa
                 },
               ],
             },
-          }
+          },
         );
         return;
       }
@@ -411,23 +590,35 @@ export async function syncSettingsToShopify(admin: any, shop: string, settingsDa
       }),
     });
   } catch (err) {
-    console.error("[Persistence] Error syncing settings to Shopify Metafield:", err);
+    console.error(
+      "[Persistence] Error syncing settings to Shopify Metafield:",
+      err,
+    );
   }
 }
 
 export async function ensureAiJobsRestored(admin: any, shop: string) {
   if (!shop) return;
   try {
-    const count = await db.aiGenerationJob.count({ where: { shop } }).catch(() => 0);
+    const count = await db.aiGenerationJob
+      .count({ where: { shop } })
+      .catch(() => 0);
     if (count === 0) {
-      const metaVal = await fetchShopMetafieldValue(admin, shop, "ai_jobs_backup");
+      const metaVal = await fetchShopMetafieldValue(
+        admin,
+        shop,
+        "ai_jobs_backup",
+      );
       if (metaVal) {
         const parsed = JSON.parse(metaVal);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          console.log(`[Persistence] Restoring ${parsed.length} AI generation jobs for ${shop}...`);
+          console.log(
+            `[Persistence] Restoring ${parsed.length} AI generation jobs for ${shop}...`,
+          );
           for (const item of parsed) {
             try {
-              const itemId = item.id || `job-${Math.random().toString(36).substring(7)}`;
+              const itemId =
+                item.id || `job-${Math.random().toString(36).substring(7)}`;
               await db.aiGenerationJob.upsert({
                 where: { id: itemId },
                 update: {},
@@ -443,11 +634,16 @@ export async function ensureAiJobsRestored(admin: any, shop: string) {
                   modelUsed: item.modelUsed || "Default Model",
                   status: item.status || "completed",
                   resultCount: item.resultCount ?? 0,
-                  createdAt: item.createdAt ? new Date(item.createdAt) : new Date(),
+                  createdAt: item.createdAt
+                    ? new Date(item.createdAt)
+                    : new Date(),
                 },
               });
             } catch (singleErr) {
-              console.warn("[Persistence] Single AI job restore skipped:", singleErr);
+              console.warn(
+                "[Persistence] Single AI job restore skipped:",
+                singleErr,
+              );
             }
           }
         }
@@ -461,7 +657,7 @@ export async function ensureAiJobsRestored(admin: any, shop: string) {
 export async function syncAiJobsToShopify(
   admin: any,
   shop: string,
-  allowEmptySync: boolean = false
+  allowEmptySync: boolean = false,
 ) {
   if (!shop) return;
   try {
@@ -481,7 +677,7 @@ export async function syncAiJobsToShopify(
           `#graphql
           query getShopId {
             shop { id }
-          }`
+          }`,
         );
         const shopJson = await shopRes.json();
         const shopId = shopJson.data?.shop?.id;
@@ -505,12 +701,15 @@ export async function syncAiJobsToShopify(
                   },
                 ],
               },
-            }
+            },
           );
           return;
         }
       } catch (gqlErr) {
-        console.warn("[Persistence] GraphQL save AI jobs backup warning:", gqlErr);
+        console.warn(
+          "[Persistence] GraphQL save AI jobs backup warning:",
+          gqlErr,
+        );
       }
     }
 
@@ -530,6 +729,9 @@ export async function syncAiJobsToShopify(
       }),
     });
   } catch (err) {
-    console.error("[Persistence] Error syncing AI jobs to Shopify Metafield:", err);
+    console.error(
+      "[Persistence] Error syncing AI jobs to Shopify Metafield:",
+      err,
+    );
   }
 }

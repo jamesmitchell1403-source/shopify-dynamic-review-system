@@ -7,8 +7,12 @@ import { getShopAIConfig } from "./config";
 export async function generateReviewsForShop(
   shopDomain: string,
   input: ReviewGenInput,
-  preferredProvider?: "claude" | "gemini" | "openai"
-): Promise<{ reviews: GeneratedReview[]; providerUsed: string; modelUsed: string }> {
+  preferredProvider?: "claude" | "gemini" | "openai",
+): Promise<{
+  reviews: GeneratedReview[];
+  providerUsed: string;
+  modelUsed: string;
+}> {
   const config = await getShopAIConfig(shopDomain);
   const activeProvider = preferredProvider || config.defaultProvider;
 
@@ -51,40 +55,114 @@ export async function generateReviewsForShop(
 
   try {
     if (!primaryKey) {
-      throw new Error(`Selected AI Provider (${activeProvider.toUpperCase()}) does not have an API key configured in AI Settings. Please add a valid API key to enable review generation.`);
+      throw new Error(
+        `Selected AI Provider (${activeProvider.toUpperCase()}) does not have an API key configured in AI Settings. Please add a valid API key to enable review generation.`,
+      );
     }
 
     const reviews = await primary.generateReviews(input, primaryKey);
     return {
-      reviews: validateAndPostProcessReviews(reviews, input),
+      reviews: await addGeminiGeneratedImages(
+        validateAndPostProcessReviews(reviews, input),
+        input,
+        config.geminiApiKey,
+      ),
       providerUsed: primary.providerName,
       modelUsed: getModelName(primary.providerName),
     };
   } catch (primaryError: any) {
-    console.warn(`Primary AI Provider (${primary.providerName}) failed: ${primaryError?.message}. Attempting fallback...`);
+    console.warn(
+      `Primary AI Provider (${primary.providerName}) failed: ${primaryError?.message}. Attempting fallback...`,
+    );
 
     // Try fallback
     if (secondary && secondaryKey) {
       try {
-        const fallbackReviews = await secondary.generateReviews(input, secondaryKey);
+        const fallbackReviews = await secondary.generateReviews(
+          input,
+          secondaryKey,
+        );
         return {
-          reviews: validateAndPostProcessReviews(fallbackReviews, input),
+          reviews: await addGeminiGeneratedImages(
+            validateAndPostProcessReviews(fallbackReviews, input),
+            input,
+            config.geminiApiKey,
+          ),
           providerUsed: secondary.providerName,
           modelUsed: getModelName(secondary.providerName),
         };
       } catch (secondaryError: any) {
-        console.warn(`Fallback AI Provider (${secondary.providerName}) also failed: ${secondaryError?.message}. Using Smart Template Engine fallback...`);
+        console.warn(
+          `Fallback AI Provider (${secondary.providerName}) also failed: ${secondaryError?.message}. Using Smart Template Engine fallback...`,
+        );
       }
     }
 
     // Fallback to smart demo generator if API key error occurs
     const demoReviews = generateSmartDemoReviews(input);
     return {
-      reviews: validateAndPostProcessReviews(demoReviews, input),
+      reviews: await addGeminiGeneratedImages(
+        validateAndPostProcessReviews(demoReviews, input),
+        input,
+        config.geminiApiKey,
+      ),
       providerUsed: `Smart Demo Engine (${primary.providerName} key error)`,
       modelUsed: "Template Engine v1",
     };
   }
+}
+
+async function addGeminiGeneratedImages(
+  reviews: GeneratedReview[],
+  input: ReviewGenInput,
+  geminiApiKey?: string,
+): Promise<GeneratedReview[]> {
+  const shouldGenerateImages =
+    input.mediaOption === "image" || input.mediaOption === "image_video";
+  if (
+    !shouldGenerateImages ||
+    !input.imageBase64 ||
+    !input.imageMimeType ||
+    !geminiApiKey
+  ) {
+    return reviews;
+  }
+
+  const gemini = new GeminiProvider();
+  const generatedReviews: GeneratedReview[] = [];
+
+  for (const review of reviews) {
+    try {
+      const image = await gemini.generateReviewImage(
+        input.imageBase64,
+        input.imageMimeType,
+        `Create a realistic, high-quality customer lifestyle photo for an e-commerce review.
+Use the provided product image as the exact visual reference for the product. Keep the product's shape, color, material, and design accurate.
+Show the product naturally in use in an appropriate setting. Do not add text, captions, watermarks, extra products, fake packaging, or logos.
+The image must look like an authentic customer-taken product photo, not an advertisement or illustration.
+
+Product information:
+${input.description}
+${input.notes ? `Additional product notes: ${input.notes}` : ""}
+
+Review context:
+${review.bodyFull}`,
+        geminiApiKey,
+      );
+
+      generatedReviews.push({
+        ...review,
+        imageUrl: `data:${image.mimeType};base64,${image.base64}`,
+      });
+    } catch (error: any) {
+      console.warn(
+        `Gemini review image generation failed: ${error?.message || "Unknown error"}`,
+      );
+      generatedReviews.push(review);
+    }
+  }
+
+  return generatedReviews;
 }
 
 function generateSmartDemoReviews(input: ReviewGenInput): GeneratedReview[] {
@@ -102,25 +180,89 @@ function generateSmartDemoReviews(input: ReviewGenInput): GeneratedReview[] {
   const targetCount = input.count || 5;
 
   // Accurate Category Keyword Detection
-  const isBedding = text.includes("sheet") || text.includes("pillowcase") || text.includes("duvet") || text.includes("comforter") || text.includes("thread count") || text.includes("bedding") || text.includes("bed ");
-  const isTowels = text.includes("towel") || text.includes("washcloth") || text.includes("bath") || text.includes("shower") || text.includes("robe");
-  const isBeauty = text.includes("skin") || text.includes("cream") || text.includes("serum") || text.includes("lotion") || text.includes("cleanser") || text.includes("moisturizer");
-  const isClothing = (text.includes("hoodie") || text.includes("sweatpants") || text.includes("shirt") || text.includes("jacket") || text.includes("pant") || text.includes("suit") || text.includes("dress") || text.includes("wear")) && !isBedding && !isTowels;
-  const isWax = text.includes("wax") || text.includes("tuning") || text.includes("glide") || text.includes("snowboard") || text.includes("ski");
+  const isBedding =
+    text.includes("sheet") ||
+    text.includes("pillowcase") ||
+    text.includes("duvet") ||
+    text.includes("comforter") ||
+    text.includes("thread count") ||
+    text.includes("bedding") ||
+    text.includes("bed ");
+  const isTowels =
+    text.includes("towel") ||
+    text.includes("washcloth") ||
+    text.includes("bath") ||
+    text.includes("shower") ||
+    text.includes("robe");
+  const isBeauty =
+    text.includes("skin") ||
+    text.includes("cream") ||
+    text.includes("serum") ||
+    text.includes("lotion") ||
+    text.includes("cleanser") ||
+    text.includes("moisturizer");
+  const isClothing =
+    (text.includes("hoodie") ||
+      text.includes("sweatpants") ||
+      text.includes("shirt") ||
+      text.includes("jacket") ||
+      text.includes("pant") ||
+      text.includes("suit") ||
+      text.includes("dress") ||
+      text.includes("wear")) &&
+    !isBedding &&
+    !isTowels;
+  const isWax =
+    text.includes("wax") ||
+    text.includes("tuning") ||
+    text.includes("glide") ||
+    text.includes("snowboard") ||
+    text.includes("ski");
 
   // Derive a numeric seed from productName to ensure review variety across products
-  const seed = productName.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0);
+  const seed = productName
+    .split("")
+    .reduce((acc, c) => acc + c.charCodeAt(0), 0);
 
   const DIVERSE_NAMES = [
-    "Rachel Vance", "David Kim", "Priya Sharma", "Sophia Martinez", "Liam Howard",
-    "Jessica Patel", "Alex Rivera", "Emily Clarke", "Brandon Miller", "Carlos Mendez",
-    "Hannah Wright", "Tyler Sanders", "Chloe Dupont", "Ethan Brooks", "Elena Rostova",
-    "Daniel Smith", "Kavya Menon", "Justin Blake", "Amanda Foster", "Marcus Thorne",
-    "Michael Chang", "Sarah Jenkins", "Olivia Taylor", "Noah Wilson", "Isabelle Chen",
-    "Lucas Meyer", "Zoe Bennett", "Amir Khan", "Nina Rossi", "Julian Vance"
+    "Rachel Vance",
+    "David Kim",
+    "Priya Sharma",
+    "Sophia Martinez",
+    "Liam Howard",
+    "Jessica Patel",
+    "Alex Rivera",
+    "Emily Clarke",
+    "Brandon Miller",
+    "Carlos Mendez",
+    "Hannah Wright",
+    "Tyler Sanders",
+    "Chloe Dupont",
+    "Ethan Brooks",
+    "Elena Rostova",
+    "Daniel Smith",
+    "Kavya Menon",
+    "Justin Blake",
+    "Amanda Foster",
+    "Marcus Thorne",
+    "Michael Chang",
+    "Sarah Jenkins",
+    "Olivia Taylor",
+    "Noah Wilson",
+    "Isabelle Chen",
+    "Lucas Meyer",
+    "Zoe Bennett",
+    "Amir Khan",
+    "Nina Rossi",
+    "Julian Vance",
   ];
 
-  let reviewTemplates: Array<{ rating: number; bodyShort: string; bodyFull: string; tags: string[] }> = [];
+  let reviewTemplates: Array<{
+    rating: number;
+    bodyShort: string;
+    bodyFull: string;
+    tags: string[];
+  }> = [];
 
   if (isBedding) {
     reviewTemplates = [
@@ -165,7 +307,7 @@ function generateSmartDemoReviews(input: ReviewGenInput): GeneratedReview[] {
         bodyShort: `Smooth weave and accurate color matching on ${shortName}.`,
         bodyFull: `${shortName} arrived quickly and packaging was pristine. Color matches online images perfectly and texture feels premium.`,
         tags: ["accurate-color", "fast-shipping", "pristine-packaging"],
-      }
+      },
     ];
   } else if (isTowels) {
     reviewTemplates = [
@@ -204,7 +346,7 @@ function generateSmartDemoReviews(input: ReviewGenInput): GeneratedReview[] {
         bodyShort: `${shortName} stays soft without scratchiness even after line drying.`,
         bodyFull: `Impressed by how soft ${shortName} remains after laundering. Dries fast and feels gentle on sensitive skin.`,
         tags: ["soft-laundering", "fast-drying", "gentle-skin"],
-      }
+      },
     ];
   } else if (isBeauty) {
     reviewTemplates = [
@@ -237,7 +379,7 @@ function generateSmartDemoReviews(input: ReviewGenInput): GeneratedReview[] {
         bodyShort: `${shortName} gives skin an instant natural, healthy glow.`,
         bodyFull: `Packaging was pristine. ${shortName} feels so luxurious on application. Couldn't be happier with this purchase!`,
         tags: ["luxurious", "pristine-packaging", "natural-glow"],
-      }
+      },
     ];
   } else if (isClothing) {
     reviewTemplates = [
@@ -270,7 +412,7 @@ function generateSmartDemoReviews(input: ReviewGenInput): GeneratedReview[] {
         bodyShort: `Neat stitching and great quality material on ${shortName}.`,
         bodyFull: `Bought ${shortName} as a gift and ended up buying one for myself too. High quality stitching and lovely packaging.`,
         tags: ["neat-stitching", "great-gift", "quality-cotton"],
-      }
+      },
     ];
   } else if (isWax) {
     reviewTemplates = [
@@ -297,7 +439,7 @@ function generateSmartDemoReviews(input: ReviewGenInput): GeneratedReview[] {
         bodyShort: `${shortName} gives a noticeable boost in glide speed.`,
         bodyFull: `${shortName} gives a noticeable boost in speed and reduces base drag completely. Will keep handy all season.`,
         tags: ["glide-speed", "smooth-ride", "zero-drag"],
-      }
+      },
     ];
   } else {
     reviewTemplates = [
@@ -330,7 +472,7 @@ function generateSmartDemoReviews(input: ReviewGenInput): GeneratedReview[] {
         bodyShort: `Sturdy construction and great overall user experience on ${shortName}.`,
         bodyFull: `Super happy with my ${shortName} order. Beautiful finish, sturdy feel, and great user experience.`,
         tags: ["sturdy-feel", "recommended", "beautiful-finish"],
-      }
+      },
     ];
   }
 
@@ -364,18 +506,49 @@ const BANNED_CLICHES = [
 ];
 
 const DIVERSE_NAME_POOL = [
-  "Rachel Vance", "David Kim", "Priya Sharma", "Sophia Martinez", "Liam Howard",
-  "Jessica Patel", "Alex Rivera", "Emily Clarke", "Brandon Miller", "Carlos Mendez",
-  "Hannah Wright", "Tyler Sanders", "Chloe Dupont", "Ethan Brooks", "Elena Rostova",
-  "Daniel Smith", "Kavya Menon", "Justin Blake", "Amanda Foster", "Marcus Thorne",
-  "Michael Chang", "Sarah Jenkins", "Olivia Taylor", "Noah Wilson", "Isabelle Chen"
+  "Rachel Vance",
+  "David Kim",
+  "Priya Sharma",
+  "Sophia Martinez",
+  "Liam Howard",
+  "Jessica Patel",
+  "Alex Rivera",
+  "Emily Clarke",
+  "Brandon Miller",
+  "Carlos Mendez",
+  "Hannah Wright",
+  "Tyler Sanders",
+  "Chloe Dupont",
+  "Ethan Brooks",
+  "Elena Rostova",
+  "Daniel Smith",
+  "Kavya Menon",
+  "Justin Blake",
+  "Amanda Foster",
+  "Marcus Thorne",
+  "Michael Chang",
+  "Sarah Jenkins",
+  "Olivia Taylor",
+  "Noah Wilson",
+  "Isabelle Chen",
 ];
 
 const FEMALE_NAMES = [
-  "Rachel Vance", "Priya Sharma", "Sophia Martinez", "Jessica Patel", 
-  "Emily Clarke", "Hannah Wright", "Chloe Dupont", "Elena Rostova", 
-  "Kavya Menon", "Amanda Foster", "Sarah Jenkins", "Olivia Taylor", 
-  "Isabelle Chen", "Zoe Bennett", "Nina Rossi"
+  "Rachel Vance",
+  "Priya Sharma",
+  "Sophia Martinez",
+  "Jessica Patel",
+  "Emily Clarke",
+  "Hannah Wright",
+  "Chloe Dupont",
+  "Elena Rostova",
+  "Kavya Menon",
+  "Amanda Foster",
+  "Sarah Jenkins",
+  "Olivia Taylor",
+  "Isabelle Chen",
+  "Zoe Bennett",
+  "Nina Rossi",
 ];
 
 const REAL_HUMAN_FEMALE_AVATARS = [
@@ -392,7 +565,7 @@ const REAL_HUMAN_FEMALE_AVATARS = [
   "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=400&q=80",
   "https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&w=400&q=80",
   "https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?auto=format&fit=crop&w=400&q=80",
-  "https://images.unsplash.com/photo-1567532939604-b6b5b0db2604?auto=format&fit=crop&w=400&q=80"
+  "https://images.unsplash.com/photo-1567532939604-b6b5b0db2604?auto=format&fit=crop&w=400&q=80",
 ];
 
 const REAL_HUMAN_MALE_AVATARS = [
@@ -408,17 +581,22 @@ const REAL_HUMAN_MALE_AVATARS = [
   "https://images.unsplash.com/photo-1489987707025-afc232f7ea0f?auto=format&fit=crop&w=400&q=80",
   "https://images.unsplash.com/photo-1501196354995-cbb51c65aaea?auto=format&fit=crop&w=400&q=80",
   "https://images.unsplash.com/photo-1496345875659-11f7dd282d1d?auto=format&fit=crop&w=400&q=80",
-  "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=400&q=80"
+  "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=400&q=80",
 ];
 
 export function getReviewerAvatarPhotoUrl(reviewerName: string): string {
   const name = (reviewerName || "").trim();
   const lowerName = name.toLowerCase();
 
-  const isFemale = FEMALE_NAMES.some((f) => lowerName.includes(f.toLowerCase())) ||
-                   /^(zoe|rachel|priya|sophia|jessica|emily|hannah|chloe|elena|kavya|amanda|sarah|olivia|isabelle|nina|laura|maria|anna|kate|claire|emma)/i.test(name);
+  const isFemale =
+    FEMALE_NAMES.some((f) => lowerName.includes(f.toLowerCase())) ||
+    /^(zoe|rachel|priya|sophia|jessica|emily|hannah|chloe|elena|kavya|amanda|sarah|olivia|isabelle|nina|laura|maria|anna|kate|claire|emma)/i.test(
+      name,
+    );
 
-  const hash = Math.abs(name.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0));
+  const hash = Math.abs(
+    name.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0),
+  );
 
   if (isFemale) {
     const idx = hash % REAL_HUMAN_FEMALE_AVATARS.length;
@@ -437,65 +615,114 @@ const REAL_HUMAN_HOODIE_PHOTOS = [
   "https://images.unsplash.com/photo-1489987707025-afc232f7ea0f?auto=format&fit=crop&w=800&q=80",
   "https://images.unsplash.com/photo-1562157873-818bc0726f68?auto=format&fit=crop&w=800&q=80",
   "https://images.unsplash.com/photo-1578632767115-351597cf2477?auto=format&fit=crop&w=800&q=80",
-  "https://images.unsplash.com/photo-1509967419530-da38b4704bc6?auto=format&fit=crop&w=800&q=80"
+  "https://images.unsplash.com/photo-1509967419530-da38b4704bc6?auto=format&fit=crop&w=800&q=80",
 ];
 
 const REAL_HUMAN_FOOTWEAR_PHOTOS = [
   "https://images.unsplash.com/photo-1542291026-7eec264c27ff?auto=format&fit=crop&w=800&q=80",
   "https://images.unsplash.com/photo-1595950653106-6c9ebd614d3a?auto=format&fit=crop&w=800&q=80",
-  "https://images.unsplash.com/photo-1525966222134-fcfa99b8ae77?auto=format&fit=crop&w=800&q=80"
+  "https://images.unsplash.com/photo-1525966222134-fcfa99b8ae77?auto=format&fit=crop&w=800&q=80",
 ];
 
 const REAL_HUMAN_BEAUTY_PHOTOS = [
   "https://images.unsplash.com/photo-1556228720-195a672e8a03?auto=format&fit=crop&w=800&q=80",
   "https://images.unsplash.com/photo-1608248597261-833258657640?auto=format&fit=crop&w=800&q=80",
   "https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?auto=format&fit=crop&w=800&q=80",
-  "https://images.unsplash.com/photo-1620916566398-39f1143ab7be?auto=format&fit=crop&w=800&q=80"
+  "https://images.unsplash.com/photo-1620916566398-39f1143ab7be?auto=format&fit=crop&w=800&q=80",
 ];
 
 const REAL_HUMAN_BEDDING_PHOTOS = [
   "https://images.unsplash.com/photo-1616046229478-9901c5536a45?auto=format&fit=crop&w=800&q=80",
   "https://images.unsplash.com/photo-1522771739844-6a9f6d5f14af?auto=format&fit=crop&w=800&q=80",
   "https://images.unsplash.com/photo-1584100936595-c0654b55a2e2?auto=format&fit=crop&w=800&q=80",
-  "https://images.unsplash.com/photo-1631049307264-da0ec9d70304?auto=format&fit=crop&w=800&q=80"
+  "https://images.unsplash.com/photo-1631049307264-da0ec9d70304?auto=format&fit=crop&w=800&q=80",
 ];
 
 const REAL_HUMAN_TOWELS_PHOTOS = [
   "https://images.unsplash.com/photo-1616627547584-bf28cee262db?auto=format&fit=crop&w=800&q=80",
   "https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&w=800&q=80",
   "https://images.unsplash.com/photo-1563298723-dcfebaa392e3?auto=format&fit=crop&w=800&q=80",
-  "https://images.unsplash.com/photo-1629909613654-28e377c37b09?auto=format&fit=crop&w=800&q=80"
+  "https://images.unsplash.com/photo-1629909613654-28e377c37b09?auto=format&fit=crop&w=800&q=80",
 ];
 
 const REAL_HUMAN_GENERAL_PHOTOS = [
   "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?auto=format&fit=crop&w=800&q=80",
   "https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=800&q=80",
   "https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?auto=format&fit=crop&w=800&q=80",
-  "https://images.unsplash.com/photo-1546868871-7041f2a55e12?auto=format&fit=crop&w=800&q=80"
+  "https://images.unsplash.com/photo-1546868871-7041f2a55e12?auto=format&fit=crop&w=800&q=80",
 ];
 
 export function getAmazonReviewStylePhotoUrl(
   productName: string,
   seedInput: string | number,
-  contextText: string = ""
+  contextText: string = "",
 ): string {
   const combinedText = (productName + " " + contextText).toLowerCase();
 
-  const isBedding = combinedText.includes("sheet") || combinedText.includes("pillowcase") || combinedText.includes("duvet") || combinedText.includes("comforter") || combinedText.includes("thread count") || combinedText.includes("bedding") || combinedText.includes("bed ");
-  const isTowels = combinedText.includes("towel") || combinedText.includes("washcloth") || combinedText.includes("bath") || combinedText.includes("shower") || combinedText.includes("robe");
-  const isBeauty = combinedText.includes("skin") || combinedText.includes("cream") || combinedText.includes("serum") || combinedText.includes("lotion") || combinedText.includes("cleanser") || combinedText.includes("moisturizer") || combinedText.includes("cosmetic");
-  const isFootwear = combinedText.includes("shoe") || combinedText.includes("sneaker") || combinedText.includes("boot") || combinedText.includes("footwear") || combinedText.includes("cleat");
-  const isHoodie = combinedText.includes("hoodie") || combinedText.includes("sweatshirt") || combinedText.includes("fleece") || combinedText.includes("zip") || combinedText.includes("sweater") || combinedText.includes("pullover");
-  const isClothing = (isHoodie || combinedText.includes("shirt") || combinedText.includes("jacket") || combinedText.includes("pant") || combinedText.includes("suit") || combinedText.includes("dress") || combinedText.includes("wear") || combinedText.includes("apparel") || combinedText.includes("coat") || combinedText.includes("top")) && !isBedding && !isTowels && !isFootwear;
+  const isBedding =
+    combinedText.includes("sheet") ||
+    combinedText.includes("pillowcase") ||
+    combinedText.includes("duvet") ||
+    combinedText.includes("comforter") ||
+    combinedText.includes("thread count") ||
+    combinedText.includes("bedding") ||
+    combinedText.includes("bed ");
+  const isTowels =
+    combinedText.includes("towel") ||
+    combinedText.includes("washcloth") ||
+    combinedText.includes("bath") ||
+    combinedText.includes("shower") ||
+    combinedText.includes("robe");
+  const isBeauty =
+    combinedText.includes("skin") ||
+    combinedText.includes("cream") ||
+    combinedText.includes("serum") ||
+    combinedText.includes("lotion") ||
+    combinedText.includes("cleanser") ||
+    combinedText.includes("moisturizer") ||
+    combinedText.includes("cosmetic");
+  const isFootwear =
+    combinedText.includes("shoe") ||
+    combinedText.includes("sneaker") ||
+    combinedText.includes("boot") ||
+    combinedText.includes("footwear") ||
+    combinedText.includes("cleat");
+  const isHoodie =
+    combinedText.includes("hoodie") ||
+    combinedText.includes("sweatshirt") ||
+    combinedText.includes("fleece") ||
+    combinedText.includes("zip") ||
+    combinedText.includes("sweater") ||
+    combinedText.includes("pullover");
+  const isClothing =
+    (isHoodie ||
+      combinedText.includes("shirt") ||
+      combinedText.includes("jacket") ||
+      combinedText.includes("pant") ||
+      combinedText.includes("suit") ||
+      combinedText.includes("dress") ||
+      combinedText.includes("wear") ||
+      combinedText.includes("apparel") ||
+      combinedText.includes("coat") ||
+      combinedText.includes("top")) &&
+    !isBedding &&
+    !isTowels &&
+    !isFootwear;
 
-  const cleanName = productName
-    .replace(/^gid:\/\/shopify\/Product\//, "")
-    .replace(/[^a-zA-Z0-9\s]/g, " ")
-    .trim() || "item";
+  const cleanName =
+    productName
+      .replace(/^gid:\/\/shopify\/Product\//, "")
+      .replace(/[^a-zA-Z0-9\s]/g, " ")
+      .trim() || "item";
 
-  const numSeed = typeof seedInput === "number"
-    ? Math.abs(seedInput)
-    : Math.abs(String(seedInput).split("").reduce((acc, c) => acc + c.charCodeAt(0), 0));
+  const numSeed =
+    typeof seedInput === "number"
+      ? Math.abs(seedInput)
+      : Math.abs(
+          String(seedInput)
+            .split("")
+            .reduce((acc, c) => acc + c.charCodeAt(0), 0),
+        );
 
   let pool = REAL_HUMAN_GENERAL_PHOTOS;
   if (isHoodie) {
@@ -520,38 +747,38 @@ const CATEGORY_MEDIA = {
   bedding: {
     videos: [
       "https://assets.mixkit.co/videos/preview/mixkit-cozy-bedroom-with-made-bed-42880-large.mp4",
-      "https://assets.mixkit.co/videos/preview/mixkit-hands-folding-a-soft-towel-or-sheet-42879-large.mp4"
-    ]
+      "https://assets.mixkit.co/videos/preview/mixkit-hands-folding-a-soft-towel-or-sheet-42879-large.mp4",
+    ],
   },
   towels: {
     videos: [
       "https://assets.mixkit.co/videos/preview/mixkit-hands-folding-a-soft-towel-or-sheet-42879-large.mp4",
-      "https://assets.mixkit.co/videos/preview/mixkit-clean-bathroom-with-towels-and-amenities-41566-large.mp4"
-    ]
+      "https://assets.mixkit.co/videos/preview/mixkit-clean-bathroom-with-towels-and-amenities-41566-large.mp4",
+    ],
   },
   beauty: {
     videos: [
       "https://assets.mixkit.co/videos/preview/mixkit-woman-applying-facial-cream-in-front-of-mirror-42878-large.mp4",
-      "https://assets.mixkit.co/videos/preview/mixkit-dropper-putting-serum-on-hand-42877-large.mp4"
-    ]
+      "https://assets.mixkit.co/videos/preview/mixkit-dropper-putting-serum-on-hand-42877-large.mp4",
+    ],
   },
   clothing: {
     videos: [
       "https://assets.mixkit.co/videos/preview/mixkit-model-showing-stylish-jacket-and-outfit-42876-large.mp4",
-      "https://assets.mixkit.co/videos/preview/mixkit-close-up-of-fabric-texture-42875-large.mp4"
-    ]
+      "https://assets.mixkit.co/videos/preview/mixkit-close-up-of-fabric-texture-42875-large.mp4",
+    ],
   },
   general: {
     videos: [
       "https://assets.mixkit.co/videos/preview/mixkit-hands-holding-and-showing-a-new-product-box-42874-large.mp4",
-      "https://assets.mixkit.co/videos/preview/mixkit-close-up-unboxing-of-a-product-42873-large.mp4"
-    ]
-  }
+      "https://assets.mixkit.co/videos/preview/mixkit-close-up-unboxing-of-a-product-42873-large.mp4",
+    ],
+  },
 };
 
 function validateAndPostProcessReviews(
   reviews: GeneratedReview[],
-  input: ReviewGenInput
+  input: ReviewGenInput,
 ): GeneratedReview[] {
   const reqCount = input.count || reviews.length || 5;
   const usedNames = new Set<string>();
@@ -562,19 +789,55 @@ function validateAndPostProcessReviews(
   const titleMatch = (input.notes || "").match(/Product Title:\s*([^.]+)/i);
   const productName = titleMatch
     ? titleMatch[1].trim()
-    : (input.description || "").split(/\s+/).slice(0, 4).join(" ") || "this item";
+    : (input.description || "").split(/\s+/).slice(0, 4).join(" ") ||
+      "this item";
   const shortName = productName.split(/\s+/).slice(0, 3).join(" ");
 
-  const lowerText = (productName + " " + (input.description || "")).toLowerCase();
-  const isBedding = lowerText.includes("sheet") || lowerText.includes("pillowcase") || lowerText.includes("duvet") || lowerText.includes("thread count") || lowerText.includes("bedding");
-  const isTowels = lowerText.includes("towel") || lowerText.includes("washcloth") || lowerText.includes("bath") || lowerText.includes("robe");
-  const isBeauty = lowerText.includes("skin") || lowerText.includes("cream") || lowerText.includes("serum") || lowerText.includes("lotion") || lowerText.includes("cleanser");
-  const isClothing = (lowerText.includes("hoodie") || lowerText.includes("shirt") || lowerText.includes("jacket") || lowerText.includes("pant") || lowerText.includes("dress")) && !isBedding && !isTowels;
+  const lowerText = (
+    productName +
+    " " +
+    (input.description || "")
+  ).toLowerCase();
+  const isBedding =
+    lowerText.includes("sheet") ||
+    lowerText.includes("pillowcase") ||
+    lowerText.includes("duvet") ||
+    lowerText.includes("thread count") ||
+    lowerText.includes("bedding");
+  const isTowels =
+    lowerText.includes("towel") ||
+    lowerText.includes("washcloth") ||
+    lowerText.includes("bath") ||
+    lowerText.includes("robe");
+  const isBeauty =
+    lowerText.includes("skin") ||
+    lowerText.includes("cream") ||
+    lowerText.includes("serum") ||
+    lowerText.includes("lotion") ||
+    lowerText.includes("cleanser");
+  const isClothing =
+    (lowerText.includes("hoodie") ||
+      lowerText.includes("shirt") ||
+      lowerText.includes("jacket") ||
+      lowerText.includes("pant") ||
+      lowerText.includes("dress")) &&
+    !isBedding &&
+    !isTowels;
 
-  const categoryKey = isBedding ? "bedding" : isTowels ? "towels" : isBeauty ? "beauty" : isClothing ? "clothing" : "general";
+  const categoryKey = isBedding
+    ? "bedding"
+    : isTowels
+      ? "towels"
+      : isBeauty
+        ? "beauty"
+        : isClothing
+          ? "clothing"
+          : "general";
   const mediaPool = CATEGORY_MEDIA[categoryKey];
 
-  const seed = Math.abs(productName.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0));
+  const seed = Math.abs(
+    productName.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0),
+  );
   let nameIndex = seed;
 
   const mediaOption = input.mediaOption || "none";
@@ -597,7 +860,8 @@ function validateAndPostProcessReviews(
 
     // BAN "super comfortable for daily wear" / "daily wear" on non-clothing items
     if (!isClothing) {
-      const dailyWearRegex = /is super comfortable for daily wear|comfortable for daily wear|relaxed cut for daily wear/gi;
+      const dailyWearRegex =
+        /is super comfortable for daily wear|comfortable for daily wear|relaxed cut for daily wear/gi;
       if (dailyWearRegex.test(bodyShort)) {
         if (isBedding) {
           bodyShort = `${shortName} is silky smooth, breathable, and cool for night sleeping.`;
@@ -625,7 +889,10 @@ function validateAndPostProcessReviews(
         bodyShort = bodyShort.replace(reg, `${shortName} performs well`);
       }
       if (reg.test(bodyFull)) {
-        bodyFull = bodyFull.replace(reg, `the overall design and texture of ${shortName} stand out`);
+        bodyFull = bodyFull.replace(
+          reg,
+          `the overall design and texture of ${shortName} stand out`,
+        );
       }
     }
 
@@ -645,17 +912,11 @@ function validateAndPostProcessReviews(
     }
     usedShorts.add(uniqueShortKey);
 
-    let assignedImage: string | undefined = undefined;
     let assignedVideo: string | undefined = undefined;
 
-    const uniqueSeed = seed * 1000 + idx * 73 + Math.floor(Math.random() * 100);
-
-    if (mediaOption === "image") {
-      assignedImage = getAmazonReviewStylePhotoUrl(productName, uniqueSeed, bodyShort);
-    } else if (mediaOption === "video") {
+    if (mediaOption === "video") {
       assignedVideo = mediaPool.videos[(seed + idx) % mediaPool.videos.length];
     } else if (mediaOption === "image_video") {
-      assignedImage = getAmazonReviewStylePhotoUrl(productName, uniqueSeed, bodyShort);
       assignedVideo = mediaPool.videos[(seed + idx) % mediaPool.videos.length];
     }
 
@@ -664,8 +925,11 @@ function validateAndPostProcessReviews(
       rating: Math.min(5, Math.max(1, Number(r.rating) || 5)),
       bodyShort: bodyShort.substring(0, 160),
       bodyFull,
-      tags: Array.isArray(r.tags) && r.tags.length > 0 ? r.tags : ["quality-build", "verified-purchase"],
-      imageUrl: assignedImage,
+      tags:
+        Array.isArray(r.tags) && r.tags.length > 0
+          ? r.tags
+          : ["quality-build", "verified-purchase"],
+      imageUrl: undefined,
       videoUrl: assignedVideo,
     });
   }
@@ -673,7 +937,8 @@ function validateAndPostProcessReviews(
   // Ensure returned set matches requested count
   while (validated.length < reqCount) {
     const idx = validated.length;
-    let fallbackName = DIVERSE_NAME_POOL[nameIndex++ % DIVERSE_NAME_POOL.length];
+    let fallbackName =
+      DIVERSE_NAME_POOL[nameIndex++ % DIVERSE_NAME_POOL.length];
     while (usedNames.has(fallbackName.toLowerCase())) {
       fallbackName = DIVERSE_NAME_POOL[nameIndex++ % DIVERSE_NAME_POOL.length];
     }
@@ -690,17 +955,11 @@ function validateAndPostProcessReviews(
       fallbackFull = `${shortName} absorbs water effortlessly, feels soft and thick, and dries fast on the bathroom rack.`;
     }
 
-    let assignedImage: string | undefined = undefined;
     let assignedVideo: string | undefined = undefined;
 
-    const uniqueSeed = seed * 1000 + idx * 73 + Math.floor(Math.random() * 100);
-
-    if (mediaOption === "image") {
-      assignedImage = getAmazonReviewStylePhotoUrl(productName, uniqueSeed, fallbackShort);
-    } else if (mediaOption === "video") {
+    if (mediaOption === "video") {
       assignedVideo = mediaPool.videos[(seed + idx) % mediaPool.videos.length];
     } else if (mediaOption === "image_video") {
-      assignedImage = getAmazonReviewStylePhotoUrl(productName, uniqueSeed, fallbackShort);
       assignedVideo = mediaPool.videos[(seed + idx) % mediaPool.videos.length];
     }
 
@@ -710,7 +969,7 @@ function validateAndPostProcessReviews(
       bodyShort: fallbackShort,
       bodyFull: fallbackFull,
       tags: ["practical-design", "verified-purchase"],
-      imageUrl: assignedImage,
+      imageUrl: undefined,
       videoUrl: assignedVideo,
     });
   }

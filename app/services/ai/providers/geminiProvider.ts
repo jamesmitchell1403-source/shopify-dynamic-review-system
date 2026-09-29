@@ -15,6 +15,45 @@ const ReviewArraySchema = z.array(ReviewSchema);
 export class GeminiProvider implements AIProvider {
   public providerName = "gemini" as const;
 
+  public async generateReviewImage(
+    productImageBase64: string,
+    productImageMimeType: string,
+    prompt: string,
+    apiKey?: string,
+  ): Promise<{ base64: string; mimeType: string }> {
+    const key = apiKey || process.env.GEMINI_API_KEY;
+    if (!key) {
+      throw new Error("Google Gemini API key missing. Please provide it in AI Settings or GEMINI_API_KEY env variable.");
+    }
+
+    const ai = new GoogleGenAI({ apiKey: key });
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash-image",
+      contents: [
+        {
+          role: "user",
+          parts: [
+            { inlineData: { mimeType: productImageMimeType, data: productImageBase64 } },
+            { text: prompt },
+          ],
+        },
+      ],
+      config: {
+        responseModalities: ["IMAGE"],
+      },
+    });
+
+    const imagePart = response.candidates?.[0]?.content?.parts?.find((part) => part.inlineData?.data);
+    if (!imagePart?.inlineData?.data) {
+      throw new Error("Gemini did not return a generated review image.");
+    }
+
+    return {
+      base64: imagePart.inlineData.data,
+      mimeType: imagePart.inlineData.mimeType || "image/png",
+    };
+  }
+
   public async generateReviews(input: ReviewGenInput, apiKey?: string): Promise<GeneratedReview[]> {
     const key = apiKey || process.env.GEMINI_API_KEY;
     if (!key) {

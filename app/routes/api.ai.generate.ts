@@ -1,8 +1,12 @@
 import { json, ActionFunctionArgs } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
-import { generateReviewsForShop, getAmazonReviewStylePhotoUrl } from "../services/ai/reviewGenerator";
+import { generateReviewsForShop } from "../services/ai/reviewGenerator";
 import db from "../db.server";
-import { syncReviewsToShopify, syncAiJobsToShopify } from "../services/reviewPersistence.server";
+import {
+  syncReviewsToShopify,
+  syncAiJobsToShopify,
+  uploadReviewImageToShopify,
+} from "../services/reviewPersistence.server";
 import { canonicalizeShopDomain } from "../services/shopDomain.server";
 
 export async function action({ request }: ActionFunctionArgs) {
@@ -14,15 +18,37 @@ export async function action({ request }: ActionFunctionArgs) {
     admin = auth.admin;
   } catch (authError: any) {
     // API routes must return JSON — never redirect to HTML login page
-    return json({ success: false, error: "Session expired. Please refresh the page and try again." }, { status: 401 });
+    return json(
+      {
+        success: false,
+        error: "Session expired. Please refresh the page and try again.",
+      },
+      { status: 401 },
+    );
   }
   const shop = canonicalizeShopDomain(session.shop);
 
   const body = await request.json();
-  const { actionType, productId, imageBase64, imageMimeType, productImageUrl, description, notes, language, provider, saveReview, manualReview, reviewsPerProduct, mediaOption } = body;
+  const {
+    actionType,
+    productId,
+    imageBase64,
+    imageMimeType,
+    productImageUrl,
+    description,
+    notes,
+    language,
+    provider,
+    saveReview,
+    manualReview,
+    reviewsPerProduct,
+    mediaOption,
+  } = body;
 
   // Helper: fetch an image URL and convert to base64
-  async function fetchImageAsBase64(url: string): Promise<{ base64: string; mimeType: string } | null> {
+  async function fetchImageAsBase64(
+    url: string,
+  ): Promise<{ base64: string; mimeType: string } | null> {
     try {
       const imgRes = await fetch(url);
       if (!imgRes.ok) return null;
@@ -30,6 +56,7 @@ export async function action({ request }: ActionFunctionArgs) {
       const buffer = Buffer.from(arrayBuffer);
       const contentType = imgRes.headers.get("content-type") || "image/jpeg";
       return { base64: buffer.toString("base64"), mimeType: contentType };
+      ``;
     } catch {
       return null;
     }
@@ -40,11 +67,16 @@ export async function action({ request }: ActionFunctionArgs) {
   // -------------------------------------------------------------
   if (actionType === "manual_create") {
     if (!manualReview || !manualReview.productId || !manualReview.bodyFull) {
-      return json({ success: false, error: "Missing required review fields." }, { status: 400 });
+      return json(
+        { success: false, error: "Missing required review fields." },
+        { status: 400 },
+      );
     }
 
     const finalManualImg = manualReview.imageUrl || null;
-    const manualHandle = manualReview.productHandle || manualReview.productId.replace(/^gid:\/\/shopify\/Product\//, "");
+    const manualHandle =
+      manualReview.productHandle ||
+      manualReview.productId.replace(/^gid:\/\/shopify\/Product\//, "");
 
     const created = await db.review.create({
       data: {
@@ -53,7 +85,8 @@ export async function action({ request }: ActionFunctionArgs) {
         productHandle: manualHandle,
         reviewerName: manualReview.reviewerName || "Verified Buyer",
         rating: Number(manualReview.rating) || 5,
-        bodyShort: manualReview.bodyShort || manualReview.bodyFull.substring(0, 100),
+        bodyShort:
+          manualReview.bodyShort || manualReview.bodyFull.substring(0, 100),
         bodyFull: manualReview.bodyFull,
         imageUrl: finalManualImg,
         videoUrl: manualReview.videoUrl || null,
@@ -76,11 +109,26 @@ export async function action({ request }: ActionFunctionArgs) {
   // -------------------------------------------------------------
   if (actionType === "save") {
     if (!saveReview || !productId) {
-      return json({ success: false, error: "Missing review data or productId" }, { status: 400 });
+      return json(
+        { success: false, error: "Missing review data or productId" },
+        { status: 400 },
+      );
     }
 
-    const finalSaveImg = saveReview.imageUrl || null;
-    const saveHandle = saveReview.productHandle || productId.replace(/^gid:\/\/shopify\/Product\//, "");
+    let finalSaveImg = saveReview.imageUrl || null;
+    if (
+      typeof finalSaveImg === "string" &&
+      finalSaveImg.startsWith("data:image/")
+    ) {
+      finalSaveImg = await uploadReviewImageToShopify(
+        admin,
+        finalSaveImg,
+        `review-${Date.now()}.png`,
+      );
+    }
+    const saveHandle =
+      saveReview.productHandle ||
+      productId.replace(/^gid:\/\/shopify\/Product\//, "");
 
     const created = await db.review.create({
       data: {
@@ -95,7 +143,10 @@ export async function action({ request }: ActionFunctionArgs) {
         videoUrl: saveReview.videoUrl || null,
         source: "AI_GENERATED",
         isAiGenerated: true,
-        isPublished: saveReview.isPublished !== undefined ? Boolean(saveReview.isPublished) : true,
+        isPublished:
+          saveReview.isPublished !== undefined
+            ? Boolean(saveReview.isPublished)
+            : true,
         isVerifiedPurchase: true,
         language: language || "en",
         tags: JSON.stringify(saveReview.tags || []),
@@ -112,7 +163,9 @@ export async function action({ request }: ActionFunctionArgs) {
   // -------------------------------------------------------------
   if (actionType === "bulk_generate_all") {
     try {
-      const adminToken = process.env.SHOPIFY_ADMIN_ACCESS_TOKEN || ("shpat_" + "619247c484119ab17aa96895bc8d90ef");
+      const adminToken =
+        process.env.SHOPIFY_ADMIN_ACCESS_TOKEN ||
+        "shpat_" + "619247c484119ab17aa96895bc8d90ef";
       let productsList: any[] = [];
 
       // 1. Try fetching via GraphQL
@@ -144,12 +197,15 @@ export async function action({ request }: ActionFunctionArgs) {
       // 2. Fallback: Fetch real store products via Admin Token REST API
       if (productsList.length === 0) {
         try {
-          const restRes = await fetch(`https://${session.shop}/admin/api/2025-01/products.json?limit=250`, {
-            headers: {
-              "X-Shopify-Access-Token": adminToken,
-              "Content-Type": "application/json",
+          const restRes = await fetch(
+            `https://${session.shop}/admin/api/2025-01/products.json?limit=250`,
+            {
+              headers: {
+                "X-Shopify-Access-Token": adminToken,
+                "Content-Type": "application/json",
+              },
             },
-          });
+          );
           if (restRes.ok) {
             const restJson = await restRes.json();
             if (restJson.products && restJson.products.length > 0) {
@@ -157,10 +213,17 @@ export async function action({ request }: ActionFunctionArgs) {
                 id: p.admin_graphql_api_id || `gid://shopify/Product/${p.id}`,
                 title: p.title,
                 handle: p.handle || "",
-                description: p.body_html ? p.body_html.replace(/<[^>]*>?/gm, "") : p.title,
+                description: p.body_html
+                  ? p.body_html.replace(/<[^>]*>?/gm, "")
+                  : p.title,
                 productType: p.product_type || "Store Product",
-                tags: p.tags ? p.tags.split(",").map((t: string) => t.trim()) : [],
-                featuredImage: (p.image?.src || p.images?.[0]?.src) ? { url: p.image?.src || p.images?.[0]?.src } : null,
+                tags: p.tags
+                  ? p.tags.split(",").map((t: string) => t.trim())
+                  : [],
+                featuredImage:
+                  p.image?.src || p.images?.[0]?.src
+                    ? { url: p.image?.src || p.images?.[0]?.src }
+                    : null,
               }));
             }
           }
@@ -170,11 +233,16 @@ export async function action({ request }: ActionFunctionArgs) {
       }
 
       let totalGeneratedCount = 0;
-      const countPerProduct = Math.min(Math.max(Number(reviewsPerProduct) || 3, 1), 10);
+      const countPerProduct = Math.min(
+        Math.max(Number(reviewsPerProduct) || 3, 1),
+        10,
+      );
       const resultsSummary: Array<{ title: string; count: number }> = [];
 
       for (const prod of productsList) {
-        const prodDescription = prod.description || `${prod.title} - ${prod.productType || "store item"}`;
+        const prodDescription =
+          prod.description ||
+          `${prod.title} - ${prod.productType || "store item"}`;
         const prodNotes = `Product Title: ${prod.title}. Tags: ${prod.tags ? prod.tags.join(", ") : "general"}.`;
 
         // Fetch the product's Shopify image for image-aware AI generation
@@ -199,13 +267,23 @@ export async function action({ request }: ActionFunctionArgs) {
             language: language || "en",
             mediaOption: mediaOption || "image",
           },
-          provider
+          provider,
         );
 
         const reviewsToSave = result.reviews.slice(0, countPerProduct);
 
         for (const rev of reviewsToSave) {
-          const finalBulkImg = rev.imageUrl || null;
+          let finalBulkImg = rev.imageUrl || null;
+          if (
+            typeof finalBulkImg === "string" &&
+            finalBulkImg.startsWith("data:image/")
+          ) {
+            finalBulkImg = await uploadReviewImageToShopify(
+              admin,
+              finalBulkImg,
+              `review-${Date.now()}-${totalGeneratedCount}.png`,
+            );
+          }
           await db.review.create({
             data: {
               shop,
@@ -256,7 +334,10 @@ export async function action({ request }: ActionFunctionArgs) {
       });
     } catch (err: any) {
       console.error("Bulk AI Generation Error:", err);
-      return json({ success: false, error: err?.message || "Failed bulk generation." }, { status: 500 });
+      return json(
+        { success: false, error: err?.message || "Failed bulk generation." },
+        { status: 500 },
+      );
     }
   }
 
@@ -264,9 +345,10 @@ export async function action({ request }: ActionFunctionArgs) {
   // ACTION 4: SINGLE PRODUCT AI REVIEW GENERATION
   // -------------------------------------------------------------
   // If description is missing/empty, construct fallback description from Product Title/notes so AI Vision generates reviews using Title + Image
-  const finalDescription = (description && description.trim() !== "") 
-    ? description 
-    : `Product Item (Title/Notes: ${notes || productId || "Store Product"}). Please analyze the product image and title to generate matching customer reviews.`;
+  const finalDescription =
+    description && description.trim() !== ""
+      ? description
+      : `Product Item (Title/Notes: ${notes || productId || "Store Product"}). Please analyze the product image and title to generate matching customer reviews.`;
 
   // If productImageUrl provided (from Shopify), fetch and convert to base64
   let finalImageBase64 = imageBase64;
@@ -291,7 +373,7 @@ export async function action({ request }: ActionFunctionArgs) {
         avoidPhrasing: body.avoidPhrasing || [],
         mediaOption: mediaOption || "image",
       },
-      provider
+      provider,
     );
 
     // Log the AI generation job for audit/cost tracking
@@ -320,6 +402,12 @@ export async function action({ request }: ActionFunctionArgs) {
     });
   } catch (error: any) {
     console.error("AI Generation Error:", error);
-    return json({ success: false, error: error?.message || "Failed to generate AI reviews." }, { status: 500 });
+    return json(
+      {
+        success: false,
+        error: error?.message || "Failed to generate AI reviews.",
+      },
+      { status: 500 },
+    );
   }
 }
