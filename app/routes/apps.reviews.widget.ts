@@ -57,17 +57,19 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const shopWhereClause = getShopWhereClause(shopParam || "");
 
   // Fetch published reviews strictly for this shop & product
-  const rawId = productId ? productId.replace(/^gid:\/\/shopify\/Product\//, "") : "";
+  const rawId = productId ? String(productId).replace(/^gid:\/\/shopify\/Product\//, "").trim() : "";
   const fullGid = rawId ? `gid://shopify/Product/${rawId}` : "";
+  const cleanHandle = productHandle && productHandle !== "all" ? String(productHandle).trim() : "";
 
   const whereProductMatch: any[] = [];
   if (rawId && rawId !== "all") {
-    whereProductMatch.push({ productId: { in: [fullGid, rawId] } });
+    whereProductMatch.push({ productId: fullGid });
+    whereProductMatch.push({ productId: rawId });
     whereProductMatch.push({ productHandle: rawId });
   }
-  if (productHandle && productHandle !== "all") {
-    whereProductMatch.push({ productHandle: productHandle });
-    whereProductMatch.push({ productId: productHandle });
+  if (cleanHandle) {
+    whereProductMatch.push({ productHandle: cleanHandle });
+    whereProductMatch.push({ productId: cleanHandle });
   }
 
   const isAllProductsRequest = (productId === "all" || productHandle === "all");
@@ -84,13 +86,13 @@ export async function loader({ request }: LoaderFunctionArgs) {
       orderBy: { createdAt: "desc" },
       take: 100,
     });
-  } else {
+  } else if (whereProductMatch.length > 0) {
     // Strictly filter by specific product ID or product Handle for this product page ONLY
     productReviews = await db.review.findMany({
       where: {
         AND: [
           baseWhere,
-          whereProductMatch.length > 0 ? { OR: whereProductMatch } : {},
+          { OR: whereProductMatch },
         ],
       },
       orderBy: { createdAt: "desc" },
@@ -98,18 +100,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     });
   }
 
-  let safeProductReviews = productReviews.filter((r) => r.isPublished);
-
-  // If no product-specific reviews match, fallback to published shop-wide reviews
-  // so stored reviews in Admin are always displayed on the storefront
-  if (safeProductReviews.length === 0) {
-    const fallbackReviews = await db.review.findMany({
-      where: baseWhere,
-      orderBy: { createdAt: "desc" },
-      take: 100,
-    }).catch(() => []);
-    safeProductReviews = fallbackReviews.filter((r) => r.isPublished);
-  }
+  const safeProductReviews = productReviews.filter((r) => r.isPublished);
 
   let reviewsToReturn: any[] = [];
   let totalCount = 0;
