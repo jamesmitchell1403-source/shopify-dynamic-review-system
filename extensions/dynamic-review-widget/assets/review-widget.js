@@ -156,7 +156,11 @@
     // Preload ALL review images and avatars in advance at startup
     if (reviews && reviews.length > 0) {
       reviews.forEach(function (r) {
-        const isValidUrl = function(url) { return typeof url === 'string' && url.trim().startsWith('http'); };
+        const isValidUrl = function(url) {
+          if (!url || typeof url !== 'string') return false;
+          var u = url.trim();
+          return u.length > 5 && (u.startsWith('http') || u.startsWith('data:') || u.startsWith('//') || u.startsWith('/'));
+        };
         if (isValidUrl(r.imageUrl)) {
           const img1 = new Image();
           img1.src = r.imageUrl;
@@ -185,7 +189,11 @@
       const bodyText = review.bodyShort || review.bodyFull || '';
       const marketplaceBadge = getMarketplaceBadgeHtml(review.source, review.externalUrl);
 
-      const isValidUrl = function(url) { return typeof url === 'string' && url.trim().startsWith('http'); };
+      const isValidUrl = function(url) {
+        if (!url || typeof url !== 'string') return false;
+        var u = url.trim();
+        return u.length > 5 && (u.startsWith('http') || u.startsWith('data:') || u.startsWith('//') || u.startsWith('/'));
+      };
       const hasImage = isValidUrl(review.imageUrl);
       const hasVideo = isValidUrl(review.videoUrl);
 
@@ -222,9 +230,8 @@
         const mediaHtml = `
           <div class="rw-media-left">
             ${isOption2
-              ? `<video src="${escapeHtml(review.videoUrl)}" muted playsinline></video>
-                 <div class="rw-media-play-icon">▶</div>
-                 <div class="rw-media-time-pill">0:12</div>`
+              ? `<video src="${escapeHtml(review.videoUrl)}" autoplay loop muted playsinline style="width:100%;height:100%;object-fit:cover;display:block;"></video>
+                 <div class="rw-media-play-icon">▶</div>`
               : `<img src="${escapeHtml(review.imageUrl)}" alt="Review product photo" loading="eager" fetchpriority="high" style="width:100%;height:100%;object-fit:cover;display:block;" />`
             }
           </div>
@@ -266,9 +273,8 @@
                   <img src="${escapeHtml(review.imageUrl)}" alt="Product photo" loading="eager" fetchpriority="high" />
                 </div>
                 <div class="rw-carousel-item">
-                  <video src="${escapeHtml(review.videoUrl)}" muted playsinline></video>
+                  <video src="${escapeHtml(review.videoUrl)}" autoplay loop muted playsinline style="width:100%;height:100%;object-fit:cover;display:block;"></video>
                   <div class="rw-media-play-icon">▶</div>
-                  <div class="rw-media-time-pill">0:12</div>
                 </div>
               </div>
               <div class="rw-carousel-dots">
@@ -410,7 +416,11 @@
     }
 
     function displayReviewWithMediaPreload(review, showCallback) {
-      const isValidUrl = function(url) { return typeof url === 'string' && url.trim().startsWith('http'); };
+      const isValidUrl = function(url) {
+        if (!url || typeof url !== 'string') return false;
+        var u = url.trim();
+        return u.length > 5 && (u.startsWith('http') || u.startsWith('data:') || u.startsWith('//') || u.startsWith('/'));
+      };
       const imagePromises = [];
 
       if (isValidUrl(review.imageUrl)) {

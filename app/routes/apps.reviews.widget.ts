@@ -149,7 +149,13 @@ export async function loader({ request }: LoaderFunctionArgs) {
       parsedTags = [];
     }
 
-    const isValidUrl = (url: any) => typeof url === "string" && url.trim().startsWith("http");
+    const isValidUrl = (url: any) =>
+      typeof url === "string" &&
+      url.trim().length > 5 &&
+      (url.trim().startsWith("http") ||
+        url.trim().startsWith("data:") ||
+        url.trim().startsWith("//") ||
+        url.trim().startsWith("/"));
 
     return {
       id: r.id,
