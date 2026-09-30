@@ -373,119 +373,137 @@ export async function syncReviewsToShopify(
   }
 }
 
+export async function uploadReviewMediaToShopify(
+  admin: any,
+  dataUrl: string,
+  filename: string,
+): Promise<string | null> {
+  if (!dataUrl) return null;
+  if (!dataUrl.startsWith("data:")) return dataUrl; // Already a HTTP/HTTPS URL
+
+  const match = dataUrl.match(/^data:((?:image|video)\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+  if (!match) return dataUrl;
+
+  const [, mimeType, encodedData] = match;
+  const isVideo = mimeType.startsWith("video/");
+  const resource = isVideo ? "VIDEO" : "IMAGE";
+
+  if (!admin) return dataUrl;
+
+  try {
+    const stagedResponse = await admin.graphql(
+      `
+      #graphql
+      mutation stageReviewMedia($input: [StagedUploadInput!]!) {
+        stagedUploadsCreate(input: $input) {
+          stagedTargets {
+            url
+            resourceUrl
+            parameters { name value }
+          }
+          userErrors { field message }
+        }
+      }
+    `,
+      {
+        variables: {
+          input: [{ filename, mimeType, httpMethod: "POST", resource }],
+        },
+      },
+    );
+    const stagedJson = await stagedResponse.json();
+    const staged = stagedJson.data?.stagedUploadsCreate;
+    if (staged?.userErrors?.length || !staged?.stagedTargets?.[0]) {
+      return dataUrl;
+    }
+
+    const target = staged.stagedTargets[0];
+    const form = new FormData();
+    for (const parameter of target.parameters) {
+      form.append(parameter.name, parameter.value);
+    }
+    form.append(
+      "file",
+      new Blob([Buffer.from(encodedData, "base64")], { type: mimeType }),
+      filename,
+    );
+
+    const uploadResponse = await fetch(target.url, {
+      method: "POST",
+      body: form,
+    });
+    if (!uploadResponse.ok) {
+      return dataUrl;
+    }
+
+    const fileResponse = await admin.graphql(
+      `
+      #graphql
+      mutation createReviewMediaFile($files: [FileCreateInput!]!) {
+        fileCreate(files: $files) {
+          files { id fileStatus }
+          userErrors { field message }
+        }
+      }
+    `,
+      {
+        variables: {
+          files: [
+            {
+              contentType: resource,
+              originalSource: target.resourceUrl,
+              filename,
+            },
+          ],
+        },
+      },
+    );
+    const fileJson = await fileResponse.json();
+    const createdFile = fileJson.data?.fileCreate;
+    if (createdFile?.userErrors?.length || !createdFile?.files?.[0]?.id) {
+      return dataUrl;
+    }
+
+    const fileId = createdFile.files[0].id;
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const statusResponse = await admin.graphql(
+        `
+        #graphql
+        query reviewMediaStatus($id: ID!) {
+          node(id: $id) {
+            ... on MediaImage {
+              fileStatus
+              image { url }
+            }
+            ... on Video {
+              fileStatus
+              sources { url }
+            }
+          }
+        }
+      `,
+        { variables: { id: fileId } },
+      );
+      const statusJson = await statusResponse.json();
+      const node = statusJson.data?.node;
+      if (node?.image?.url) return node.image.url;
+      if (node?.sources?.[0]?.url) return node.sources[0].url;
+      if (node?.fileStatus === "FAILED") break;
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+  } catch (e) {
+    console.warn("Media upload to Shopify failed, using dataUrl fallback:", e);
+  }
+
+  return dataUrl;
+}
+
 export async function uploadReviewImageToShopify(
   admin: any,
   dataUrl: string,
   filename: string,
 ): Promise<string | null> {
-  const match = dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
-  if (!match) return null;
-
-  const [, mimeType, encodedImage] = match;
-  const stagedResponse = await admin.graphql(
-    `
-    #graphql
-    mutation stageReviewImage($input: [StagedUploadInput!]!) {
-      stagedUploadsCreate(input: $input) {
-        stagedTargets {
-          url
-          resourceUrl
-          parameters { name value }
-        }
-        userErrors { field message }
-      }
-    }
-  `,
-    {
-      variables: {
-        input: [{ filename, mimeType, httpMethod: "POST", resource: "IMAGE" }],
-      },
-    },
-  );
-  const stagedJson = await stagedResponse.json();
-  const staged = stagedJson.data?.stagedUploadsCreate;
-  if (staged?.userErrors?.length || !staged?.stagedTargets?.[0]) {
-    throw new Error(
-      staged?.userErrors?.[0]?.message ||
-        "Shopify image upload could not be staged.",
-    );
-  }
-
-  const target = staged.stagedTargets[0];
-  const form = new FormData();
-  for (const parameter of target.parameters)
-    form.append(parameter.name, parameter.value);
-  form.append(
-    "file",
-    new Blob([Buffer.from(encodedImage, "base64")], { type: mimeType }),
-    filename,
-  );
-
-  const uploadResponse = await fetch(target.url, {
-    method: "POST",
-    body: form,
-  });
-  if (!uploadResponse.ok) {
-    throw new Error(
-      `Shopify staged image upload failed with status ${uploadResponse.status}.`,
-    );
-  }
-
-  const fileResponse = await admin.graphql(
-    `
-    #graphql
-    mutation createReviewImage($files: [FileCreateInput!]!) {
-      fileCreate(files: $files) {
-        files { id fileStatus }
-        userErrors { field message }
-      }
-    }
-  `,
-    {
-      variables: {
-        files: [
-          {
-            contentType: "IMAGE",
-            originalSource: target.resourceUrl,
-            filename,
-          },
-        ],
-      },
-    },
-  );
-  const fileJson = await fileResponse.json();
-  const createdFile = fileJson.data?.fileCreate;
-  if (createdFile?.userErrors?.length || !createdFile?.files?.[0]?.id) {
-    throw new Error(
-      createdFile?.userErrors?.[0]?.message ||
-        "Shopify could not create the review image.",
-    );
-  }
-
-  const fileId = createdFile.files[0].id;
-  for (let attempt = 0; attempt < 10; attempt++) {
-    const statusResponse = await admin.graphql(
-      `
-      #graphql
-      query reviewImageStatus($id: ID!) {
-        node(id: $id) {
-          ... on MediaImage {
-            fileStatus
-            image { url }
-          }
-        }
-      }
-    `,
-      { variables: { id: fileId } },
-    );
-    const statusJson = await statusResponse.json();
-    const image = statusJson.data?.node;
-    if (image?.image?.url) return image.image.url;
-    if (image?.fileStatus === "FAILED") break;
-    await new Promise((resolve) => setTimeout(resolve, 500));
-  }
-
-  return null;
+  return uploadReviewMediaToShopify(admin, dataUrl, filename);
 }
 
 export async function syncSettingsToShopify(

@@ -6,6 +6,7 @@ import {
   syncReviewsToShopify,
   syncAiJobsToShopify,
   uploadReviewImageToShopify,
+  uploadReviewMediaToShopify,
 } from "../services/reviewPersistence.server";
 import { canonicalizeShopDomain } from "../services/shopDomain.server";
 
@@ -57,7 +58,6 @@ export async function action({ request }: ActionFunctionArgs) {
       const buffer = Buffer.from(arrayBuffer);
       const contentType = imgRes.headers.get("content-type") || "image/jpeg";
       return { base64: buffer.toString("base64"), mimeType: contentType };
-      ``;
     } catch {
       return null;
     }
@@ -74,7 +74,25 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     }
 
-    const finalManualImg = manualReview.imageUrl || null;
+    let finalManualImg = manualReview.imageUrl || null;
+    let finalManualVid = manualReview.videoUrl || null;
+
+    if (typeof finalManualImg === "string" && finalManualImg.startsWith("data:")) {
+      finalManualImg = await uploadReviewMediaToShopify(
+        admin,
+        finalManualImg,
+        `manual-img-${Date.now()}.png`,
+      );
+    }
+
+    if (typeof finalManualVid === "string" && finalManualVid.startsWith("data:")) {
+      finalManualVid = await uploadReviewMediaToShopify(
+        admin,
+        finalManualVid,
+        `manual-vid-${Date.now()}.mp4`,
+      );
+    }
+
     const manualHandle =
       manualReview.productHandle ||
       manualReview.productId.replace(/^gid:\/\/shopify\/Product\//, "");
@@ -90,7 +108,7 @@ export async function action({ request }: ActionFunctionArgs) {
           manualReview.bodyShort || manualReview.bodyFull.substring(0, 100),
         bodyFull: manualReview.bodyFull,
         imageUrl: finalManualImg,
-        videoUrl: manualReview.videoUrl || null,
+        videoUrl: finalManualVid,
         source: "MANUAL",
         isAiGenerated: false,
         isPublished: Boolean(manualReview.isPublished),
@@ -117,16 +135,24 @@ export async function action({ request }: ActionFunctionArgs) {
     }
 
     let finalSaveImg = saveReview.imageUrl || null;
-    if (
-      typeof finalSaveImg === "string" &&
-      finalSaveImg.startsWith("data:image/")
-    ) {
-      finalSaveImg = await uploadReviewImageToShopify(
+    let finalSaveVid = saveReview.videoUrl || null;
+
+    if (typeof finalSaveImg === "string" && finalSaveImg.startsWith("data:")) {
+      finalSaveImg = await uploadReviewMediaToShopify(
         admin,
         finalSaveImg,
-        `review-${Date.now()}.png`,
+        `review-img-${Date.now()}.png`,
       );
     }
+
+    if (typeof finalSaveVid === "string" && finalSaveVid.startsWith("data:")) {
+      finalSaveVid = await uploadReviewMediaToShopify(
+        admin,
+        finalSaveVid,
+        `review-vid-${Date.now()}.mp4`,
+      );
+    }
+
     const saveHandle =
       saveReview.productHandle ||
       productId.replace(/^gid:\/\/shopify\/Product\//, "");
@@ -141,7 +167,7 @@ export async function action({ request }: ActionFunctionArgs) {
         bodyShort: saveReview.bodyShort || "",
         bodyFull: saveReview.bodyFull || "",
         imageUrl: finalSaveImg,
-        videoUrl: saveReview.videoUrl || null,
+        videoUrl: finalSaveVid,
         source: "AI_GENERATED",
         isAiGenerated: true,
         isPublished:

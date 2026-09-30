@@ -193,6 +193,7 @@ export default function AiGeneratorPage() {
     },
   ];
 
+  const [mediaType, setMediaType] = useState<"image" | "video" | null>(null);
   const [imageBase64, setImageBase64] = useState<string | undefined>(undefined);
   const [imageMimeType, setImageMimeType] = useState<string | undefined>(undefined);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
@@ -215,6 +216,8 @@ export default function AiGeneratorPage() {
   const [manualFull, setManualFull] = useState<string>("Bought this item after reading great feedback and it exceeded all expectations. Fast delivery, pristine condition, and works flawlessly.");
   const [manualVerified, setManualVerified] = useState<boolean>(true);
   const [manualPublishImmediately, setManualPublishImmediately] = useState<boolean>(true);
+  const [manualMediaType, setManualMediaType] = useState<"image" | "video" | null>(null);
+  const [manualMediaPreview, setManualMediaPreview] = useState<string | null>(null);
   const [manualSubmitting, setManualSubmitting] = useState<boolean>(false);
   const [manualSuccessMsg, setManualSuccessMsg] = useState<string | null>(null);
   const [manualErrorMsg, setManualErrorMsg] = useState<string | null>(null);
@@ -231,16 +234,26 @@ export default function AiGeneratorPage() {
     if (prod) {
       setDescription(prod.description);
       setProductImageUrl(prod.imageUrl || null);
-      // Clear any manually uploaded image when switching products
+      // Clear any manually uploaded media when switching products
+      setMediaType(null);
       setImageBase64(undefined);
       setImageMimeType(undefined);
       setImagePreview(null);
     }
   };
 
+  const handleClearMedia = () => {
+    setMediaType(null);
+    setImageBase64(undefined);
+    setImageMimeType(undefined);
+    setImagePreview(null);
+  };
+
   const handleImageDrop = (_files: File[], acceptedFiles: File[]) => {
     if (acceptedFiles.length > 0) {
       const file = acceptedFiles[0];
+      const isVid = file.type.startsWith("video/");
+      setMediaType(isVid ? "video" : "image");
       setImageMimeType(file.type);
       const reader = new FileReader();
       reader.onload = (e) => {
@@ -251,6 +264,25 @@ export default function AiGeneratorPage() {
       };
       reader.readAsDataURL(file);
     }
+  };
+
+  const handleManualMediaDrop = (_files: File[], acceptedFiles: File[]) => {
+    if (acceptedFiles.length > 0) {
+      const file = acceptedFiles[0];
+      const isVid = file.type.startsWith("video/");
+      setManualMediaType(isVid ? "video" : "image");
+
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setManualMediaPreview(e.target?.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleClearManualMedia = () => {
+    setManualMediaType(null);
+    setManualMediaPreview(null);
   };
 
   // Run Bulk AI Generation for ALL Products
@@ -382,6 +414,8 @@ export default function AiGeneratorPage() {
             rating: manualRating,
             bodyShort: manualShort,
             bodyFull: manualFull,
+            imageUrl: manualMediaType === "image" ? manualMediaPreview : null,
+            videoUrl: manualMediaType === "video" ? manualMediaPreview : null,
             isVerifiedPurchase: manualVerified,
             isPublished: manualPublishImmediately,
             language: "en",
@@ -396,6 +430,7 @@ export default function AiGeneratorPage() {
         setManualSuccessMsg("Custom customer review created successfully!");
         setManualShort("");
         setManualFull("");
+        handleClearManualMedia();
       }
     } catch (e: any) {
       setManualErrorMsg(e.message || "Failed to submit custom review.");
@@ -605,7 +640,7 @@ export default function AiGeneratorPage() {
                         </InlineGrid>
 
                         <BlockStack gap="200">
-                          <Text as="span" variant="bodySm" fontWeight="bold">Product Image (AI Vision)</Text>
+                          <Text as="span" variant="bodySm" fontWeight="bold">Upload Product Media (Image or Video)</Text>
 
                           {/* Auto-show Shopify product image */}
                           {productImageUrl && !imagePreview && (
@@ -622,14 +657,26 @@ export default function AiGeneratorPage() {
                             </div>
                           )}
 
-                          <DropZone onDrop={handleImageDrop} allowMultiple={false} accept="image/*">
+                          <DropZone onDrop={handleImageDrop} allowMultiple={false} accept="image/*,video/*">
                             {imagePreview ? (
                               <div style={{ padding: "12px", textAlign: "center" }}>
-                                <img src={imagePreview} alt="Preview" style={{ maxHeight: "100px", borderRadius: "8px" }} />
-                                <Text as="p" variant="bodyXs" tone="subdued">Custom image uploaded (overrides Shopify image)</Text>
+                                {mediaType === "video" ? (
+                                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px" }}>
+                                    <video src={imagePreview} controls style={{ maxHeight: "140px", maxWidth: "100%", borderRadius: "8px" }} />
+                                    <Text as="p" variant="bodyXs" tone="subdued">Uploaded Video (Selected format: Video)</Text>
+                                  </div>
+                                ) : (
+                                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px" }}>
+                                    <img src={imagePreview} alt="Preview" style={{ maxHeight: "100px", borderRadius: "8px", objectFit: "cover" }} />
+                                    <Text as="p" variant="bodyXs" tone="subdued">Uploaded Image (Selected format: Image)</Text>
+                                  </div>
+                                )}
+                                <div style={{ marginTop: "6px" }}>
+                                  <Button size="micro" onClick={handleClearMedia}>Remove / Change Media</Button>
+                                </div>
                               </div>
                             ) : (
-                              <DropZone.FileUpload actionHint="Or upload a custom image to override" />
+                              <DropZone.FileUpload actionHint="Upload an image or a video (supports image/* and video/*)" />
                             )}
                           </DropZone>
                         </BlockStack>
@@ -852,6 +899,36 @@ export default function AiGeneratorPage() {
                         autoComplete="off"
                         placeholder="Write detailed customer feedback..."
                       />
+
+                      <BlockStack gap="200">
+                        <Text as="span" variant="bodySm" fontWeight="bold">Upload Review Media (Image or Video)</Text>
+                        <Text as="p" variant="bodyXs" tone="subdued">
+                          Optional: Upload an image or video to display with this custom review (1 file at a time).
+                        </Text>
+
+                        <DropZone onDrop={handleManualMediaDrop} allowMultiple={false} accept="image/*,video/*">
+                          {manualMediaPreview ? (
+                            <div style={{ padding: "12px", textAlign: "center" }}>
+                              {manualMediaType === "video" ? (
+                                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px" }}>
+                                  <video src={manualMediaPreview} controls style={{ maxHeight: "140px", maxWidth: "100%", borderRadius: "8px" }} />
+                                  <Text as="p" variant="bodyXs" tone="subdued">Uploaded Video (Selected format: Video)</Text>
+                                </div>
+                              ) : (
+                                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px" }}>
+                                  <img src={manualMediaPreview} alt="Manual Media Preview" style={{ maxHeight: "110px", borderRadius: "8px", objectFit: "cover" }} />
+                                  <Text as="p" variant="bodyXs" tone="subdued">Uploaded Image (Selected format: Image)</Text>
+                                </div>
+                              )}
+                              <div style={{ marginTop: "6px" }}>
+                                <Button size="micro" onClick={handleClearManualMedia}>Remove / Change Media</Button>
+                              </div>
+                            </div>
+                          ) : (
+                            <DropZone.FileUpload actionHint="Upload an image or video (supports image/* and video/*)" />
+                          )}
+                        </DropZone>
+                      </BlockStack>
 
                       <InlineStack gap="600">
                         <Checkbox
