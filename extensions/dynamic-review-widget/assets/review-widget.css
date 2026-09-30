@@ -426,17 +426,32 @@
   top: 50% !important;
   left: 50% !important;
   transform: translate(-50%, -50%) !important;
-  width: 30px !important;
-  height: 30px !important;
-  background: rgba(0, 0, 0, 0.55) !important;
-  border: 1.5px solid rgba(255, 255, 255, 0.8) !important;
+  width: 32px !important;
+  height: 32px !important;
+  background: rgba(0, 0, 0, 0.65) !important;
+  border: 1.5px solid rgba(255, 255, 255, 0.9) !important;
   border-radius: 50% !important;
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
   color: #ffffff !important;
-  font-size: 11px !important;
-  pointer-events: none !important;
+  font-size: 12px !important;
+  cursor: pointer !important;
+  pointer-events: auto !important;
+  z-index: 10 !important;
+  transition: transform 0.2s ease, background 0.2s ease, opacity 0.2s ease !important;
+}
+
+.rw-media-play-icon:hover {
+  transform: translate(-50%, -50%) scale(1.15) !important;
+  background: rgba(0, 0, 0, 0.85) !important;
+}
+
+.rw-hidden,
+.rw-media-play-icon.rw-hidden {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
 }
 
 .rw-media-time-pill {

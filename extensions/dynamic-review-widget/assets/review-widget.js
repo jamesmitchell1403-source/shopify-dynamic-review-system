@@ -407,6 +407,24 @@
       videoEls.forEach(function(videoEl) {
         const playBtn = videoEl.parentElement ? videoEl.parentElement.querySelector('.rw-media-play-icon') : null;
 
+        const setPlayBtnVisibility = function(visible) {
+          if (!playBtn) return;
+          if (visible) {
+            playBtn.classList.remove('rw-hidden');
+            playBtn.style.setProperty('display', 'flex', 'important');
+            playBtn.style.setProperty('opacity', '1', 'important');
+            playBtn.style.setProperty('visibility', 'visible', 'important');
+          } else {
+            playBtn.classList.add('rw-hidden');
+            playBtn.style.setProperty('display', 'none', 'important');
+            playBtn.style.setProperty('opacity', '0', 'important');
+            playBtn.style.setProperty('visibility', 'hidden', 'important');
+          }
+        };
+
+        // Video starts paused initially
+        setPlayBtnVisibility(true);
+
         const togglePlay = function(e) {
           e.stopPropagation();
           if (videoEl.paused) {
@@ -421,19 +439,19 @@
 
         videoEl.addEventListener('play', function() {
           isVideoPlaying = true;
-          if (playBtn) playBtn.style.display = 'none';
+          setPlayBtnVisibility(false);
           clearHideTimer(); // Pause review popup rotation timer while watching video!
         });
 
         videoEl.addEventListener('pause', function() {
           isVideoPlaying = false;
-          if (playBtn) playBtn.style.display = 'flex';
+          setPlayBtnVisibility(true);
           startHideTimer(); // Resume normal duration timer if user pauses video
         });
 
         videoEl.addEventListener('ended', function() {
           isVideoPlaying = false;
-          if (playBtn) playBtn.style.display = 'flex';
+          setPlayBtnVisibility(true);
           clearHideTimer();
           // Once video has completely finished, wait 1.5s then rotate to next review
           setTimeout(function() {
