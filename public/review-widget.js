@@ -509,16 +509,27 @@
         `;
         document.body.appendChild(modal);
 
-        const closeBtn = modal.querySelector('.rw-preview-close');
-        const backdrop = modal.querySelector('.rw-preview-backdrop');
-
         const closeHandler = function(e) {
+          if (e.target.closest('.rw-preview-close')) {
+            e.stopPropagation();
+            closePreviewModal();
+            return;
+          }
+          const dialog = modal.querySelector('.rw-preview-dialog');
+          if (dialog && dialog.contains(e.target)) {
+            return;
+          }
           e.stopPropagation();
           closePreviewModal();
         };
 
-        if (closeBtn) closeBtn.addEventListener('click', closeHandler);
-        if (backdrop) backdrop.addEventListener('click', closeHandler);
+        modal.addEventListener('click', closeHandler);
+
+        document.addEventListener('keydown', function(e) {
+          if (e.key === 'Escape' || e.key === 'Esc') {
+            closePreviewModal();
+          }
+        });
       }
       return modal;
     }
