@@ -153,6 +153,31 @@
     let currentIndex = 0;
     let isFirstShow = true;
 
+    let durationTimer = null;
+    let isVideoPlaying = false;
+
+    function clearHideTimer() {
+      if (durationTimer) {
+        clearTimeout(durationTimer);
+        durationTimer = null;
+      }
+    }
+
+    function startHideTimer() {
+      clearHideTimer();
+      if (isVideoPlaying) return;
+
+      durationTimer = setTimeout(function() {
+        if (isVideoPlaying) return;
+        card.classList.remove('rw-visible');
+        setTimeout(function() {
+          card.innerHTML = '';
+          card.className = `rw-notification-card rw-pos-${position} ${layoutClass}`;
+          scheduleNext();
+        }, 500);
+      }, durationMs);
+    }
+
     // Preload ALL review images and avatars in advance at startup
     if (reviews && reviews.length > 0) {
       reviews.forEach(function (r) {
@@ -230,8 +255,8 @@
         const mediaHtml = `
           <div class="rw-media-left">
             ${isOption2
-              ? `<video src="${escapeHtml(review.videoUrl)}" autoplay loop muted playsinline style="width:100%;height:100%;object-fit:cover;display:block;"></video>
-                 <div class="rw-media-play-icon">▶</div>`
+              ? `<video src="${escapeHtml(review.videoUrl)}" playsinline preload="metadata" style="width:100%;height:100%;object-fit:cover;display:block;cursor:pointer;"></video>
+                 <div class="rw-media-play-icon" style="cursor:pointer;">▶</div>`
               : `<img src="${escapeHtml(review.imageUrl)}" alt="Review product photo" loading="eager" fetchpriority="high" style="width:100%;height:100%;object-fit:cover;display:block;" />`
             }
           </div>
@@ -273,8 +298,8 @@
                   <img src="${escapeHtml(review.imageUrl)}" alt="Product photo" loading="eager" fetchpriority="high" />
                 </div>
                 <div class="rw-carousel-item">
-                  <video src="${escapeHtml(review.videoUrl)}" autoplay loop muted playsinline style="width:100%;height:100%;object-fit:cover;display:block;"></video>
-                  <div class="rw-media-play-icon">▶</div>
+                  <video src="${escapeHtml(review.videoUrl)}" playsinline preload="metadata" style="width:100%;height:100%;object-fit:cover;display:block;cursor:pointer;"></video>
+                  <div class="rw-media-play-icon" style="cursor:pointer;">▶</div>
                 </div>
               </div>
               <div class="rw-carousel-dots">
@@ -376,6 +401,51 @@
           card.classList.remove('rw-visible');
         });
       }
+
+      // Attach manual play/pause handlers and timer pause logic for videos
+      const videoEls = card.querySelectorAll('video');
+      videoEls.forEach(function(videoEl) {
+        const playBtn = videoEl.parentElement ? videoEl.parentElement.querySelector('.rw-media-play-icon') : null;
+
+        const togglePlay = function(e) {
+          e.stopPropagation();
+          if (videoEl.paused) {
+            videoEl.play();
+          } else {
+            videoEl.pause();
+          }
+        };
+
+        if (playBtn) playBtn.addEventListener('click', togglePlay);
+        videoEl.addEventListener('click', togglePlay);
+
+        videoEl.addEventListener('play', function() {
+          isVideoPlaying = true;
+          if (playBtn) playBtn.style.display = 'none';
+          clearHideTimer(); // Pause review popup rotation timer while watching video!
+        });
+
+        videoEl.addEventListener('pause', function() {
+          isVideoPlaying = false;
+          if (playBtn) playBtn.style.display = 'flex';
+          startHideTimer(); // Resume normal duration timer if user pauses video
+        });
+
+        videoEl.addEventListener('ended', function() {
+          isVideoPlaying = false;
+          if (playBtn) playBtn.style.display = 'flex';
+          clearHideTimer();
+          // Once video has completely finished, wait 1.5s then rotate to next review
+          setTimeout(function() {
+            card.classList.remove('rw-visible');
+            setTimeout(function() {
+              card.innerHTML = '';
+              card.className = `rw-notification-card rw-pos-${position} ${layoutClass}`;
+              scheduleNext();
+            }, 500);
+          }, 1500);
+        });
+      });
     }
 
     function preloadSingleImage(url) {
@@ -483,18 +553,10 @@
         const triggerShow = function() {
           if (hasShown) return;
           hasShown = true;
+          isVideoPlaying = false;
           card.classList.add('rw-visible');
 
-          // Start display duration timer ONLY AFTER card becomes visible!
-          setTimeout(function() {
-            card.classList.remove('rw-visible');
-            setTimeout(function() {
-              // Completely clear card DOM content off-screen while invisible so previous content never flickers
-              card.innerHTML = '';
-              card.className = `rw-notification-card rw-pos-${position} ${layoutClass}`;
-              scheduleNext();
-            }, 500);
-          }, durationMs);
+          startHideTimer();
         };
 
         displayReviewWithMediaPreload(review, triggerShow);
