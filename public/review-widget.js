@@ -527,6 +527,8 @@
       if (!src) return;
       const modal = getOrCreatePreviewModal();
       const content = modal.querySelector('.rw-preview-content');
+      const backdrop = modal.querySelector('.rw-preview-backdrop');
+      const dialog = modal.querySelector('.rw-preview-dialog');
       if (!content) return;
 
       if (type === 'video') {
@@ -539,7 +541,19 @@
         content.innerHTML = `<img src="${escapeHtml(src)}" alt="Enlarged review media" />`;
       }
 
+      if (modal) {
+        modal.style.cssText = 'position: fixed !important; top: 0 !important; left: 0 !important; right: 0 !important; bottom: 0 !important; width: 100vw !important; height: 100vh !important; background-color: rgba(0, 0, 0, 0.72) !important; backdrop-filter: blur(6px) !important; -webkit-backdrop-filter: blur(6px) !important; z-index: 9999998 !important; display: flex !important; align-items: center !important; justify-content: center !important; opacity: 1 !important; visibility: visible !important; pointer-events: auto !important; margin: 0 !important; padding: 0 !important;';
+      }
+      if (backdrop) {
+        backdrop.style.cssText = 'position: fixed !important; top: 0 !important; left: 0 !important; right: 0 !important; bottom: 0 !important; width: 100vw !important; height: 100vh !important; background-color: rgba(0, 0, 0, 0.72) !important; z-index: 1 !important; cursor: pointer !important; margin: 0 !important; padding: 0 !important;';
+      }
+      if (dialog) {
+        dialog.style.cssText = 'position: relative !important; z-index: 99999999 !important; width: 720px !important; height: 480px !important; max-width: 90vw !important; max-height: 80vh !important; background: #000000 !important; border-radius: 16px !important; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6) !important; border: 1px solid rgba(255, 255, 255, 0.15) !important; overflow: hidden !important; display: flex !important; flex-direction: column !important; align-items: center !important; justify-content: center !important;';
+      }
+
       try {
+        document.body.style.overflow = 'hidden';
+        document.documentElement.style.overflow = 'hidden';
         document.body.classList.add('rw-modal-open');
         document.documentElement.classList.add('rw-modal-open');
       } catch (e) {}
@@ -550,6 +564,9 @@
     function closePreviewModal() {
       const modal = document.getElementById('rw-preview-modal');
       if (modal) {
+        modal.style.opacity = '0';
+        modal.style.visibility = 'hidden';
+        modal.style.pointerEvents = 'none';
         modal.classList.remove('rw-active');
         const content = modal.querySelector('.rw-preview-content');
         if (content) {
@@ -566,6 +583,8 @@
       }
 
       try {
+        document.body.style.overflow = '';
+        document.documentElement.style.overflow = '';
         document.body.classList.remove('rw-modal-open');
         document.documentElement.classList.remove('rw-modal-open');
       } catch (e) {}
