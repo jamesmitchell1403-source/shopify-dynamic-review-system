@@ -530,13 +530,13 @@
       if (!content) return;
 
       if (type === 'video') {
-        content.innerHTML = `<video src="${escapeHtml(src)}" autoplay controls playsinline style="max-width:85vw;max-height:80vh;border-radius:12px;display:block;outline:none;"></video>`;
+        content.innerHTML = `<video src="${escapeHtml(src)}" autoplay controls playsinline></video>`;
         const vid = content.querySelector('video');
         if (vid) {
           vid.play().catch(function() {});
         }
       } else {
-        content.innerHTML = `<img src="${escapeHtml(src)}" alt="Enlarged review media" style="max-width:85vw;max-height:80vh;object-fit:contain;border-radius:12px;display:block;" />`;
+        content.innerHTML = `<img src="${escapeHtml(src)}" alt="Enlarged review media" />`;
       }
 
       modal.classList.add('rw-active');
