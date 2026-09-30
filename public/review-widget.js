@@ -539,6 +539,11 @@
         content.innerHTML = `<img src="${escapeHtml(src)}" alt="Enlarged review media" />`;
       }
 
+      try {
+        document.body.classList.add('rw-modal-open');
+        document.documentElement.classList.add('rw-modal-open');
+      } catch (e) {}
+
       modal.classList.add('rw-active');
     }
 
@@ -559,6 +564,12 @@
           }, 300);
         }
       }
+
+      try {
+        document.body.classList.remove('rw-modal-open');
+        document.documentElement.classList.remove('rw-modal-open');
+      } catch (e) {}
+
       if (!isVideoPlaying) {
         startHideTimer();
       }

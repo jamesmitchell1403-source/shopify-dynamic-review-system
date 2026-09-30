@@ -14,13 +14,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const autoCssInject = `
 (function() {
   const existing = document.getElementById('rw-widget-style');
-  if (!existing) {
-    const link = document.createElement('link');
-    link.id = 'rw-widget-style';
-    link.rel = 'stylesheet';
-    link.href = '/apps/reviews/widget.css?v=5.0';
-    document.head.appendChild(link);
+  if (existing) {
+    existing.remove();
   }
+  const link = document.createElement('link');
+  link.id = 'rw-widget-style';
+  link.rel = 'stylesheet';
+  link.href = '/apps/reviews/widget.css?v=' + Date.now();
+  document.head.appendChild(link);
 })();
 `;
 

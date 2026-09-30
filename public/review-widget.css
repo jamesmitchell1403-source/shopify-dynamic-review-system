@@ -2,7 +2,7 @@
 
 .rw-notification-card {
   position: fixed !important;
-  z-index: 9999999 !important;
+  z-index: 9999950 !important;
   width: 380px !important;
   max-width: 92vw !important;
   padding: 18px 22px !important;
@@ -813,6 +813,14 @@
   visibility: visible !important;
 }
 
+/* Lock background scroll when preview modal is open */
+body.rw-modal-open,
+html.rw-modal-open {
+  overflow: hidden !important;
+  height: 100vh !important;
+  touch-action: none !important;
+}
+
 /* Fullscreen Centered Media Preview Modal */
 .rw-preview-modal {
   position: fixed !important;
@@ -824,7 +832,7 @@
   height: 100vh !important;
   width: 100% !important;
   height: 100% !important;
-  z-index: 2147483647 !important;
+  z-index: 9999900 !important;
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
@@ -860,7 +868,7 @@
 
 .rw-preview-dialog {
   position: relative !important;
-  z-index: 2 !important;
+  z-index: 9999999 !important;
   width: 720px !important;
   height: 480px !important;
   max-width: 90vw !important;
@@ -871,7 +879,7 @@
   justify-content: center !important;
   background: #000000 !important;
   border-radius: 16px !important;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5) !important;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6) !important;
   overflow: hidden !important;
   border: 1px solid rgba(255, 255, 255, 0.15) !important;
 }
