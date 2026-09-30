@@ -155,6 +155,7 @@
 
     let durationTimer = null;
     let isVideoPlaying = false;
+    let isPreviewOpen = false;
 
     function clearHideTimer() {
       if (durationTimer) {
@@ -165,12 +166,17 @@
 
     function startHideTimer() {
       clearHideTimer();
-      if (isVideoPlaying) return;
+      if (isVideoPlaying || isPreviewOpen) return;
 
       durationTimer = setTimeout(function() {
-        if (isVideoPlaying) return;
+        if (isVideoPlaying || isPreviewOpen) return;
+        if (card && isPreviewOpen) return;
         card.classList.remove('rw-visible');
         setTimeout(function() {
+          if (isPreviewOpen) {
+            if (card) card.classList.add('rw-visible');
+            return;
+          }
           card.innerHTML = '';
           card.className = `rw-notification-card rw-pos-${position} ${layoutClass}`;
           scheduleNext();
@@ -462,13 +468,19 @@
         });
 
         videoEl.addEventListener('ended', function() {
+          if (isPreviewOpen) return;
           isVideoPlaying = false;
           setPlayBtnVisibility(true);
           clearHideTimer();
           // Once video has completely finished, wait 1.5s then rotate to next review
           setTimeout(function() {
+            if (isPreviewOpen) return;
             card.classList.remove('rw-visible');
             setTimeout(function() {
+              if (isPreviewOpen) {
+                if (card) card.classList.add('rw-visible');
+                return;
+              }
               card.innerHTML = '';
               card.className = `rw-notification-card rw-pos-${position} ${layoutClass}`;
               scheduleNext();
@@ -536,6 +548,12 @@
 
     function openPreviewModal(type, src) {
       if (!src) return;
+      isPreviewOpen = true;
+      clearHideTimer();
+      if (card) {
+        card.classList.add('rw-visible');
+      }
+
       const modal = getOrCreatePreviewModal();
       const content = modal.querySelector('.rw-preview-content');
       const backdrop = modal.querySelector('.rw-preview-backdrop');
@@ -573,6 +591,11 @@
     }
 
     function closePreviewModal() {
+      isPreviewOpen = false;
+      if (card) {
+        card.classList.add('rw-visible');
+      }
+
       const modal = document.getElementById('rw-preview-modal');
       if (modal) {
         modal.style.opacity = '0';
