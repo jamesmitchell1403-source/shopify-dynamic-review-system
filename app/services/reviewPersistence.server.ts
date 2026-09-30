@@ -390,9 +390,22 @@ export async function uploadReviewMediaToShopify(
   const fileBuffer = Buffer.from(encodedData, "base64");
   const fileSize = String(fileBuffer.length);
 
-  if (!admin) return dataUrl;
+  // Ensure correct file extension on filename
+  let safeFilename = filename;
+  if (isVideo && !safeFilename.match(/\.(mp4|mov|webm|avi|mkv)$/i)) {
+    safeFilename += ".mp4";
+  } else if (!isVideo && !safeFilename.match(/\.(png|jpg|jpeg|webp|gif)$/i)) {
+    safeFilename += ".png";
+  }
+
+  if (!admin) {
+    console.warn("[UploadMedia] Admin GraphQL client not provided.");
+    return dataUrl;
+  }
 
   try {
+    console.log(`[UploadMedia] Staging ${resource} upload (${fileSize} bytes) for filename: ${safeFilename}`);
+
     const stagedResponse = await admin.graphql(
       `
       #graphql
@@ -409,7 +422,7 @@ export async function uploadReviewMediaToShopify(
     `,
       {
         variables: {
-          input: [{ filename, mimeType, httpMethod: "POST", resource, fileSize }],
+          input: [{ filename: safeFilename, mimeType, httpMethod: "POST", resource, fileSize }],
         },
       },
     );
@@ -428,7 +441,7 @@ export async function uploadReviewMediaToShopify(
     form.append(
       "file",
       new Blob([fileBuffer], { type: mimeType }),
-      filename,
+      safeFilename,
     );
 
     const uploadResponse = await fetch(target.url, {
@@ -440,40 +453,52 @@ export async function uploadReviewMediaToShopify(
       return dataUrl;
     }
 
+    // Build fileInput object for fileCreate
+    // Note: FileContentType in fileCreate accepts IMAGE or FILE. Omitting contentType for video allows Shopify to auto-create Video media node from extension/originalSource!
+    const fileInput: any = {
+      originalSource: target.resourceUrl,
+      filename: safeFilename,
+    };
+    if (!isVideo) {
+      fileInput.contentType = "IMAGE";
+    }
+
+    console.log(`[UploadMedia] Calling fileCreate for ${safeFilename} with originalSource: ${target.resourceUrl}`);
+
     const fileResponse = await admin.graphql(
       `
       #graphql
       mutation createReviewMediaFile($files: [FileCreateInput!]!) {
         fileCreate(files: $files) {
-          files { id fileStatus }
+          files {
+            id
+            fileStatus
+            alt
+            createdAt
+          }
           userErrors { field message }
         }
       }
     `,
       {
         variables: {
-          files: [
-            {
-              contentType: resource,
-              originalSource: target.resourceUrl,
-              filename,
-            },
-          ],
+          files: [fileInput],
         },
       },
     );
     const fileJson = await fileResponse.json();
     const createdFile = fileJson.data?.fileCreate;
     if (createdFile?.userErrors?.length || !createdFile?.files?.[0]?.id) {
-      console.warn("[UploadMedia] fileCreate errors:", createdFile?.userErrors);
-      // Fallback to staged resource URL so we don't return giant base64 data string
+      console.warn("[UploadMedia] fileCreate userErrors:", createdFile?.userErrors);
       return target.resourceUrl || dataUrl;
     }
 
     const fileId = createdFile.files[0].id;
+    console.log(`[UploadMedia] fileCreate succeeded! Created Shopify File ID: ${fileId}. Polling fileStatus...`);
+
     let fallbackUrl: string | null = target.resourceUrl || null;
 
-    for (let attempt = 0; attempt < 25; attempt++) {
+    for (let attempt = 0; attempt < 30; attempt++) {
       const statusResponse = await admin.graphql(
         `
         #graphql
@@ -499,15 +524,33 @@ export async function uploadReviewMediaToShopify(
       );
       const statusJson = await statusResponse.json();
       const node = statusJson.data?.node;
-      if (node?.image?.url) return node.image.url;
-      if (node?.sources?.[0]?.url) return node.sources[0].url;
-      if (node?.originalSource?.url) fallbackUrl = node.originalSource.url;
-      if (node?.url) return node.url;
-      if (node?.fileStatus === "FAILED") break;
+
+      if (node?.image?.url) {
+        console.log(`[UploadMedia] MediaImage ready! URL: ${node.image.url}`);
+        return node.image.url;
+      }
+      if (node?.sources?.[0]?.url) {
+        console.log(`[UploadMedia] Video source ready! URL: ${node.sources[0].url}`);
+        return node.sources[0].url;
+      }
+      if (node?.originalSource?.url) {
+        fallbackUrl = node.originalSource.url;
+      }
+      if (node?.url) {
+        console.log(`[UploadMedia] GenericFile ready! URL: ${node.url}`);
+        return node.url;
+      }
+      if (node?.fileStatus === "FAILED") {
+        console.warn(`[UploadMedia] File processing FAILED for ID: ${fileId}`);
+        break;
+      }
       await new Promise((resolve) => setTimeout(resolve, 800));
     }
 
-    if (fallbackUrl) return fallbackUrl;
+    if (fallbackUrl) {
+      console.log(`[UploadMedia] Returning video originalSource URL: ${fallbackUrl}`);
+      return fallbackUrl;
+    }
   } catch (e) {
     console.warn("Media upload to Shopify failed, using fallback:", e);
   }
