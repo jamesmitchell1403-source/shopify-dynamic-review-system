@@ -212,6 +212,71 @@ export async function loader({ request }: LoaderFunctionArgs) {
     selectedProductSummary = productStatsMap.get(productFilter);
   }
 
+  // Fetch existing media files from Shopify store Content -> Files
+  let shopifyFiles: Array<{ id: string; type: "IMAGE" | "VIDEO"; url: string; previewUrl: string; filename: string }> = [];
+  try {
+    const filesRes = await admin.graphql(`
+      #graphql
+      query getShopifyFilesForPicker {
+        files(first: 100, sortKey: CREATED_AT, reverse: true) {
+          nodes {
+            id
+            createdAt
+            fileStatus
+            alt
+            ... on MediaImage {
+              image {
+                url
+              }
+            }
+            ... on Video {
+              filename
+              originalSource {
+                url
+              }
+              sources {
+                url
+              }
+              preview {
+                image {
+                  url
+                }
+              }
+            }
+            ... on GenericFile {
+              url
+            }
+          }
+        }
+      }
+    `);
+    const filesJson = await filesRes.json();
+    const fileNodes = filesJson.data?.files?.nodes || [];
+    for (const node of fileNodes) {
+      if (node.image?.url) {
+        shopifyFiles.push({
+          id: node.id,
+          type: "IMAGE",
+          url: node.image.url,
+          previewUrl: node.image.url,
+          filename: node.alt || `Shopify Image (${node.id.split("/").pop()})`,
+        });
+      } else if (node.sources?.[0]?.url || node.originalSource?.url) {
+        const vidUrl = node.sources?.[0]?.url || node.originalSource?.url;
+        const prevUrl = node.preview?.image?.url || "";
+        shopifyFiles.push({
+          id: node.id,
+          type: "VIDEO",
+          url: vidUrl,
+          previewUrl: prevUrl,
+          filename: node.filename || node.alt || `Shopify Video (${node.id.split("/").pop()})`,
+        });
+      }
+    }
+  } catch (err) {
+    console.warn("Error fetching Shopify store files:", err);
+  }
+
   return json({
     reviews,
     sourceFilter,
@@ -226,6 +291,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     totalReviewsCount,
     totalPages,
     totalShopReviewsCount: allShopReviews.length,
+    shopifyFiles,
   });
 }
 
@@ -337,6 +403,7 @@ export default function ReviewsPage() {
     totalReviewsCount,
     totalPages,
     totalShopReviewsCount,
+    shopifyFiles = [],
   } = useLoaderData<typeof loader>();
 
   const submit = useSubmit();
@@ -346,6 +413,19 @@ export default function ReviewsPage() {
   const [searchValue, setSearchValue] = useState<string>(searchQuery);
   const [productSearchValue, setProductSearchValue] = useState<string>(productSearchQuery);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  // MEDIA SOURCE SELECTION STATE (Shopify Store Files vs Local Computer)
+  const [mediaSourceMode, setMediaSourceMode] = useState<"shopify_files" | "computer_upload">("shopify_files");
+  const [shopifyFileSearch, setShopifyFileSearch] = useState<string>("");
+  const [shopifyMediaTypeFilter, setShopifyMediaTypeFilter] = useState<"ALL" | "IMAGE" | "VIDEO">("ALL");
+
+  const filteredShopifyFiles = shopifyFiles.filter((file) => {
+    if (shopifyMediaTypeFilter !== "ALL" && file.type !== shopifyMediaTypeFilter) return false;
+    if (shopifyFileSearch.trim() !== "") {
+      return file.filename.toLowerCase().includes(shopifyFileSearch.toLowerCase().trim());
+    }
+    return true;
+  });
 
   // EDIT MODAL STATE
   const [editModalOpen, setEditModalOpen] = useState<boolean>(false);
@@ -902,35 +982,142 @@ export default function ReviewsPage() {
               </div>
             )}
 
-            <Text as="span" variant="bodySm" fontWeight="bold">Select Image or Video to Upload</Text>
-            <Text as="p" variant="bodyXs" tone="subdued">
-              You can upload <strong>either one Image or one Video</strong> for this review.
-            </Text>
+            {/* SOURCE MODE SWITCHER TABS */}
+            <div style={{ display: "flex", gap: "8px", borderBottom: "1px solid #E1E3E5", paddingBottom: "10px" }}>
+              <Button
+                size="medium"
+                pressed={mediaSourceMode === "shopify_files"}
+                onClick={() => setMediaSourceMode("shopify_files")}
+              >
+                📁 Select Existing Shopify Media ({shopifyFiles.length})
+              </Button>
+              <Button
+                size="medium"
+                pressed={mediaSourceMode === "computer_upload"}
+                onClick={() => setMediaSourceMode("computer_upload")}
+              >
+                💻 Upload New File from Computer
+              </Button>
+            </div>
 
-            <DropZone onDrop={handleUploadMediaDrop} allowMultiple={false} accept="image/*,video/*">
-              {uploadMediaPreview && !uploadClearMedia ? (
-                <div style={{ padding: "12px", textAlign: "center" }}>
+            {/* CURRENT SELECTED MEDIA PREVIEW HEADER */}
+            {uploadMediaPreview && !uploadClearMedia && (
+              <div style={{ background: "#F0FDF4", border: "1.5px solid #008060", padding: "10px 14px", borderRadius: "8px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
                   {uploadMediaType === "video" ? (
-                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px" }}>
-                      <video src={uploadMediaPreview} controls style={{ maxHeight: "160px", maxWidth: "100%", borderRadius: "8px" }} />
-                      <Badge tone="success">Selected Format: Video</Badge>
+                    <div style={{ position: "relative", width: "44px", height: "44px", borderRadius: "6px", overflow: "hidden", background: "#000", flexShrink: 0 }}>
+                      <video src={uploadMediaPreview} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                      <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", fontSize: "10px", color: "#fff" }}>▶</div>
                     </div>
                   ) : (
-                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px" }}>
-                      <img src={uploadMediaPreview} alt="Review Media" style={{ maxHeight: "140px", borderRadius: "8px", objectFit: "cover" }} />
-                      <Badge tone="success">Selected Format: Image</Badge>
-                    </div>
+                    <img src={uploadMediaPreview} alt="Selected media" style={{ width: "44px", height: "44px", objectFit: "cover", borderRadius: "6px", border: "1px solid #ccc", flexShrink: 0 }} />
                   )}
-                  <div style={{ marginTop: "10px" }}>
-                    <Button size="micro" tone="critical" onClick={() => { setUploadClearMedia(true); setUploadMediaPreview(null); setUploadMediaType(null); }}>
-                      Remove Media
-                    </Button>
+                  <div>
+                    <Text as="span" variant="bodySm" fontWeight="bold">
+                      Selected {uploadMediaType === "video" ? "Video" : "Image"} Attached ✓
+                    </Text>
+                    <div style={{ fontSize: "11px", color: "#5C5F62", wordBreak: "break-all", maxWidth: "320px" }}>
+                      {uploadMediaPreview.startsWith("data:") ? "Local File (Will upload to Shopify Content -> Files on Save)" : uploadMediaPreview}
+                    </div>
                   </div>
                 </div>
-              ) : (
-                <DropZone.FileUpload actionHint="Drag & drop or browse an image or video (supports image/* and video/*)" />
-              )}
-            </DropZone>
+                <Button size="micro" tone="critical" onClick={() => { setUploadClearMedia(true); setUploadMediaPreview(null); setUploadMediaType(null); }}>
+                  Remove Selection
+                </Button>
+              </div>
+            )}
+
+            {mediaSourceMode === "shopify_files" ? (
+              <BlockStack gap="300">
+                <Text as="span" variant="bodySm" fontWeight="bold">Select Existing Media from Shopify Files</Text>
+                
+                <InlineGrid columns={2} gap="200">
+                  <TextField
+                    label=""
+                    labelHidden
+                    placeholder="Search Shopify media files..."
+                    value={shopifyFileSearch}
+                    onChange={setShopifyFileSearch}
+                    prefix={<SearchIcon />}
+                    autoComplete="off"
+                  />
+                  <InlineStack gap="100" blockAlign="center">
+                    <Button size="micro" pressed={shopifyMediaTypeFilter === "ALL"} onClick={() => setShopifyMediaTypeFilter("ALL")}>All</Button>
+                    <Button size="micro" pressed={shopifyMediaTypeFilter === "IMAGE"} onClick={() => setShopifyMediaTypeFilter("IMAGE")}>Images</Button>
+                    <Button size="micro" pressed={shopifyMediaTypeFilter === "VIDEO"} onClick={() => setShopifyMediaTypeFilter("VIDEO")}>Videos</Button>
+                  </InlineStack>
+                </InlineGrid>
+
+                {filteredShopifyFiles.length > 0 ? (
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))", gap: "10px", maxHeight: "280px", overflowY: "auto", padding: "4px" }}>
+                    {filteredShopifyFiles.map((file) => {
+                      const isSelected = uploadMediaPreview === file.url && !uploadClearMedia;
+                      return (
+                        <div
+                          key={file.id}
+                          onClick={() => {
+                            setUploadMediaPreview(file.url);
+                            setUploadMediaType(file.type.toLowerCase() as "image" | "video");
+                            setUploadClearMedia(false);
+                          }}
+                          style={{
+                            border: isSelected ? "2.5px solid #008060" : "1px solid #DFE3E8",
+                            borderRadius: "8px",
+                            padding: "6px",
+                            cursor: "pointer",
+                            background: isSelected ? "#F0FDF4" : "#FFFFFF",
+                            position: "relative",
+                            transition: "all 0.15s ease",
+                            textAlign: "center",
+                          }}
+                        >
+                          <div style={{ position: "relative", width: "100%", height: "85px", borderRadius: "6px", overflow: "hidden", background: "#000", marginBottom: "4px" }}>
+                            {file.type === "VIDEO" ? (
+                              <>
+                                {file.previewUrl ? (
+                                  <img src={file.previewUrl} alt={file.filename} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                                ) : (
+                                  <video src={file.url} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                                )}
+                                <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", background: "rgba(0,0,0,0.65)", borderRadius: "50%", width: "22px", height: "22px", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: "10px" }}>▶</div>
+                              </>
+                            ) : (
+                              <img src={file.url} alt={file.filename} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                            )}
+                            <div style={{ position: "absolute", top: "4px", left: "4px" }}>
+                              <Badge tone={file.type === "VIDEO" ? "info" : "success"}>{file.type}</Badge>
+                            </div>
+                            {isSelected && (
+                              <div style={{ position: "absolute", top: "4px", right: "4px", background: "#008060", color: "#fff", borderRadius: "50%", width: "18px", height: "18px", fontSize: "11px", fontWeight: "bold", display: "flex", alignItems: "center", justifyContent: "center" }}>✓</div>
+                            )}
+                          </div>
+                          <div style={{ fontSize: "11px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: "#202223" }}>
+                            {file.filename}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div style={{ padding: "20px", textAlign: "center", background: "#FAFBFB", borderRadius: "8px", border: "1px dashed #C9CCCB" }}>
+                    <Text as="p" variant="bodySm" tone="subdued">
+                      No Shopify media files match your search. You can click "Upload New File from Computer" to upload a new image or video.
+                    </Text>
+                  </div>
+                )}
+              </BlockStack>
+            ) : (
+              <BlockStack gap="300">
+                <Text as="span" variant="bodySm" fontWeight="bold">Upload New Image or Video from Computer</Text>
+                <Text as="p" variant="bodyXs" tone="subdued">
+                  The uploaded file will automatically be created under <strong>Shopify Content &rarr; Files</strong> and attached to this review.
+                </Text>
+
+                <DropZone onDrop={handleUploadMediaDrop} allowMultiple={false} accept="image/*,video/*">
+                  <DropZone.FileUpload actionHint="Drag & drop or browse an image or video (supports image/* and video/*)" />
+                </DropZone>
+              </BlockStack>
+            )}
           </BlockStack>
         </Modal.Section>
       </Modal>

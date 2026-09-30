@@ -387,6 +387,8 @@ export async function uploadReviewMediaToShopify(
   const [, mimeType, encodedData] = match;
   const isVideo = mimeType.startsWith("video/");
   const resource = isVideo ? "VIDEO" : "IMAGE";
+  const fileBuffer = Buffer.from(encodedData, "base64");
+  const fileSize = String(fileBuffer.length);
 
   if (!admin) return dataUrl;
 
@@ -407,13 +409,14 @@ export async function uploadReviewMediaToShopify(
     `,
       {
         variables: {
-          input: [{ filename, mimeType, httpMethod: "POST", resource }],
+          input: [{ filename, mimeType, httpMethod: "POST", resource, fileSize }],
         },
       },
     );
     const stagedJson = await stagedResponse.json();
     const staged = stagedJson.data?.stagedUploadsCreate;
     if (staged?.userErrors?.length || !staged?.stagedTargets?.[0]) {
+      console.warn("[UploadMedia] stagedUploadsCreate errors:", staged?.userErrors);
       return dataUrl;
     }
 
@@ -424,7 +427,7 @@ export async function uploadReviewMediaToShopify(
     }
     form.append(
       "file",
-      new Blob([Buffer.from(encodedData, "base64")], { type: mimeType }),
+      new Blob([fileBuffer], { type: mimeType }),
       filename,
     );
 
@@ -433,6 +436,7 @@ export async function uploadReviewMediaToShopify(
       body: form,
     });
     if (!uploadResponse.ok) {
+      console.warn("[UploadResponse] S3 upload failed with status:", uploadResponse.status);
       return dataUrl;
     }
 
@@ -461,11 +465,15 @@ export async function uploadReviewMediaToShopify(
     const fileJson = await fileResponse.json();
     const createdFile = fileJson.data?.fileCreate;
     if (createdFile?.userErrors?.length || !createdFile?.files?.[0]?.id) {
-      return dataUrl;
+      console.warn("[UploadMedia] fileCreate errors:", createdFile?.userErrors);
+      // Fallback to staged resource URL so we don't return giant base64 data string
+      return target.resourceUrl || dataUrl;
     }
 
     const fileId = createdFile.files[0].id;
-    for (let attempt = 0; attempt < 10; attempt++) {
+    let fallbackUrl: string | null = target.resourceUrl || null;
+
+    for (let attempt = 0; attempt < 25; attempt++) {
       const statusResponse = await admin.graphql(
         `
         #graphql
@@ -477,7 +485,12 @@ export async function uploadReviewMediaToShopify(
             }
             ... on Video {
               fileStatus
+              originalSource { url }
               sources { url }
+            }
+            ... on GenericFile {
+              fileStatus
+              url
             }
           }
         }
@@ -488,11 +501,15 @@ export async function uploadReviewMediaToShopify(
       const node = statusJson.data?.node;
       if (node?.image?.url) return node.image.url;
       if (node?.sources?.[0]?.url) return node.sources[0].url;
+      if (node?.originalSource?.url) fallbackUrl = node.originalSource.url;
+      if (node?.url) return node.url;
       if (node?.fileStatus === "FAILED") break;
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      await new Promise((resolve) => setTimeout(resolve, 800));
     }
+
+    if (fallbackUrl) return fallbackUrl;
   } catch (e) {
-    console.warn("Media upload to Shopify failed, using dataUrl fallback:", e);
+    console.warn("Media upload to Shopify failed, using fallback:", e);
   }
 
   return dataUrl;
