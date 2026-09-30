@@ -256,8 +256,14 @@
           <div class="rw-media-left">
             ${isOption2
               ? `<video src="${escapeHtml(review.videoUrl)}" playsinline preload="metadata" style="width:100%;height:100%;object-fit:cover;display:block;cursor:pointer;"></video>
-                 <div class="rw-media-play-icon" style="cursor:pointer;">▶</div>`
-              : `<img src="${escapeHtml(review.imageUrl)}" alt="Review product photo" loading="eager" fetchpriority="high" style="width:100%;height:100%;object-fit:cover;display:block;" />`
+                 <div class="rw-media-play-icon" style="cursor:pointer;">▶</div>
+                 <div class="rw-media-eye-icon" title="Preview Video" data-type="video" data-src="${escapeHtml(review.videoUrl)}">
+                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                 </div>`
+              : `<img src="${escapeHtml(review.imageUrl)}" alt="Review product photo" loading="eager" fetchpriority="high" style="width:100%;height:100%;object-fit:cover;display:block;" />
+                 <div class="rw-media-eye-icon" title="Preview Image" data-type="image" data-src="${escapeHtml(review.imageUrl)}">
+                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                 </div>`
             }
           </div>
         `;
@@ -296,10 +302,16 @@
               <div class="rw-carousel-track">
                 <div class="rw-carousel-item">
                   <img src="${escapeHtml(review.imageUrl)}" alt="Product photo" loading="eager" fetchpriority="high" />
+                  <div class="rw-media-eye-icon" title="Preview Image" data-type="image" data-src="${escapeHtml(review.imageUrl)}">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                  </div>
                 </div>
                 <div class="rw-carousel-item">
                   <video src="${escapeHtml(review.videoUrl)}" playsinline preload="metadata" style="width:100%;height:100%;object-fit:cover;display:block;cursor:pointer;"></video>
                   <div class="rw-media-play-icon" style="cursor:pointer;">▶</div>
+                  <div class="rw-media-eye-icon" title="Preview Video" data-type="video" data-src="${escapeHtml(review.videoUrl)}">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                  </div>
                 </div>
               </div>
               <div class="rw-carousel-dots">
@@ -464,6 +476,92 @@
           }, 1500);
         });
       });
+
+      // Attach eye icon preview modal handlers
+      const eyeBtns = card.querySelectorAll('.rw-media-eye-icon');
+      eyeBtns.forEach(function(btn) {
+        btn.addEventListener('click', function(e) {
+          e.stopPropagation();
+          const mediaType = btn.getAttribute('data-type');
+          const mediaSrc = btn.getAttribute('data-src');
+
+          // Pause any video inside the review card
+          videoEls.forEach(function(v) { if (!v.paused) v.pause(); });
+          clearHideTimer();
+
+          openPreviewModal(mediaType, mediaSrc);
+        });
+      });
+    }
+
+    function getOrCreatePreviewModal() {
+      let modal = document.getElementById('rw-preview-modal');
+      if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'rw-preview-modal';
+        modal.className = 'rw-preview-modal';
+        modal.innerHTML = `
+          <div class="rw-preview-backdrop"></div>
+          <div class="rw-preview-dialog">
+            <button class="rw-preview-close" aria-label="Close preview">&times;</button>
+            <div class="rw-preview-content"></div>
+          </div>
+        `;
+        document.body.appendChild(modal);
+
+        const closeBtn = modal.querySelector('.rw-preview-close');
+        const backdrop = modal.querySelector('.rw-preview-backdrop');
+
+        const closeHandler = function(e) {
+          e.stopPropagation();
+          closePreviewModal();
+        };
+
+        if (closeBtn) closeBtn.addEventListener('click', closeHandler);
+        if (backdrop) backdrop.addEventListener('click', closeHandler);
+      }
+      return modal;
+    }
+
+    function openPreviewModal(type, src) {
+      if (!src) return;
+      const modal = getOrCreatePreviewModal();
+      const content = modal.querySelector('.rw-preview-content');
+      if (!content) return;
+
+      if (type === 'video') {
+        content.innerHTML = `<video src="${escapeHtml(src)}" autoplay controls playsinline style="max-width:85vw;max-height:80vh;border-radius:12px;display:block;outline:none;"></video>`;
+        const vid = content.querySelector('video');
+        if (vid) {
+          vid.play().catch(function() {});
+        }
+      } else {
+        content.innerHTML = `<img src="${escapeHtml(src)}" alt="Enlarged review media" style="max-width:85vw;max-height:80vh;object-fit:contain;border-radius:12px;display:block;" />`;
+      }
+
+      modal.classList.add('rw-active');
+    }
+
+    function closePreviewModal() {
+      const modal = document.getElementById('rw-preview-modal');
+      if (modal) {
+        modal.classList.remove('rw-active');
+        const content = modal.querySelector('.rw-preview-content');
+        if (content) {
+          const vid = content.querySelector('video');
+          if (vid) {
+            vid.pause();
+          }
+          setTimeout(function() {
+            if (!modal.classList.contains('rw-active')) {
+              content.innerHTML = '';
+            }
+          }, 300);
+        }
+      }
+      if (!isVideoPlaying) {
+        startHideTimer();
+      }
     }
 
     function preloadSingleImage(url) {
