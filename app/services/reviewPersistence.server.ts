@@ -184,6 +184,95 @@ export async function ensureReviewsAndSettingsRestored(
         })
         .catch(() => null);
     }
+
+    // If local database container was rebuilt (e.g. on Render redeployment), restore merchant reviews from Shopify Cloud Metafield
+    const shopWhere = getShopWhereClause(shop);
+    const reviewCount = await db.review
+      .count({ where: shopWhere })
+      .catch(() => 0);
+
+    if (reviewCount === 0) {
+      const metaVal = await fetchShopMetafieldValue(
+        admin,
+        shop,
+        "reviews_backup",
+      );
+
+      let itemsToRestore: any[] = [];
+      if (metaVal) {
+        try {
+          const parsed = JSON.parse(metaVal);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            itemsToRestore = parsed;
+            console.log(
+              `[Persistence] DB empty on container startup for ${shop} — found ${itemsToRestore.length} reviews in Shopify Cloud Metafield.`,
+            );
+          }
+        } catch (e) {
+          console.warn("[Persistence] Error parsing Shopify Cloud Metafield reviews_backup:", e);
+        }
+      }
+
+      if (itemsToRestore.length === 0) {
+        const shopCanonical = canonicalizeShopDomain(shop);
+        const localBackup = readLocalBackup();
+        const matchingItems = localBackup.filter((item: any) => {
+          const itemCanonical = canonicalizeShopDomain(item.shop || "");
+          return itemCanonical === shopCanonical;
+        });
+
+        if (matchingItems.length > 0) {
+          itemsToRestore = matchingItems;
+          console.log(
+            `[Persistence] Found ${itemsToRestore.length} reviews in local backup file for ${shop}.`,
+          );
+        }
+      }
+
+      if (itemsToRestore.length > 0) {
+        console.log(
+          `[Persistence] Restoring ${itemsToRestore.length} saved merchant reviews for ${shop}...`,
+        );
+        for (const item of itemsToRestore) {
+          try {
+            await db.review.create({
+              data: {
+                id: item.id || `rev-${Math.random().toString(36).substring(7)}`,
+                shop: item.shop || shop,
+                productId: item.productId || "",
+                productHandle: item.productHandle || null,
+                reviewerName: item.reviewerName || "Verified Customer",
+                rating: item.rating || 5,
+                bodyShort: item.bodyShort || "",
+                bodyFull: item.bodyFull || "",
+                source: item.source || "AI_GENERATED",
+                externalUrl: item.externalUrl || null,
+                imageUrl: item.imageUrl || null,
+                videoUrl: item.videoUrl || null,
+                isAiGenerated: item.isAiGenerated ?? true,
+                isPublished: item.isPublished ?? true,
+                isVerifiedPurchase: item.isVerifiedPurchase ?? true,
+                language: item.language || "en",
+                tags:
+                  typeof item.tags === "string"
+                    ? item.tags
+                    : JSON.stringify(item.tags || []),
+                orderId: item.orderId || null,
+                createdAt: item.createdAt
+                  ? new Date(item.createdAt)
+                  : new Date(),
+                updatedAt: item.updatedAt
+                  ? new Date(item.updatedAt)
+                  : new Date(),
+              },
+            });
+          } catch (singleErr) {
+            console.warn("[Persistence] Single review restore error:", singleErr);
+          }
+        }
+        console.log(`[Persistence] Cloud restore complete for ${shop}.`);
+      }
+    }
   } catch (err) {
     console.error(
       "[Persistence] Error in ensureReviewsAndSettingsRestored:",
