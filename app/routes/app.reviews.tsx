@@ -372,15 +372,24 @@ export async function action({ request }: ActionFunctionArgs) {
       updateData.isVerifiedPurchase = isVerifiedPurchase;
     }
 
-    if (imageUrl !== null || videoUrl !== null || clearMedia) {
-      updateData.imageUrl = finalImg;
-      updateData.videoUrl = finalVid;
+    if (clearMedia) {
+      updateData.imageUrl = null;
+      updateData.videoUrl = null;
+    } else {
+      if (formData.has("imageUrl")) {
+        updateData.imageUrl = finalImg;
+      }
+      if (formData.has("videoUrl")) {
+        updateData.videoUrl = finalVid;
+      }
     }
 
-    await db.review.updateMany({
-      where: { AND: [shopWhere, { id: reviewId }] },
-      data: updateData,
-    });
+    if (Object.keys(updateData).length > 0) {
+      await db.review.updateMany({
+        where: { AND: [shopWhere, { id: reviewId }] },
+        data: updateData,
+      });
+    }
   }
 
   await syncReviewsToShopify(admin, shop);
@@ -549,8 +558,14 @@ export default function ReviewsPage() {
       fd.append("clearMedia", "true");
     } else if (uploadMediaType === "image") {
       fd.append("imageUrl", uploadMediaPreview || "");
+      if (uploadTargetReview.videoUrl) {
+        fd.append("videoUrl", uploadTargetReview.videoUrl);
+      }
     } else if (uploadMediaType === "video") {
       fd.append("videoUrl", uploadMediaPreview || "");
+      if (uploadTargetReview.imageUrl) {
+        fd.append("imageUrl", uploadTargetReview.imageUrl);
+      }
     }
     submit(fd, { method: "post" });
     setUploadModalOpen(false);

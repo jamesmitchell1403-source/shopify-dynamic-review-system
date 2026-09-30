@@ -67,29 +67,37 @@ function writeLocalBackup(
   }
 }
 
-async function fetchShopMetafieldValue(
+async function fetchAllBackupMetafields(
   admin: any,
   shop: string,
-  key: string,
-): Promise<string | null> {
+): Promise<Record<string, string>> {
+  const map: Record<string, string> = {};
+
   if (admin) {
     try {
       const res = await admin.graphql(
         `#graphql
-        query getShopMetafield($key: String!) {
+        query getAllBackupMetafields {
           shop {
-            metafield(namespace: "ai_review_system", key: $key) {
-              value
+            metafields(namespace: "ai_review_system", first: 250) {
+              nodes {
+                key
+                value
+              }
             }
           }
         }`,
-        { variables: { key } },
       );
       const jsonRes = await res.json();
-      const val = jsonRes.data?.shop?.metafield?.value;
-      if (val) return val;
+      const nodes = jsonRes.data?.shop?.metafields?.nodes || [];
+      for (const node of nodes) {
+        if (node.key && node.value) {
+          map[node.key] = node.value;
+        }
+      }
+      if (Object.keys(map).length > 0) return map;
     } catch (e) {
-      console.warn("[Persistence] GraphQL metafield query warning:", e);
+      console.warn("[Persistence] GraphQL fetchAllBackupMetafields warning:", e);
     }
   }
 
@@ -99,7 +107,7 @@ async function fetchShopMetafieldValue(
       .catch(() => null);
     const token = session?.accessToken || ADMIN_TOKEN;
     if (token) {
-      const restUrl = `https://${shop}/admin/api/2025-01/metafields.json?namespace=ai_review_system&key=${key}`;
+      const restUrl = `https://${shop}/admin/api/2025-01/metafields.json?namespace=ai_review_system`;
       const restRes = await fetch(restUrl, {
         headers: {
           "X-Shopify-Access-Token": token,
@@ -108,14 +116,28 @@ async function fetchShopMetafieldValue(
       });
       if (restRes.ok) {
         const restJson = await restRes.json();
-        const mf = restJson.metafields?.find((m: any) => m.key === key);
-        if (mf?.value) return mf.value;
+        const mfs = restJson.metafields || [];
+        for (const mf of mfs) {
+          if (mf.key && mf.value) {
+            map[mf.key] = mf.value;
+          }
+        }
       }
     }
   } catch (restErr) {
-    console.warn("[Persistence] REST metafield query warning:", restErr);
+    console.warn("[Persistence] REST fetchAllBackupMetafields warning:", restErr);
   }
 
+  return map;
+}
+
+async function fetchShopMetafieldValue(
+  admin: any,
+  shop: string,
+  key: string,
+): Promise<string | null> {
+  const allMap = await fetchAllBackupMetafields(admin, shop);
+  if (allMap[key]) return allMap[key];
   return null;
 }
 
@@ -192,27 +214,54 @@ export async function ensureReviewsAndSettingsRestored(
       .catch(() => 0);
 
     if (reviewCount === 0) {
-      const metaVal = await fetchShopMetafieldValue(
-        admin,
-        shop,
-        "reviews_backup",
-      );
+      const backupMetafieldsMap = await fetchAllBackupMetafields(admin, shop);
 
       let itemsToRestore: any[] = [];
-      if (metaVal) {
+      const manifestVal = backupMetafieldsMap["reviews_backup_manifest"];
+
+      if (manifestVal) {
         try {
-          const parsed = JSON.parse(metaVal);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            itemsToRestore = parsed;
+          const manifest = JSON.parse(manifestVal);
+          const chunkCount = Number(manifest.chunkCount) || 0;
+          const restoredChunks: any[] = [];
+
+          for (let i = 0; i < chunkCount; i++) {
+            const chunkVal = backupMetafieldsMap[`reviews_backup_chunk_${i}`];
+            if (chunkVal) {
+              const parsedChunk = JSON.parse(chunkVal);
+              if (Array.isArray(parsedChunk)) {
+                restoredChunks.push(...parsedChunk);
+              }
+            }
+          }
+
+          if (restoredChunks.length > 0) {
+            itemsToRestore = restoredChunks;
             console.log(
-              `[Persistence] DB empty on container startup for ${shop} — found ${itemsToRestore.length} reviews in Shopify Cloud Metafield.`,
+              `[Persistence] DB empty on container startup for ${shop} — found ${itemsToRestore.length} reviews across ${chunkCount} Shopify Cloud Metafield chunks.`,
             );
           }
         } catch (e) {
-          console.warn("[Persistence] Error parsing Shopify Cloud Metafield reviews_backup:", e);
+          console.warn("[Persistence] Error parsing reviews_backup_manifest:", e);
         }
       }
 
+      // Fallback to legacy single metafield if chunk manifest was missing
+      if (itemsToRestore.length === 0 && backupMetafieldsMap["reviews_backup"]) {
+        try {
+          const parsed = JSON.parse(backupMetafieldsMap["reviews_backup"]);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            itemsToRestore = parsed;
+            console.log(
+              `[Persistence] DB empty on container startup for ${shop} — found ${itemsToRestore.length} reviews in legacy Shopify Cloud Metafield.`,
+            );
+          }
+        } catch (e) {
+          console.warn("[Persistence] Error parsing legacy reviews_backup:", e);
+        }
+      }
+
+      // Fallback to local backup file
       if (itemsToRestore.length === 0) {
         const shopCanonical = canonicalizeShopDomain(shop);
         const localBackup = readLocalBackup();
@@ -235,9 +284,36 @@ export async function ensureReviewsAndSettingsRestored(
         );
         for (const item of itemsToRestore) {
           try {
-            await db.review.create({
-              data: {
-                id: item.id || `rev-${Math.random().toString(36).substring(7)}`,
+            const itemId = item.id || `rev-${Math.random().toString(36).substring(7)}`;
+            await db.review.upsert({
+              where: { id: itemId },
+              update: {
+                shop: item.shop || shop,
+                productId: item.productId || "",
+                productHandle: item.productHandle || null,
+                reviewerName: item.reviewerName || "Verified Customer",
+                rating: item.rating || 5,
+                bodyShort: item.bodyShort || "",
+                bodyFull: item.bodyFull || "",
+                source: item.source || "AI_GENERATED",
+                externalUrl: item.externalUrl || null,
+                imageUrl: item.imageUrl || null,
+                videoUrl: item.videoUrl || null,
+                isAiGenerated: item.isAiGenerated ?? true,
+                isPublished: item.isPublished ?? true,
+                isVerifiedPurchase: item.isVerifiedPurchase ?? true,
+                language: item.language || "en",
+                tags:
+                  typeof item.tags === "string"
+                    ? item.tags
+                    : JSON.stringify(item.tags || []),
+                orderId: item.orderId || null,
+                updatedAt: item.updatedAt
+                  ? new Date(item.updatedAt)
+                  : new Date(),
+              },
+              create: {
+                id: itemId,
                 shop: item.shop || shop,
                 productId: item.productId || "",
                 productHandle: item.productHandle || null,
@@ -270,7 +346,7 @@ export async function ensureReviewsAndSettingsRestored(
             console.warn("[Persistence] Single review restore error:", singleErr);
           }
         }
-        console.log(`[Persistence] Cloud restore complete for ${shop}.`);
+        console.log(`[Persistence] Cloud restore complete for ${shop}. Restored ${itemsToRestore.length} reviews.`);
       }
     }
   } catch (err) {
@@ -303,7 +379,13 @@ export async function syncReviewsToShopify(
     // Always update local backup with exact current DB state
     writeLocalBackup(allReviews, shop);
 
-    // Sync to Shopify metafield as secondary backup
+    // Sync to Shopify metafield in CHUNKS of 50 reviews (~15KB-20KB each, well under Shopify's 64KB limit)
+    const CHUNK_SIZE = 50;
+    const chunks: any[][] = [];
+    for (let i = 0; i < allReviews.length; i += CHUNK_SIZE) {
+      chunks.push(allReviews.slice(i, i + CHUNK_SIZE));
+    }
+
     if (admin) {
       try {
         const shopRes = await admin.graphql(
@@ -315,26 +397,62 @@ export async function syncReviewsToShopify(
         const shopJson = await shopRes.json();
         const shopId = shopJson.data?.shop?.id;
         if (shopId) {
-          await admin.graphql(
-            `#graphql
-            mutation saveReviewsBackup($metafields: [MetafieldsSetInput!]!) {
-              metafieldsSet(metafields: $metafields) {
-                userErrors { field message }
-              }
-            }`,
+          const metafieldsInputs: any[] = [
             {
-              variables: {
-                metafields: [
-                  {
-                    namespace: "ai_review_system",
-                    key: "reviews_backup",
-                    type: "json",
-                    value: JSON.stringify(allReviews),
-                    ownerId: shopId,
-                  },
-                ],
-              },
+              namespace: "ai_review_system",
+              key: "reviews_backup_manifest",
+              type: "json",
+              value: JSON.stringify({
+                chunkCount: chunks.length,
+                totalReviews: allReviews.length,
+                updatedAt: new Date().toISOString(),
+              }),
+              ownerId: shopId,
             },
+          ];
+
+          for (let i = 0; i < chunks.length; i++) {
+            metafieldsInputs.push({
+              namespace: "ai_review_system",
+              key: `reviews_backup_chunk_${i}`,
+              type: "json",
+              value: JSON.stringify(chunks[i]),
+              ownerId: shopId,
+            });
+          }
+
+          if (allReviews.length <= 50) {
+            metafieldsInputs.push({
+              namespace: "ai_review_system",
+              key: "reviews_backup",
+              type: "json",
+              value: JSON.stringify(allReviews),
+              ownerId: shopId,
+            });
+          }
+
+          // GraphQL metafieldsSet accepts multiple inputs (max 25 per call)
+          const BATCH_SIZE = 20;
+          for (let i = 0; i < metafieldsInputs.length; i += BATCH_SIZE) {
+            const batch = metafieldsInputs.slice(i, i + BATCH_SIZE);
+            const setRes = await admin.graphql(
+              `#graphql
+              mutation saveReviewsBackupChunks($metafields: [MetafieldsSetInput!]!) {
+                metafieldsSet(metafields: $metafields) {
+                  userErrors { field message }
+                }
+              }`,
+              { variables: { metafields: batch } },
+            );
+            const setJson = await setRes.json();
+            const errs = setJson.data?.metafieldsSet?.userErrors;
+            if (errs && errs.length > 0) {
+              console.warn("[Persistence] metafieldsSet batch errors:", errs);
+            }
+          }
+
+          console.log(
+            `[Persistence] Successfully synced ${allReviews.length} reviews (${chunks.length} chunks) to Shopify Cloud Metafield for ${shop}.`,
           );
           return;
         }
@@ -346,22 +464,51 @@ export async function syncReviewsToShopify(
       }
     }
 
+    // REST fallback for chunked save if GraphQL admin is unavailable
     try {
-      await fetch(`https://${shop}/admin/api/2025-01/metafields.json`, {
-        method: "POST",
-        headers: {
-          "X-Shopify-Access-Token": ADMIN_TOKEN,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          metafield: {
-            namespace: "ai_review_system",
-            key: "reviews_backup",
-            value: JSON.stringify(allReviews),
-            type: "json",
+      const session = await db.session
+        .findFirst({ where: { shop } })
+        .catch(() => null);
+      const token = session?.accessToken || ADMIN_TOKEN;
+      if (token) {
+        await fetch(`https://${shop}/admin/api/2025-01/metafields.json`, {
+          method: "POST",
+          headers: {
+            "X-Shopify-Access-Token": token,
+            "Content-Type": "application/json",
           },
-        }),
-      });
+          body: JSON.stringify({
+            metafield: {
+              namespace: "ai_review_system",
+              key: "reviews_backup_manifest",
+              value: JSON.stringify({
+                chunkCount: chunks.length,
+                totalReviews: allReviews.length,
+                updatedAt: new Date().toISOString(),
+              }),
+              type: "json",
+            },
+          }),
+        });
+
+        for (let i = 0; i < chunks.length; i++) {
+          await fetch(`https://${shop}/admin/api/2025-01/metafields.json`, {
+            method: "POST",
+            headers: {
+              "X-Shopify-Access-Token": token,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              metafield: {
+                namespace: "ai_review_system",
+                key: `reviews_backup_chunk_${i}`,
+                value: JSON.stringify(chunks[i]),
+                type: "json",
+              },
+            }),
+          });
+        }
+      }
     } catch (restErr) {
       console.warn("[Persistence] REST save reviews backup warning:", restErr);
     }
