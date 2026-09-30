@@ -639,47 +639,20 @@ export default function AiGeneratorPage() {
                           />
                         </InlineGrid>
 
-                        <BlockStack gap="200">
-                          <Text as="span" variant="bodySm" fontWeight="bold">Upload Product Media (Image or Video)</Text>
-
-                          {/* Auto-show Shopify product image */}
-                          {productImageUrl && !imagePreview && (
-                            <div style={{ display: "flex", alignItems: "center", gap: "10px", padding: "8px", background: "#f1f8ff", borderRadius: "8px", border: "1px solid #c9e6ff" }}>
-                              <img
-                                src={productImageUrl}
-                                alt="Product"
-                                style={{ width: "60px", height: "60px", objectFit: "cover", borderRadius: "6px", border: "1px solid #ddd" }}
-                              />
-                              <BlockStack gap="100">
-                                <Text as="span" variant="bodySm" fontWeight="semibold" tone="success">✓ Shopify product image auto-loaded</Text>
-                                <Text as="span" variant="bodyXs" tone="subdued">AI will analyze this image to generate matching reviews</Text>
-                              </BlockStack>
-                            </div>
-                          )}
-
-                          <DropZone onDrop={handleImageDrop} allowMultiple={false} accept="image/*,video/*">
-                            {imagePreview ? (
-                              <div style={{ padding: "12px", textAlign: "center" }}>
-                                {mediaType === "video" ? (
-                                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px" }}>
-                                    <video src={imagePreview} controls style={{ maxHeight: "140px", maxWidth: "100%", borderRadius: "8px" }} />
-                                    <Text as="p" variant="bodyXs" tone="subdued">Uploaded Video (Selected format: Video)</Text>
-                                  </div>
-                                ) : (
-                                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px" }}>
-                                    <img src={imagePreview} alt="Preview" style={{ maxHeight: "100px", borderRadius: "8px", objectFit: "cover" }} />
-                                    <Text as="p" variant="bodyXs" tone="subdued">Uploaded Image (Selected format: Image)</Text>
-                                  </div>
-                                )}
-                                <div style={{ marginTop: "6px" }}>
-                                  <Button size="micro" onClick={handleClearMedia}>Remove / Change Media</Button>
-                                </div>
-                              </div>
-                            ) : (
-                              <DropZone.FileUpload actionHint="Upload an image or a video (supports image/* and video/*)" />
-                            )}
-                          </DropZone>
-                        </BlockStack>
+                        {/* Auto-show Shopify product image info if present */}
+                        {productImageUrl && (
+                          <div style={{ display: "flex", alignItems: "center", gap: "10px", padding: "8px", background: "#f1f8ff", borderRadius: "8px", border: "1px solid #c9e6ff" }}>
+                            <img
+                              src={productImageUrl}
+                              alt="Product"
+                              style={{ width: "50px", height: "50px", objectFit: "cover", borderRadius: "6px", border: "1px solid #ddd" }}
+                            />
+                            <BlockStack gap="100">
+                              <Text as="span" variant="bodySm" fontWeight="semibold" tone="success">✓ Shopify product image auto-loaded</Text>
+                              <Text as="span" variant="bodyXs" tone="subdued">AI will analyze this image to generate matching reviews</Text>
+                            </BlockStack>
+                          </div>
+                        )}
 
                         <Button
                           variant="primary"

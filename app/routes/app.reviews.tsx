@@ -18,11 +18,12 @@ import {
   Checkbox,
   Modal,
   FormLayout,
+  DropZone,
 } from "@shopify/polaris";
 import { SearchIcon, CheckIcon, DeleteIcon, EditIcon } from "@shopify/polaris-icons";
 import { authenticate } from "../shopify.server";
 import db, { ensureTablesExist } from "../db.server";
-import { ensureReviewsAndSettingsRestored, syncReviewsToShopify } from "../services/reviewPersistence.server";
+import { ensureReviewsAndSettingsRestored, syncReviewsToShopify, uploadReviewMediaToShopify } from "../services/reviewPersistence.server";
 
 import { getShopWhereClause } from "../services/shopDomain.server";
 
@@ -267,7 +268,7 @@ export async function action({ request }: ActionFunctionArgs) {
         where: { AND: [shopWhere, { id: { in: ids } }] },
       });
     }
-  } else if (intent === "edit") {
+  } else if (intent === "edit" || intent === "updateMedia") {
     const reviewerName = formData.get("reviewerName") as string;
     const rating = parseInt((formData.get("rating") as string) || "5", 10);
     const bodyShort = formData.get("bodyShort") as string;
@@ -275,18 +276,44 @@ export async function action({ request }: ActionFunctionArgs) {
     const source = formData.get("source") as string;
     const externalUrl = formData.get("externalUrl") as string;
     const isVerifiedPurchase = formData.get("isVerifiedPurchase") === "true";
+    const imageUrl = formData.get("imageUrl") as string | null;
+    const videoUrl = formData.get("videoUrl") as string | null;
+    const clearMedia = formData.get("clearMedia") === "true";
+
+    let finalImg: string | null = imageUrl;
+    let finalVid: string | null = videoUrl;
+
+    if (clearMedia) {
+      finalImg = null;
+      finalVid = null;
+    } else {
+      if (typeof finalImg === "string" && finalImg.startsWith("data:")) {
+        finalImg = await uploadReviewMediaToShopify(admin, finalImg, `review-img-${Date.now()}.png`);
+      }
+      if (typeof finalVid === "string" && finalVid.startsWith("data:")) {
+        finalVid = await uploadReviewMediaToShopify(admin, finalVid, `review-vid-${Date.now()}.mp4`);
+      }
+    }
+
+    const updateData: any = {};
+    if (intent === "edit") {
+      if (reviewerName !== null) updateData.reviewerName = reviewerName;
+      if (!isNaN(rating)) updateData.rating = rating;
+      if (bodyShort !== null) updateData.bodyShort = bodyShort;
+      if (bodyFull !== null) updateData.bodyFull = bodyFull;
+      if (source !== null) updateData.source = source;
+      updateData.externalUrl = externalUrl || null;
+      updateData.isVerifiedPurchase = isVerifiedPurchase;
+    }
+
+    if (imageUrl !== null || videoUrl !== null || clearMedia) {
+      updateData.imageUrl = finalImg;
+      updateData.videoUrl = finalVid;
+    }
 
     await db.review.updateMany({
       where: { AND: [shopWhere, { id: reviewId }] },
-      data: {
-        reviewerName,
-        rating,
-        bodyShort,
-        bodyFull,
-        source,
-        externalUrl: externalUrl || null,
-        isVerifiedPurchase,
-      },
+      data: updateData,
     });
   }
 
@@ -330,6 +357,16 @@ export default function ReviewsPage() {
   const [editSource, setEditSource] = useState<string>("MANUAL");
   const [editExternalUrl, setEditExternalUrl] = useState<string>("");
   const [editVerified, setEditVerified] = useState<boolean>(true);
+  const [editMediaType, setEditMediaType] = useState<"image" | "video" | null>(null);
+  const [editMediaPreview, setEditMediaPreview] = useState<string | null>(null);
+  const [editClearMedia, setEditClearMedia] = useState<boolean>(false);
+
+  // DEDICATED UPLOAD MEDIA MODAL STATE
+  const [uploadModalOpen, setUploadModalOpen] = useState<boolean>(false);
+  const [uploadTargetReview, setUploadTargetReview] = useState<any>(null);
+  const [uploadMediaType, setUploadMediaType] = useState<"image" | "video" | null>(null);
+  const [uploadMediaPreview, setUploadMediaPreview] = useState<string | null>(null);
+  const [uploadClearMedia, setUploadClearMedia] = useState<boolean>(false);
 
   const handleOpenEdit = (r: any) => {
     setEditId(r.id);
@@ -340,7 +377,33 @@ export default function ReviewsPage() {
     setEditSource(r.source || "MANUAL");
     setEditExternalUrl(r.externalUrl || "");
     setEditVerified(r.isVerifiedPurchase ?? true);
+    setEditClearMedia(false);
+    if (r.videoUrl) {
+      setEditMediaType("video");
+      setEditMediaPreview(r.videoUrl);
+    } else if (r.imageUrl) {
+      setEditMediaType("image");
+      setEditMediaPreview(r.imageUrl);
+    } else {
+      setEditMediaType(null);
+      setEditMediaPreview(null);
+    }
     setEditModalOpen(true);
+  };
+
+  const handleEditMediaDrop = (_files: File[], acceptedFiles: File[]) => {
+    if (acceptedFiles.length > 0) {
+      const file = acceptedFiles[0];
+      const isVid = file.type.startsWith("video/");
+      setEditMediaType(isVid ? "video" : "image");
+      setEditClearMedia(false);
+
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setEditMediaPreview(e.target?.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   const handleSaveEdit = () => {
@@ -354,9 +417,63 @@ export default function ReviewsPage() {
     fd.append("source", editSource);
     fd.append("externalUrl", editExternalUrl);
     fd.append("isVerifiedPurchase", editVerified ? "true" : "false");
+    if (editClearMedia) {
+      fd.append("clearMedia", "true");
+    } else if (editMediaType === "image") {
+      fd.append("imageUrl", editMediaPreview || "");
+    } else if (editMediaType === "video") {
+      fd.append("videoUrl", editMediaPreview || "");
+    }
 
     submit(fd, { method: "post" });
     setEditModalOpen(false);
+  };
+
+  const handleOpenUploadMedia = (r: any) => {
+    setUploadTargetReview(r);
+    setUploadClearMedia(false);
+    if (r.videoUrl) {
+      setUploadMediaType("video");
+      setUploadMediaPreview(r.videoUrl);
+    } else if (r.imageUrl) {
+      setUploadMediaType("image");
+      setUploadMediaPreview(r.imageUrl);
+    } else {
+      setUploadMediaType(null);
+      setUploadMediaPreview(null);
+    }
+    setUploadModalOpen(true);
+  };
+
+  const handleUploadMediaDrop = (_files: File[], acceptedFiles: File[]) => {
+    if (acceptedFiles.length > 0) {
+      const file = acceptedFiles[0];
+      const isVid = file.type.startsWith("video/");
+      setUploadMediaType(isVid ? "video" : "image");
+      setUploadClearMedia(false);
+
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setUploadMediaPreview(e.target?.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleSaveUploadMedia = () => {
+    if (!uploadTargetReview) return;
+    const fd = new FormData();
+    fd.append("intent", "updateMedia");
+    fd.append("reviewId", uploadTargetReview.id);
+    if (uploadClearMedia) {
+      fd.append("clearMedia", "true");
+    } else if (uploadMediaType === "image") {
+      fd.append("imageUrl", uploadMediaPreview || "");
+    } else if (uploadMediaType === "video") {
+      fd.append("videoUrl", uploadMediaPreview || "");
+    }
+    submit(fd, { method: "post" });
+    setUploadModalOpen(false);
   };
 
   const allCurrentIds = reviews.map((r: any) => r.id);
@@ -498,6 +615,19 @@ export default function ReviewsPage() {
     `${r.rating} ⭐`,
 
     <BlockStack key={`b-${r.id}`} gap="100">
+      {(r.imageUrl || r.videoUrl) && (
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
+          {r.videoUrl ? (
+            <div style={{ position: "relative", width: "44px", height: "44px", borderRadius: "6px", overflow: "hidden", background: "#000", flexShrink: 0 }}>
+              <video src={r.videoUrl} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+              <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", fontSize: "10px", color: "#fff" }}>▶</div>
+            </div>
+          ) : (
+            <img src={r.imageUrl} alt="Review media" style={{ width: "44px", height: "44px", objectFit: "cover", borderRadius: "6px", border: "1px solid #ddd", flexShrink: 0 }} />
+          )}
+          <Badge tone="info">{r.videoUrl ? "Video Review" : "Image Review"}</Badge>
+        </div>
+      )}
       <Text as="span" variant="bodySm" fontWeight="bold">
         {r.bodyShort}
       </Text>
@@ -531,6 +661,12 @@ export default function ReviewsPage() {
         onClick={() => handleOpenEdit(r)}
       >
         Edit
+      </Button>
+      <Button
+        size="micro"
+        onClick={() => handleOpenUploadMedia(r)}
+      >
+        {r.imageUrl || r.videoUrl ? "📷 Media ✓" : "+ Upload Media"}
       </Button>
       <Button
         size="micro"
@@ -734,7 +870,72 @@ export default function ReviewsPage() {
         </Card>
       </BlockStack>
 
-      {/* EDIT REVIEW MODAL */}
+      {/* DEDICATED UPLOAD REVIEW MEDIA MODAL */}
+      <Modal
+        open={uploadModalOpen}
+        onClose={() => setUploadModalOpen(false)}
+        title={`Upload Review Media for ${uploadTargetReview?.productTitle || "Product Review"}`}
+        primaryAction={{
+          content: "Save Media",
+          onAction: handleSaveUploadMedia,
+        }}
+        secondaryActions={[
+          {
+            content: "Cancel",
+            onAction: () => setUploadModalOpen(false),
+          },
+        ]}
+      >
+        <Modal.Section>
+          <BlockStack gap="400">
+            {uploadTargetReview && (
+              <div style={{ padding: "12px", background: "#f8fafc", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
+                <Text as="p" fontWeight="bold" variant="bodySm">
+                  Reviewer: {uploadTargetReview.reviewerName || "Verified Buyer"} ({uploadTargetReview.rating} ⭐)
+                </Text>
+                <Text as="p" variant="bodyXs" tone="subdued">
+                  Product: <strong>{uploadTargetReview.productTitle}</strong>
+                </Text>
+                <Text as="p" variant="bodyXs" tone="subdued" style={{ marginTop: "4px" }}>
+                  "{uploadTargetReview.bodyShort}"
+                </Text>
+              </div>
+            )}
+
+            <Text as="span" variant="bodySm" fontWeight="bold">Select Image or Video to Upload</Text>
+            <Text as="p" variant="bodyXs" tone="subdued">
+              You can upload <strong>either one Image or one Video</strong> for this review.
+            </Text>
+
+            <DropZone onDrop={handleUploadMediaDrop} allowMultiple={false} accept="image/*,video/*">
+              {uploadMediaPreview && !uploadClearMedia ? (
+                <div style={{ padding: "12px", textAlign: "center" }}>
+                  {uploadMediaType === "video" ? (
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px" }}>
+                      <video src={uploadMediaPreview} controls style={{ maxHeight: "160px", maxWidth: "100%", borderRadius: "8px" }} />
+                      <Badge tone="success">Selected Format: Video</Badge>
+                    </div>
+                  ) : (
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px" }}>
+                      <img src={uploadMediaPreview} alt="Review Media" style={{ maxHeight: "140px", borderRadius: "8px", objectFit: "cover" }} />
+                      <Badge tone="success">Selected Format: Image</Badge>
+                    </div>
+                  )}
+                  <div style={{ marginTop: "10px" }}>
+                    <Button size="micro" tone="critical" onClick={() => { setUploadClearMedia(true); setUploadMediaPreview(null); setUploadMediaType(null); }}>
+                      Remove Media
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <DropZone.FileUpload actionHint="Drag & drop or browse an image or video (supports image/* and video/*)" />
+              )}
+            </DropZone>
+          </BlockStack>
+        </Modal.Section>
+      </Modal>
+
+      {/* EDIT REVIEW DETAILS MODAL */}
       <Modal
         open={editModalOpen}
         onClose={() => setEditModalOpen(false)}
@@ -789,6 +990,34 @@ export default function ReviewsPage() {
               multiline={4}
               autoComplete="off"
             />
+
+            <BlockStack gap="200">
+              <Text as="span" variant="bodySm" fontWeight="bold">Review Media (Image or Video)</Text>
+              <DropZone onDrop={handleEditMediaDrop} allowMultiple={false} accept="image/*,video/*">
+                {editMediaPreview && !editClearMedia ? (
+                  <div style={{ padding: "12px", textAlign: "center" }}>
+                    {editMediaType === "video" ? (
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px" }}>
+                        <video src={editMediaPreview} controls style={{ maxHeight: "140px", maxWidth: "100%", borderRadius: "8px" }} />
+                        <Text as="p" variant="bodyXs" tone="subdued">Video attached</Text>
+                      </div>
+                    ) : (
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px" }}>
+                        <img src={editMediaPreview} alt="Review Media" style={{ maxHeight: "120px", borderRadius: "8px", objectFit: "cover" }} />
+                        <Text as="p" variant="bodyXs" tone="subdued">Image attached</Text>
+                      </div>
+                    )}
+                    <div style={{ marginTop: "6px" }}>
+                      <Button size="micro" tone="critical" onClick={() => { setEditClearMedia(true); setEditMediaPreview(null); setEditMediaType(null); }}>
+                        Remove Media
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <DropZone.FileUpload actionHint="Upload an image or video for this review (supports image/* and video/*)" />
+                )}
+              </DropZone>
+            </BlockStack>
 
             <InlineGrid columns={2} gap="400">
               <Select
