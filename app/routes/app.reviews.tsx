@@ -996,7 +996,7 @@ export default function ReviewsPage() {
                 pressed={mediaSourceMode === "computer_upload"}
                 onClick={() => setMediaSourceMode("computer_upload")}
               >
-                💻 Upload New File from Computer
+                💻 Upload New File from Your Device
               </Button>
             </div>
 
@@ -1101,14 +1101,14 @@ export default function ReviewsPage() {
                 ) : (
                   <div style={{ padding: "20px", textAlign: "center", background: "#FAFBFB", borderRadius: "8px", border: "1px dashed #C9CCCB" }}>
                     <Text as="p" variant="bodySm" tone="subdued">
-                      No Shopify media files match your search. You can click "Upload New File from Computer" to upload a new image or video.
+                      No Shopify media files match your search. You can click "Upload New File from Your Device" to upload a new image or video.
                     </Text>
                   </div>
                 )}
               </BlockStack>
             ) : (
               <BlockStack gap="300">
-                <Text as="span" variant="bodySm" fontWeight="bold">Upload New Image or Video from Computer</Text>
+                <Text as="span" variant="bodySm" fontWeight="bold">Upload New Image or Video from Your Device</Text>
                 <Text as="p" variant="bodyXs" tone="subdued">
                   The uploaded file will automatically be created under <strong>Shopify Content &rarr; Files</strong> and attached to this review.
                 </Text>
