@@ -40,16 +40,17 @@ export async function loader({ request }: LoaderFunctionArgs) {
   let products: Array<{ label: string; value: string; description: string; imageUrl: string | null }> = [];
   let isScopeForbidden = false;
 
-  // 1. Try fetching via GraphQL
+  // 1. Try fetching via GraphQL (query only active/published products)
   try {
     const res = await admin.graphql(`
       #graphql
       query getProductsForAI {
-        products(first: 250) {
+        products(first: 250, query: "status:active") {
           nodes {
             id
             title
             description
+            status
             featuredImage {
               url
             }
@@ -66,7 +67,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
       }
 
       if (rawNodes.length > 0) {
-        products = rawNodes.map((p: any) => ({
+        // Exclude Draft products
+        const activeNodes = rawNodes.filter(
+          (p: any) => (p.status || "").toUpperCase() === "ACTIVE" || !p.status,
+        );
+        products = activeNodes.map((p: any) => ({
           label: p.title,
           value: p.id,
           description: p.description || p.title || "",
@@ -78,10 +83,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
     console.error("GraphQL product fetch error:", err);
   }
 
-  // 2. Fallback: Fetch via Admin Access Token REST API
+  // 2. Fallback: Fetch via Admin Access Token REST API (status=active)
   if (products.length === 0) {
     try {
-      const restRes = await fetch(`https://${session.shop}/admin/api/2025-01/products.json?limit=250`, {
+      const restRes = await fetch(`https://${session.shop}/admin/api/2025-01/products.json?limit=250&status=active`, {
         headers: {
           "X-Shopify-Access-Token": adminToken,
           "Content-Type": "application/json",
@@ -91,7 +96,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
       if (restRes.ok) {
         const restJson = await restRes.json();
         if (restJson.products && restJson.products.length > 0) {
-          products = restJson.products.map((p: any) => ({
+          const activeRest = restJson.products.filter(
+            (p: any) => (p.status || "").toLowerCase() === "active" || !p.status,
+          );
+          products = activeRest.map((p: any) => ({
             label: p.title,
             value: p.admin_graphql_api_id || `gid://shopify/Product/${p.id}`,
             description: p.body_html ? p.body_html.replace(/<[^>]*>?/gm, "") : p.title,
@@ -104,10 +112,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
     }
   }
 
-  // 3. Fallback: Fetch via session.accessToken REST API
+  // 3. Fallback: Fetch via session.accessToken REST API (status=active)
   if (products.length === 0 && session.accessToken) {
     try {
-      const restRes = await fetch(`https://${session.shop}/admin/api/2025-01/products.json?limit=250`, {
+      const restRes = await fetch(`https://${session.shop}/admin/api/2025-01/products.json?limit=250&status=active`, {
         headers: {
           "X-Shopify-Access-Token": session.accessToken,
           "Content-Type": "application/json",
@@ -117,7 +125,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
       if (restRes.ok) {
         const restJson = await restRes.json();
         if (restJson.products && restJson.products.length > 0) {
-          products = restJson.products.map((p: any) => ({
+          const activeRest = restJson.products.filter(
+            (p: any) => (p.status || "").toLowerCase() === "active" || !p.status,
+          );
+          products = activeRest.map((p: any) => ({
             label: p.title,
             value: p.admin_graphql_api_id || `gid://shopify/Product/${p.id}`,
             description: p.body_html ? p.body_html.replace(/<[^>]*>?/gm, "") : p.title,

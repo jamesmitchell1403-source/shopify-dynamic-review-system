@@ -195,17 +195,18 @@ export async function action({ request }: ActionFunctionArgs) {
         "shpat_" + "619247c484119ab17aa96895bc8d90ef";
       let productsList: any[] = [];
 
-      // 1. Try fetching via GraphQL
+      // 1. Try fetching active products via GraphQL
       try {
         const res = await admin.graphql(`
           #graphql
           query getAllProductsForBulkAI {
-            products(first: 250) {
+            products(first: 250, query: "status:active") {
               nodes {
                 id
                 title
                 handle
                 description
+                status
                 productType
                 tags
                 featuredImage {
@@ -216,16 +217,19 @@ export async function action({ request }: ActionFunctionArgs) {
           }
         `);
         const jsonRes = await res.json();
-        productsList = jsonRes.data?.products?.nodes || [];
+        const rawNodes = jsonRes.data?.products?.nodes || [];
+        productsList = rawNodes.filter(
+          (p: any) => (p.status || "").toUpperCase() === "ACTIVE" || !p.status,
+        );
       } catch (gqlErr) {
         console.warn("GraphQL bulk fetch error:", gqlErr);
       }
 
-      // 2. Fallback: Fetch real store products via Admin Token REST API
+      // 2. Fallback: Fetch real store active products via Admin Token REST API
       if (productsList.length === 0) {
         try {
           const restRes = await fetch(
-            `https://${session.shop}/admin/api/2025-01/products.json?limit=250`,
+            `https://${session.shop}/admin/api/2025-01/products.json?limit=250&status=active`,
             {
               headers: {
                 "X-Shopify-Access-Token": adminToken,
@@ -236,10 +240,14 @@ export async function action({ request }: ActionFunctionArgs) {
           if (restRes.ok) {
             const restJson = await restRes.json();
             if (restJson.products && restJson.products.length > 0) {
-              productsList = restJson.products.map((p: any) => ({
+              const activeRest = restJson.products.filter(
+                (p: any) => (p.status || "").toLowerCase() === "active" || !p.status,
+              );
+              productsList = activeRest.map((p: any) => ({
                 id: p.admin_graphql_api_id || `gid://shopify/Product/${p.id}`,
                 title: p.title,
                 handle: p.handle || "",
+                status: p.status || "active",
                 description: p.body_html
                   ? p.body_html.replace(/<[^>]*>?/gm, "")
                   : p.title,
@@ -258,6 +266,11 @@ export async function action({ request }: ActionFunctionArgs) {
           console.warn("REST bulk fetch error:", restErr);
         }
       }
+
+      // Final safety filter: ensure ONLY active products are included in bulk AI generation
+      productsList = productsList.filter(
+        (p: any) => (p.status || "").toUpperCase() === "ACTIVE" || (p.status || "").toLowerCase() === "active" || !p.status,
+      );
 
       let totalGeneratedCount = 0;
       const countPerProduct = Math.min(

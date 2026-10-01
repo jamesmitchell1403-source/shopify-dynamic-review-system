@@ -29,24 +29,28 @@ export async function loader({ request }: LoaderFunctionArgs) {
   }
   const adminToken = process.env.SHOPIFY_ADMIN_ACCESS_TOKEN || ("shpat_" + "619247c484119ab17aa96895bc8d90ef");
 
-  // Fetch shop products for manual mapping dropdown
+  // Fetch active shop products for manual mapping dropdown
   let products: Array<{ label: string; value: string }> = [];
   try {
     const res = await admin.graphql(`
       query getProductsForImport {
-        products(first: 100) {
+        products(first: 100, query: "status:active") {
           nodes {
             id
             title
             handle
+            status
           }
         }
       }
     `);
     const jsonRes = await res.json();
     const rawNodes = jsonRes.data?.products?.nodes || jsonRes.data?.products?.edges?.map((e: any) => e.node) || [];
-    if (rawNodes.length > 0) {
-      products = rawNodes.map((p: any) => ({
+    const activeNodes = rawNodes.filter(
+      (p: any) => (p.status || "").toUpperCase() === "ACTIVE" || !p.status,
+    );
+    if (activeNodes.length > 0) {
+      products = activeNodes.map((p: any) => ({
         label: `${p.title} (${p.handle || ""})`,
         value: p.id,
       }));
@@ -57,7 +61,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   if (products.length === 0) {
     try {
-      const restRes = await fetch(`https://${session.shop}/admin/api/2025-01/products.json?limit=250`, {
+      const restRes = await fetch(`https://${session.shop}/admin/api/2025-01/products.json?limit=250&status=active`, {
         headers: {
           "X-Shopify-Access-Token": adminToken,
           "Content-Type": "application/json",
@@ -66,7 +70,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
       if (restRes.ok) {
         const restJson = await restRes.json();
         if (restJson.products && restJson.products.length > 0) {
-          products = restJson.products.map((p: any) => ({
+          const activeRest = restJson.products.filter(
+            (p: any) => (p.status || "").toLowerCase() === "active" || !p.status,
+          );
+          products = activeRest.map((p: any) => ({
             label: `${p.title} (${p.handle || ""})`,
             value: p.admin_graphql_api_id || `gid://shopify/Product/${p.id}`,
           }));
