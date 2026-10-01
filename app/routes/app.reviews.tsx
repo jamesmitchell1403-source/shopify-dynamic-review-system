@@ -769,7 +769,9 @@ export default function ReviewsPage() {
         </Text>
       )}
       {r.isAiGenerated && (
-        <Badge tone="warning">AI-Generated Draft</Badge>
+        <InlineStack>
+          <Badge tone="warning">AI-Generated Draft</Badge>
+        </InlineStack>
       )}
     </BlockStack>,
 
