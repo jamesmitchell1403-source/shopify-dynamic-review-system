@@ -271,6 +271,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
           previewUrl: prevUrl,
           filename: node.filename || node.alt || `Shopify Video (${node.id.split("/").pop()})`,
         });
+      } else if (node.url && (typeof node.url === "string") && node.url.match(/\.(mp4|mov|webm|avi|mkv)(\?|$)/i)) {
+        shopifyFiles.push({
+          id: node.id,
+          type: "VIDEO",
+          url: node.url,
+          previewUrl: node.url,
+          filename: node.alt || `Shopify Video (${node.id.split("/").pop()})`,
+        });
       }
     }
   } catch (err) {

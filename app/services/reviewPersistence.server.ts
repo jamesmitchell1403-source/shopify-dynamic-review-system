@@ -715,15 +715,12 @@ export async function uploadReviewMediaToShopify(
       return dataUrl;
     }
 
-    // Build fileInput object for fileCreate
-    // Note: FileContentType in fileCreate accepts IMAGE or FILE. Omitting contentType for video allows Shopify to auto-create Video media node from extension/originalSource!
+    // Build fileInput object for fileCreate mutation
     const fileInput: any = {
       originalSource: target.resourceUrl,
       filename: safeFilename,
+      contentType: isVideo ? "FILE" : "IMAGE",
     };
-    if (!isVideo) {
-      fileInput.contentType = "IMAGE";
-    }
 
     console.log(`[UploadMedia] Calling fileCreate for ${safeFilename} with originalSource: ${target.resourceUrl}`);
 
