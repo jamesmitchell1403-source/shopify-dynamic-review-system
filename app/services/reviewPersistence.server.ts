@@ -207,147 +207,140 @@ export async function ensureReviewsAndSettingsRestored(
         .catch(() => null);
     }
 
-    // If local database container was rebuilt (e.g. on Render redeployment), restore merchant reviews from Shopify Cloud Metafield
+    // If local database container was rebuilt (e.g. on Render redeployment), restore merchant reviews from Shopify Cloud Metafield & local backup
     const shopWhere = getShopWhereClause(shop);
+    const shopCanonical = canonicalizeShopDomain(shop);
     const reviewCount = await db.review
       .count({ where: shopWhere })
       .catch(() => 0);
 
-    if (reviewCount === 0) {
-      const backupMetafieldsMap = await fetchAllBackupMetafields(admin, shop);
+    const backupMetafieldsMap = await fetchAllBackupMetafields(admin, shop);
 
-      let itemsToRestore: any[] = [];
-      const manifestVal = backupMetafieldsMap["reviews_backup_manifest"];
+    const mergedItemsMap = new Map<string, any>();
 
-      if (manifestVal) {
-        try {
-          const manifest = JSON.parse(manifestVal);
-          const chunkCount = Number(manifest.chunkCount) || 0;
-          const restoredChunks: any[] = [];
-
-          for (let i = 0; i < chunkCount; i++) {
-            const chunkVal = backupMetafieldsMap[`reviews_backup_chunk_${i}`];
-            if (chunkVal) {
-              const parsedChunk = JSON.parse(chunkVal);
-              if (Array.isArray(parsedChunk)) {
-                restoredChunks.push(...parsedChunk);
+    // 1. Fetch Cloud Metafield chunks
+    const manifestVal = backupMetafieldsMap["reviews_backup_manifest"];
+    if (manifestVal) {
+      try {
+        const manifest = JSON.parse(manifestVal);
+        const chunkCount = Number(manifest.chunkCount) || 0;
+        for (let i = 0; i < chunkCount; i++) {
+          const chunkVal = backupMetafieldsMap[`reviews_backup_chunk_${i}`];
+          if (chunkVal) {
+            const parsedChunk = JSON.parse(chunkVal);
+            if (Array.isArray(parsedChunk)) {
+              for (const item of parsedChunk) {
+                if (item && item.id) mergedItemsMap.set(item.id, item);
               }
             }
           }
+        }
+      } catch (e) {
+        console.warn("[Persistence] Error parsing reviews_backup_manifest:", e);
+      }
+    }
 
-          if (restoredChunks.length > 0) {
-            itemsToRestore = restoredChunks;
-            console.log(
-              `[Persistence] DB empty on container startup for ${shop} — found ${itemsToRestore.length} reviews across ${chunkCount} Shopify Cloud Metafield chunks.`,
-            );
+    // Fallback/Supplement with legacy single metafield
+    if (backupMetafieldsMap["reviews_backup"]) {
+      try {
+        const parsed = JSON.parse(backupMetafieldsMap["reviews_backup"]);
+        if (Array.isArray(parsed)) {
+          for (const item of parsed) {
+            if (item && item.id && !mergedItemsMap.has(item.id)) {
+              mergedItemsMap.set(item.id, item);
+            }
           }
-        } catch (e) {
-          console.warn("[Persistence] Error parsing reviews_backup_manifest:", e);
+        }
+      } catch (e) {
+        console.warn("[Persistence] Error parsing legacy reviews_backup:", e);
+      }
+    }
+
+    // 2. Supplement with local backup file (seed dataset & persistent store)
+    const localBackup = readLocalBackup();
+    for (const item of localBackup) {
+      const itemCanonical = canonicalizeShopDomain(item.shop || "");
+      if (itemCanonical === shopCanonical && item && item.id) {
+        if (!mergedItemsMap.has(item.id)) {
+          mergedItemsMap.set(item.id, item);
         }
       }
+    }
 
-      // Fallback to legacy single metafield if chunk manifest was missing
-      if (itemsToRestore.length === 0 && backupMetafieldsMap["reviews_backup"]) {
+    const itemsToRestore = Array.from(mergedItemsMap.values());
+
+    if (itemsToRestore.length > 0 && reviewCount < itemsToRestore.length) {
+      console.log(
+        `[Persistence] Restoring/Upserting ${itemsToRestore.length} saved merchant reviews for ${shop} (DB count: ${reviewCount})...`,
+      );
+      for (const item of itemsToRestore) {
         try {
-          const parsed = JSON.parse(backupMetafieldsMap["reviews_backup"]);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            itemsToRestore = parsed;
-            console.log(
-              `[Persistence] DB empty on container startup for ${shop} — found ${itemsToRestore.length} reviews in legacy Shopify Cloud Metafield.`,
-            );
-          }
-        } catch (e) {
-          console.warn("[Persistence] Error parsing legacy reviews_backup:", e);
+          const itemId = item.id || `rev-${Math.random().toString(36).substring(7)}`;
+          await db.review.upsert({
+            where: { id: itemId },
+            update: {
+              shop: item.shop || shop,
+              productId: item.productId || "",
+              productHandle: item.productHandle || null,
+              reviewerName: item.reviewerName || "Verified Customer",
+              rating: item.rating || 5,
+              bodyShort: item.bodyShort || "",
+              bodyFull: item.bodyFull || "",
+              source: item.source || "AI_GENERATED",
+              externalUrl: item.externalUrl || null,
+              imageUrl: item.imageUrl || null,
+              videoUrl: item.videoUrl || null,
+              isAiGenerated: item.isAiGenerated ?? true,
+              isPublished: item.isPublished ?? true,
+              isVerifiedPurchase: item.isVerifiedPurchase ?? true,
+              language: item.language || "en",
+              tags:
+                typeof item.tags === "string"
+                  ? item.tags
+                  : JSON.stringify(item.tags || []),
+              orderId: item.orderId || null,
+              updatedAt: item.updatedAt
+                ? new Date(item.updatedAt)
+                : new Date(),
+            },
+            create: {
+              id: itemId,
+              shop: item.shop || shop,
+              productId: item.productId || "",
+              productHandle: item.productHandle || null,
+              reviewerName: item.reviewerName || "Verified Customer",
+              rating: item.rating || 5,
+              bodyShort: item.bodyShort || "",
+              bodyFull: item.bodyFull || "",
+              source: item.source || "AI_GENERATED",
+              externalUrl: item.externalUrl || null,
+              imageUrl: item.imageUrl || null,
+              videoUrl: item.videoUrl || null,
+              isAiGenerated: item.isAiGenerated ?? true,
+              isPublished: item.isPublished ?? true,
+              isVerifiedPurchase: item.isVerifiedPurchase ?? true,
+              language: item.language || "en",
+              tags:
+                typeof item.tags === "string"
+                  ? item.tags
+                  : JSON.stringify(item.tags || []),
+              orderId: item.orderId || null,
+              createdAt: item.createdAt
+                ? new Date(item.createdAt)
+                : new Date(),
+              updatedAt: item.updatedAt
+                ? new Date(item.updatedAt)
+                : new Date(),
+            },
+          });
+        } catch (singleErr) {
+          console.warn("[Persistence] Single review restore error:", singleErr);
         }
       }
+      console.log(`[Persistence] Restore complete for ${shop}. Synced ${itemsToRestore.length} reviews.`);
 
-      // Fallback to local backup file
-      if (itemsToRestore.length === 0) {
-        const shopCanonical = canonicalizeShopDomain(shop);
-        const localBackup = readLocalBackup();
-        const matchingItems = localBackup.filter((item: any) => {
-          const itemCanonical = canonicalizeShopDomain(item.shop || "");
-          return itemCanonical === shopCanonical;
-        });
-
-        if (matchingItems.length > 0) {
-          itemsToRestore = matchingItems;
-          console.log(
-            `[Persistence] Found ${itemsToRestore.length} reviews in local backup file for ${shop}.`,
-          );
-        }
-      }
-
-      if (itemsToRestore.length > 0) {
-        console.log(
-          `[Persistence] Restoring ${itemsToRestore.length} saved merchant reviews for ${shop}...`,
-        );
-        for (const item of itemsToRestore) {
-          try {
-            const itemId = item.id || `rev-${Math.random().toString(36).substring(7)}`;
-            await db.review.upsert({
-              where: { id: itemId },
-              update: {
-                shop: item.shop || shop,
-                productId: item.productId || "",
-                productHandle: item.productHandle || null,
-                reviewerName: item.reviewerName || "Verified Customer",
-                rating: item.rating || 5,
-                bodyShort: item.bodyShort || "",
-                bodyFull: item.bodyFull || "",
-                source: item.source || "AI_GENERATED",
-                externalUrl: item.externalUrl || null,
-                imageUrl: item.imageUrl || null,
-                videoUrl: item.videoUrl || null,
-                isAiGenerated: item.isAiGenerated ?? true,
-                isPublished: item.isPublished ?? true,
-                isVerifiedPurchase: item.isVerifiedPurchase ?? true,
-                language: item.language || "en",
-                tags:
-                  typeof item.tags === "string"
-                    ? item.tags
-                    : JSON.stringify(item.tags || []),
-                orderId: item.orderId || null,
-                updatedAt: item.updatedAt
-                  ? new Date(item.updatedAt)
-                  : new Date(),
-              },
-              create: {
-                id: itemId,
-                shop: item.shop || shop,
-                productId: item.productId || "",
-                productHandle: item.productHandle || null,
-                reviewerName: item.reviewerName || "Verified Customer",
-                rating: item.rating || 5,
-                bodyShort: item.bodyShort || "",
-                bodyFull: item.bodyFull || "",
-                source: item.source || "AI_GENERATED",
-                externalUrl: item.externalUrl || null,
-                imageUrl: item.imageUrl || null,
-                videoUrl: item.videoUrl || null,
-                isAiGenerated: item.isAiGenerated ?? true,
-                isPublished: item.isPublished ?? true,
-                isVerifiedPurchase: item.isVerifiedPurchase ?? true,
-                language: item.language || "en",
-                tags:
-                  typeof item.tags === "string"
-                    ? item.tags
-                    : JSON.stringify(item.tags || []),
-                orderId: item.orderId || null,
-                createdAt: item.createdAt
-                  ? new Date(item.createdAt)
-                  : new Date(),
-                updatedAt: item.updatedAt
-                  ? new Date(item.updatedAt)
-                  : new Date(),
-              },
-            });
-          } catch (singleErr) {
-            console.warn("[Persistence] Single review restore error:", singleErr);
-          }
-        }
-        console.log(`[Persistence] Cloud restore complete for ${shop}. Restored ${itemsToRestore.length} reviews.`);
-      }
+      // Sync restored dataset back to Shopify Cloud Metafield to keep cloud backup up to date
+      await syncReviewsToShopify(admin, shop);
     }
   } catch (err) {
     console.error(
@@ -367,6 +360,7 @@ export async function ensureReviewsAndSettingsRestored(
 export async function syncReviewsToShopify(
   admin: any,
   shop: string,
+  explicitWipe: boolean = false,
 ) {
   if (!shop) return;
   try {
@@ -375,6 +369,11 @@ export async function syncReviewsToShopify(
       where: shopWhere,
       orderBy: { createdAt: "desc" },
     });
+
+    if (allReviews.length === 0 && !explicitWipe) {
+      console.warn(`[Persistence] Blocked empty sync to Shopify Cloud Metafield for ${shop} (explicitWipe is false).`);
+      return;
+    }
 
     // Always update local backup with exact current DB state
     writeLocalBackup(allReviews, shop);
