@@ -656,8 +656,9 @@ export async function uploadReviewMediaToShopify(
   }
 
   const isVideo = mimeType.toLowerCase().startsWith("video/");
-  const resource = isVideo ? "VIDEO" : "IMAGE";
-  const contentType = isVideo ? "VIDEO" : "IMAGE";
+  // For Shopify Content -> Files API: Images use IMAGE resource, Videos and generic files use FILE resource
+  const resource = isVideo ? "FILE" : "IMAGE";
+  const contentType = isVideo ? "FILE" : "IMAGE";
   const fileBuffer = Buffer.from(encodedData, "base64");
   const fileSize = String(fileBuffer.length);
 
@@ -756,35 +757,6 @@ export async function uploadReviewMediaToShopify(
     );
     let fileJson = await fileResponse.json();
     let createdFile = fileJson.data?.fileCreate;
-
-    // Fallback attempt with FILE contentType if VIDEO contentType was rejected by shopify schema
-    if (createdFile?.userErrors?.length && isVideo) {
-      console.warn("[UploadMedia] fileCreate with VIDEO contentType failed, retrying with FILE contentType:", createdFile.userErrors);
-      fileInput.contentType = "FILE";
-      fileResponse = await admin.graphql(
-        `
-        #graphql
-        mutation createReviewMediaFile($files: [FileCreateInput!]!) {
-          fileCreate(files: $files) {
-            files {
-              id
-              fileStatus
-              alt
-              createdAt
-            }
-            userErrors { field message }
-          }
-        }
-      `,
-        {
-          variables: {
-            files: [fileInput],
-          },
-        },
-      );
-      fileJson = await fileResponse.json();
-      createdFile = fileJson.data?.fileCreate;
-    }
 
     if (createdFile?.userErrors?.length || !createdFile?.files?.[0]?.id) {
       console.warn("[UploadMedia] fileCreate userErrors:", createdFile?.userErrors);
