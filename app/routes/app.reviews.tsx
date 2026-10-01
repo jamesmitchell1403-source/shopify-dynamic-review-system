@@ -23,7 +23,7 @@ import {
 import { SearchIcon, CheckIcon, DeleteIcon, EditIcon } from "@shopify/polaris-icons";
 import { authenticate } from "../shopify.server";
 import db, { ensureTablesExist } from "../db.server";
-import { ensureReviewsAndSettingsRestored, syncReviewsToShopify, uploadReviewMediaToShopify } from "../services/reviewPersistence.server";
+import { ensureReviewsAndSettingsRestored, syncReviewsToShopify, uploadReviewMediaToShopify, recordDeletedReviewIds } from "../services/reviewPersistence.server";
 
 import { getShopWhereClause } from "../services/shopDomain.server";
 
@@ -318,21 +318,45 @@ export async function action({ request }: ActionFunctionArgs) {
       data: { isPublished: true },
     });
   } else if (intent === "delete") {
+    if (reviewId) {
+      await recordDeletedReviewIds(admin, shop, [reviewId]);
+    }
     await db.review.deleteMany({
       where: { AND: [shopWhere, { id: reviewId }] },
     });
+    await syncReviewsToShopify(admin, shop);
   } else if (intent === "deleteAllPending") {
+    const pendingReviews = await db.review.findMany({
+      where: { AND: [shopWhere, { isPublished: false }] },
+      select: { id: true },
+    });
+    const pendingIds = pendingReviews.map((r) => r.id);
+    if (pendingIds.length > 0) {
+      await recordDeletedReviewIds(admin, shop, pendingIds);
+    }
     await db.review.deleteMany({
       where: { AND: [shopWhere, { isPublished: false }] },
     });
+    await syncReviewsToShopify(admin, shop);
   } else if (intent === "deleteAll") {
+    const allReviews = await db.review.findMany({
+      where: shopWhere,
+      select: { id: true },
+    });
+    const allIds = allReviews.map((r) => r.id);
+    if (allIds.length > 0) {
+      await recordDeletedReviewIds(admin, shop, allIds);
+    }
     await db.review.deleteMany({ where: shopWhere });
+    await syncReviewsToShopify(admin, shop, true);
   } else if (intent === "deleteSelected") {
     const ids = formData.getAll("ids") as string[];
     if (ids.length > 0) {
+      await recordDeletedReviewIds(admin, shop, ids);
       await db.review.deleteMany({
         where: { AND: [shopWhere, { id: { in: ids } }] },
       });
+      await syncReviewsToShopify(admin, shop);
     }
   } else if (intent === "edit" || intent === "updateMedia") {
     const reviewerName = formData.get("reviewerName") as string;

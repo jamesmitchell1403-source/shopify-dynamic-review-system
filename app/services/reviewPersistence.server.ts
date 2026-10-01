@@ -141,6 +141,119 @@ async function fetchShopMetafieldValue(
   return null;
 }
 
+const DELETED_IDS_PATH = path.join(process.cwd(), "deleted_review_ids.json");
+
+function readLocalDeletedIds(): Record<string, string[]> {
+  try {
+    if (fs.existsSync(DELETED_IDS_PATH)) {
+      const data = fs.readFileSync(DELETED_IDS_PATH, "utf-8");
+      const parsed = JSON.parse(data);
+      if (parsed && typeof parsed === "object") return parsed;
+    }
+  } catch (e) {
+    console.error("[Persistence] Error reading local deleted IDs file:", e);
+  }
+  return {};
+}
+
+function writeLocalDeletedIds(shop: string, deletedIds: string[]): void {
+  try {
+    const shopCanonical = canonicalizeShopDomain(shop);
+    const existing = readLocalDeletedIds();
+    existing[shopCanonical] = Array.from(new Set([...(existing[shopCanonical] || []), ...deletedIds]));
+    fs.writeFileSync(DELETED_IDS_PATH, JSON.stringify(existing, null, 2), "utf-8");
+  } catch (e) {
+    console.error("[Persistence] Error writing local deleted IDs file:", e);
+  }
+}
+
+export async function fetchDeletedReviewIds(
+  admin: any,
+  shop: string,
+): Promise<Set<string>> {
+  const shopCanonical = canonicalizeShopDomain(shop);
+  const deletedSet = new Set<string>();
+
+  // 1. Check local file
+  const localMap = readLocalDeletedIds();
+  const localList = localMap[shopCanonical] || [];
+  for (const id of localList) deletedSet.add(id);
+
+  // 2. Check Shopify Cloud Metafield
+  const backupMetafieldsMap = await fetchAllBackupMetafields(admin, shop);
+  const metaVal = backupMetafieldsMap["deleted_review_ids"];
+  if (metaVal) {
+    try {
+      const parsed = JSON.parse(metaVal);
+      if (Array.isArray(parsed)) {
+        for (const id of parsed) deletedSet.add(id);
+      }
+    } catch (e) {
+      console.warn("[Persistence] Error parsing deleted_review_ids metafield:", e);
+    }
+  }
+
+  return deletedSet;
+}
+
+export async function recordDeletedReviewIds(
+  admin: any,
+  shop: string,
+  deletedIds: string[],
+): Promise<void> {
+  if (!shop || !deletedIds || deletedIds.length === 0) return;
+  try {
+    const shopCanonical = canonicalizeShopDomain(shop);
+    const currentSet = await fetchDeletedReviewIds(admin, shop);
+    for (const id of deletedIds) {
+      if (id) currentSet.add(id);
+    }
+    const updatedList = Array.from(currentSet);
+
+    // Save locally
+    writeLocalDeletedIds(shop, updatedList);
+
+    // Sync to Shopify Cloud Metafield
+    if (admin) {
+      try {
+        const shopRes = await admin.graphql(
+          `#graphql
+          query getShopId { shop { id } }`,
+        );
+        const shopJson = await shopRes.json();
+        const shopId = shopJson.data?.shop?.id;
+        if (shopId) {
+          await admin.graphql(
+            `#graphql
+            mutation saveDeletedIdsMetafield($metafields: [MetafieldsSetInput!]!) {
+              metafieldsSet(metafields: $metafields) {
+                userErrors { field message }
+              }
+            }`,
+            {
+              variables: {
+                metafields: [
+                  {
+                    namespace: "ai_review_system",
+                    key: "deleted_review_ids",
+                    type: "json",
+                    value: JSON.stringify(updatedList),
+                    ownerId: shopId,
+                  },
+                ],
+              },
+            },
+          );
+        }
+      } catch (gqlErr) {
+        console.warn("[Persistence] GraphQL save deleted_review_ids error:", gqlErr);
+      }
+    }
+  } catch (err) {
+    console.error("[Persistence] Error recording deleted review IDs:", err);
+  }
+}
+
 /**
  * CORE RESTORE FUNCTION
  * Auto-restores reviews and settings if DB is empty for a shop.
@@ -215,6 +328,7 @@ export async function ensureReviewsAndSettingsRestored(
       .catch(() => 0);
 
     const backupMetafieldsMap = await fetchAllBackupMetafields(admin, shop);
+    const deletedReviewIds = await fetchDeletedReviewIds(admin, shop);
 
     const mergedItemsMap = new Map<string, any>();
 
@@ -230,7 +344,9 @@ export async function ensureReviewsAndSettingsRestored(
             const parsedChunk = JSON.parse(chunkVal);
             if (Array.isArray(parsedChunk)) {
               for (const item of parsedChunk) {
-                if (item && item.id) mergedItemsMap.set(item.id, item);
+                if (item && item.id && !deletedReviewIds.has(item.id)) {
+                  mergedItemsMap.set(item.id, item);
+                }
               }
             }
           }
@@ -246,7 +362,7 @@ export async function ensureReviewsAndSettingsRestored(
         const parsed = JSON.parse(backupMetafieldsMap["reviews_backup"]);
         if (Array.isArray(parsed)) {
           for (const item of parsed) {
-            if (item && item.id && !mergedItemsMap.has(item.id)) {
+            if (item && item.id && !deletedReviewIds.has(item.id) && !mergedItemsMap.has(item.id)) {
               mergedItemsMap.set(item.id, item);
             }
           }
@@ -261,7 +377,7 @@ export async function ensureReviewsAndSettingsRestored(
     for (const item of localBackup) {
       const itemCanonical = canonicalizeShopDomain(item.shop || "");
       if (itemCanonical === shopCanonical && item && item.id) {
-        if (!mergedItemsMap.has(item.id)) {
+        if (!deletedReviewIds.has(item.id) && !mergedItemsMap.has(item.id)) {
           mergedItemsMap.set(item.id, item);
         }
       }
