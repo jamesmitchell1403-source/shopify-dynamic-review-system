@@ -641,14 +641,23 @@ export async function uploadReviewMediaToShopify(
   filename: string,
 ): Promise<string | null> {
   if (!dataUrl) return null;
-  if (!dataUrl.startsWith("data:")) return dataUrl; // Already a HTTP/HTTPS URL
+  if (!dataUrl.startsWith("data:")) return dataUrl; // Already an HTTP/HTTPS URL
 
-  const match = dataUrl.match(/^data:((?:image|video)\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
-  if (!match) return dataUrl;
+  let mimeType = "video/mp4";
+  let encodedData = "";
 
-  const [, mimeType, encodedData] = match;
-  const isVideo = mimeType.startsWith("video/");
+  const parts = dataUrl.split(";base64,");
+  if (parts.length === 2) {
+    mimeType = parts[0].replace(/^data:/i, "").trim();
+    encodedData = parts[1].trim();
+  } else {
+    console.warn("[UploadMedia] Invalid Base64 data URL format.");
+    return dataUrl;
+  }
+
+  const isVideo = mimeType.toLowerCase().startsWith("video/");
   const resource = isVideo ? "VIDEO" : "IMAGE";
+  const contentType = isVideo ? "VIDEO" : "IMAGE";
   const fileBuffer = Buffer.from(encodedData, "base64");
   const fileSize = String(fileBuffer.length);
 
@@ -719,12 +728,12 @@ export async function uploadReviewMediaToShopify(
     const fileInput: any = {
       originalSource: target.resourceUrl,
       filename: safeFilename,
-      contentType: isVideo ? "FILE" : "IMAGE",
+      contentType: contentType,
     };
 
-    console.log(`[UploadMedia] Calling fileCreate for ${safeFilename} with originalSource: ${target.resourceUrl}`);
+    console.log(`[UploadMedia] Calling fileCreate for ${safeFilename} with contentType ${contentType}, originalSource: ${target.resourceUrl}`);
 
-    const fileResponse = await admin.graphql(
+    let fileResponse = await admin.graphql(
       `
       #graphql
       mutation createReviewMediaFile($files: [FileCreateInput!]!) {
@@ -745,8 +754,38 @@ export async function uploadReviewMediaToShopify(
         },
       },
     );
-    const fileJson = await fileResponse.json();
-    const createdFile = fileJson.data?.fileCreate;
+    let fileJson = await fileResponse.json();
+    let createdFile = fileJson.data?.fileCreate;
+
+    // Fallback attempt with FILE contentType if VIDEO contentType was rejected by shopify schema
+    if (createdFile?.userErrors?.length && isVideo) {
+      console.warn("[UploadMedia] fileCreate with VIDEO contentType failed, retrying with FILE contentType:", createdFile.userErrors);
+      fileInput.contentType = "FILE";
+      fileResponse = await admin.graphql(
+        `
+        #graphql
+        mutation createReviewMediaFile($files: [FileCreateInput!]!) {
+          fileCreate(files: $files) {
+            files {
+              id
+              fileStatus
+              alt
+              createdAt
+            }
+            userErrors { field message }
+          }
+        }
+      `,
+        {
+          variables: {
+            files: [fileInput],
+          },
+        },
+      );
+      fileJson = await fileResponse.json();
+      createdFile = fileJson.data?.fileCreate;
+    }
+
     if (createdFile?.userErrors?.length || !createdFile?.files?.[0]?.id) {
       console.warn("[UploadMedia] fileCreate userErrors:", createdFile?.userErrors);
       return target.resourceUrl || dataUrl;

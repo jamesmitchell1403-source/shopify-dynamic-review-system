@@ -218,7 +218,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     const filesRes = await admin.graphql(`
       #graphql
       query getShopifyFilesForPicker {
-        files(first: 100, sortKey: CREATED_AT, reverse: true) {
+        files(first: 250, sortKey: CREATED_AT, reverse: true) {
           nodes {
             id
             createdAt
