@@ -121,7 +121,9 @@ export default function Dashboard() {
             <BlockStack gap="200">
               <Text as="h3" variant="headingSm" tone="subdued">AI Draft Reviews</Text>
               <Text as="p" variant="headingLg">{data.aiGeneratedCount}</Text>
-              <Badge tone="info">Claude & Gemini AI</Badge>
+              <InlineStack gap="100">
+                <Badge tone="info">Claude & Gemini AI</Badge>
+              </InlineStack>
             </BlockStack>
           </Card>
 
@@ -129,7 +131,9 @@ export default function Dashboard() {
             <BlockStack gap="200">
               <Text as="h3" variant="headingSm" tone="subdued">Marketplace Imports</Text>
               <Text as="p" variant="headingLg">{data.importedCount}</Text>
-              <Badge tone="attention">Amazon / Flipkart / Alibaba</Badge>
+              <InlineStack gap="100">
+                <Badge tone="attention">Amazon / Flipkart / Alibaba</Badge>
+              </InlineStack>
             </BlockStack>
           </Card>
         </InlineGrid>
