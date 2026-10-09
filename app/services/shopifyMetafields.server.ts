@@ -2,6 +2,10 @@ export interface SavedAIKeys {
   anthropicApiKey?: string | null;
   geminiApiKey?: string | null;
   openaiApiKey?: string | null;
+  anthropicKeyAddedAt?: string | null;
+  geminiKeyAddedAt?: string | null;
+  openaiKeyAddedAt?: string | null;
+  aiRotationDays?: number | null;
 }
 
 export async function getShopAIKeysFromShopify(admin: any): Promise<SavedAIKeys | null> {
@@ -24,6 +28,10 @@ export async function getShopAIKeysFromShopify(admin: any): Promise<SavedAIKeys 
         anthropicApiKey: parsed.anthropicApiKey || null,
         geminiApiKey: parsed.geminiApiKey || null,
         openaiApiKey: parsed.openaiApiKey || null,
+        anthropicKeyAddedAt: parsed.anthropicKeyAddedAt || null,
+        geminiKeyAddedAt: parsed.geminiKeyAddedAt || null,
+        openaiKeyAddedAt: parsed.openaiKeyAddedAt || null,
+        aiRotationDays: typeof parsed.aiRotationDays === "number" ? parsed.aiRotationDays : (parsed.aiRotationDays ? parseInt(parsed.aiRotationDays, 10) : 90),
       };
     }
   } catch (err) {
@@ -57,6 +65,10 @@ export async function saveShopAIKeysToShopify(
       anthropicApiKey: keys.anthropicApiKey !== undefined ? keys.anthropicApiKey : (existing?.anthropicApiKey || ""),
       geminiApiKey: keys.geminiApiKey !== undefined ? keys.geminiApiKey : (existing?.geminiApiKey || ""),
       openaiApiKey: keys.openaiApiKey !== undefined ? keys.openaiApiKey : (existing?.openaiApiKey || ""),
+      anthropicKeyAddedAt: keys.anthropicKeyAddedAt !== undefined ? keys.anthropicKeyAddedAt : (existing?.anthropicKeyAddedAt || null),
+      geminiKeyAddedAt: keys.geminiKeyAddedAt !== undefined ? keys.geminiKeyAddedAt : (existing?.geminiKeyAddedAt || null),
+      openaiKeyAddedAt: keys.openaiKeyAddedAt !== undefined ? keys.openaiKeyAddedAt : (existing?.openaiKeyAddedAt || null),
+      aiRotationDays: keys.aiRotationDays !== undefined ? keys.aiRotationDays : (existing?.aiRotationDays || 90),
     };
 
     const valueStr = JSON.stringify(mergedKeys);

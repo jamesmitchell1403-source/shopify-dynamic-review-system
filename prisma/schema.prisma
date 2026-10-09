@@ -37,6 +37,10 @@ model ShopSettings {
   anthropicApiKey       String?
   geminiApiKey          String?
   openaiApiKey          String?
+  aiRotationDays        Int      @default(90)
+  anthropicKeyAddedAt   DateTime?
+  geminiKeyAddedAt      DateTime?
+  openaiKeyAddedAt      DateTime?
   widgetPosition        String   @default("bottom-left")
   widgetLayoutStyle     String   @default("layout-1")
   widgetDelaySeconds    Int      @default(1)
