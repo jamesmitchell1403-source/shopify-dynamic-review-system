@@ -1,6 +1,6 @@
 import { json, LoaderFunctionArgs, ActionFunctionArgs } from "@remix-run/node";
 import { useLoaderData, useSubmit, useNavigation, useFetcher, useActionData } from "@remix-run/react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Page,
   Layout,
@@ -573,7 +573,6 @@ function ProviderKeyBlock({
   validity,
   expiredNotice,
   validationError,
-  onResetTimer,
   onTestKey,
   isTesting,
   testResult,
@@ -589,11 +588,23 @@ function ProviderKeyBlock({
   validity: ReturnType<typeof calculateValidityDetails>;
   expiredNotice?: string | null;
   validationError?: string | null;
-  onResetTimer: (p: "claude" | "gemini" | "openai") => void;
   onTestKey: (p: "claude" | "gemini" | "openai", k: string) => void;
   isTesting: boolean;
   testResult?: { success: boolean; message: string };
 }) {
+  const debounceTimerRef = useRef<any>(null);
+
+  const handleInputChange = (val: string) => {
+    onKeyChange(val);
+    // When merchant enters or pastes a new key, automatically detect the account tier!
+    if (val && !val.includes("•") && val.trim().length >= 10) {
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = setTimeout(() => {
+        onTestKey(provider, val.trim());
+      }, 500);
+    }
+  };
+
   return (
     <BlockStack gap="300">
       {/* 1. Rejection Error Banner (if user tries to add an expired key) */}
@@ -638,10 +649,10 @@ function ProviderKeyBlock({
             label="API Key"
             type="password"
             value={keyValue}
-            onChange={onKeyChange}
+            onChange={handleInputChange}
             onBlur={() => {
               if (keyValue && !keyValue.includes("•") && keyValue.trim().length >= 10 && !isTesting) {
-                onTestKey(provider, keyValue);
+                onTestKey(provider, keyValue.trim());
               }
             }}
             autoComplete="off"
@@ -671,24 +682,11 @@ function ProviderKeyBlock({
                 </Badge>
               </InlineStack>
 
-              <InlineStack gap="100">
-                <Button
-                  size="micro"
-                  variant="plain"
-                  icon={RefreshIcon}
-                  onClick={() => onResetTimer(provider)}
-                >
-                  Reset Timer
-                </Button>
-                <Button
-                  size="micro"
-                  variant="secondary"
-                  loading={isTesting}
-                  onClick={() => onTestKey(provider, keyValue)}
-                >
-                  Auto-Detect Tier & Test
-                </Button>
-              </InlineStack>
+              {isTesting ? (
+                <Badge tone="attention">Auto-detecting Tier...</Badge>
+              ) : testResult?.success ? (
+                <Badge tone="success">Verified & Active</Badge>
+              ) : null}
             </InlineStack>
 
             <ProgressBar
@@ -736,7 +734,7 @@ function ProviderKeyBlock({
           borderRadius="200"
         >
           <Text as="span" variant="bodyXs" tone="subdued">
-            Enter your API key and choose Free (3 Months) or Paid (12 Months) to activate automatic expiration tracking.
+            Enter or paste your API key to automatically verify and select your 3-Month or 12-Month validity period.
           </Text>
         </Box>
       )}
@@ -958,7 +956,6 @@ export default function AiSettingsPage() {
                   validity={claudeValidity}
                   expiredNotice={settings?.expiredNotices?.claude}
                   validationError={actionData?.validationErrors?.claude}
-                  onResetTimer={handleResetTimer}
                   onTestKey={handleTestKey}
                   isTesting={testingProvider === "claude"}
                   testResult={testResults["claude"]}
@@ -979,7 +976,6 @@ export default function AiSettingsPage() {
                   validity={geminiValidity}
                   expiredNotice={settings?.expiredNotices?.gemini}
                   validationError={actionData?.validationErrors?.gemini}
-                  onResetTimer={handleResetTimer}
                   onTestKey={handleTestKey}
                   isTesting={testingProvider === "gemini"}
                   testResult={testResults["gemini"]}
@@ -1000,7 +996,6 @@ export default function AiSettingsPage() {
                   validity={openaiValidity}
                   expiredNotice={settings?.expiredNotices?.openai}
                   validationError={actionData?.validationErrors?.openai}
-                  onResetTimer={handleResetTimer}
                   onTestKey={handleTestKey}
                   isTesting={testingProvider === "openai"}
                   testResult={testResults["openai"]}
