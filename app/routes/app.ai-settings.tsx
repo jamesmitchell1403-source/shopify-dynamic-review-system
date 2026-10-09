@@ -31,27 +31,71 @@ import {
   getValidityMonths,
 } from "../services/ai/keyLifecycle.server";
 
-export async function loader({ request }: LoaderFunctionArgs) {
-  await ensureTablesExist();
-  const { admin, session } = await authenticate.admin(request);
-  const shop = session.shop;
-
-  let aiJobs: any[] = [];
-
+function safeIsoString(val: any): string | null {
+  if (!val) return null;
   try {
-    await ensureAiJobsRestored(admin, shop);
+    const d = new Date(val);
+    return isNaN(d.getTime()) ? null : d.toISOString();
+  } catch {
+    return null;
+  }
+}
 
-    aiJobs = await db.aiGenerationJob.findMany({
-      where: { shop },
-      orderBy: { createdAt: "desc" },
+function safeFormatDate(d: Date): string {
+  try {
+    if (isNaN(d.getTime())) return "—";
+    return d.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
     });
+  } catch {
+    return "—";
+  }
+}
+
+export async function loader({ request }: LoaderFunctionArgs) {
+  try {
+    await ensureTablesExist().catch(() => {});
+    const { admin, session } = await authenticate.admin(request);
+    const shop = session.shop;
+
+    let aiJobs: any[] = [];
+
+    try {
+      await ensureAiJobsRestored(admin, shop);
+
+      aiJobs = await db.aiGenerationJob.findMany({
+        where: { shop },
+        orderBy: { createdAt: "desc" },
+      });
+    } catch (jobErr) {
+      console.warn("AI generation jobs load warning:", jobErr);
+    }
 
     // Run auto-expiration check: removes keys older than 3 months (free) or 12 months (paid)
     // CRITICAL GUARANTEE: Does NOT touch or delete any review data!
-    const purgeResult = await checkAndPurgeExpiredKeys(admin, shop);
+    const purgeResult = await checkAndPurgeExpiredKeys(admin, shop).catch(() => ({
+      purgedClaude: false,
+      purgedGemini: false,
+      purgedOpenai: false,
+      expiredKeys: [],
+      expiredNotices: {},
+      activeKeys: {
+        anthropicApiKey: "",
+        geminiApiKey: "",
+        openaiApiKey: "",
+        anthropicKeyAddedAt: null,
+        geminiKeyAddedAt: null,
+        openaiKeyAddedAt: null,
+        anthropicPlanType: "free" as const,
+        geminiPlanType: "free" as const,
+        openaiPlanType: "free" as const,
+      },
+    }));
 
-    const shopifyCloudKeys = await getShopAIKeysFromShopify(admin);
-    const localSettings = await db.shopSettings.findUnique({ where: { shop } });
+    const shopifyCloudKeys = await getShopAIKeysFromShopify(admin).catch(() => null);
+    const localSettings = await db.shopSettings.findUnique({ where: { shop } }).catch(() => null);
 
     const nowIso = new Date().toISOString();
     const claudeKeyFinal =
@@ -73,23 +117,20 @@ export async function loader({ request }: LoaderFunctionArgs) {
     const anthropicKeyAddedAt =
       purgeResult.activeKeys.anthropicKeyAddedAt ||
       shopifyCloudKeys?.anthropicKeyAddedAt ||
-      (localSettings?.anthropicKeyAddedAt
-        ? new Date(localSettings.anthropicKeyAddedAt).toISOString()
-        : claudeKeyFinal ? nowIso : null);
+      safeIsoString(localSettings?.anthropicKeyAddedAt) ||
+      (claudeKeyFinal ? nowIso : null);
 
     const geminiKeyAddedAt =
       purgeResult.activeKeys.geminiKeyAddedAt ||
       shopifyCloudKeys?.geminiKeyAddedAt ||
-      (localSettings?.geminiKeyAddedAt
-        ? new Date(localSettings.geminiKeyAddedAt).toISOString()
-        : geminiKeyFinal ? nowIso : null);
+      safeIsoString(localSettings?.geminiKeyAddedAt) ||
+      (geminiKeyFinal ? nowIso : null);
 
     const openaiKeyAddedAt =
       purgeResult.activeKeys.openaiKeyAddedAt ||
       shopifyCloudKeys?.openaiKeyAddedAt ||
-      ((localSettings as any)?.openaiKeyAddedAt
-        ? new Date((localSettings as any).openaiKeyAddedAt).toISOString()
-        : openaiKeyFinal ? nowIso : null);
+      safeIsoString((localSettings as any)?.openaiKeyAddedAt) ||
+      (openaiKeyFinal ? nowIso : null);
 
     const mergedSettings = {
       shop,
@@ -119,305 +160,336 @@ export async function loader({ request }: LoaderFunctionArgs) {
     };
 
     return json({ settings: mergedSettings, aiJobs });
-  } catch (err) {
+  } catch (err: any) {
     console.error("AI settings DB loader error:", err);
-    const shopifyCloudKeys = await getShopAIKeysFromShopify(admin);
     const fallbackSettings = {
-      shop,
-      anthropicApiKey: shopifyCloudKeys?.anthropicApiKey || "",
-      geminiApiKey: shopifyCloudKeys?.geminiApiKey || "",
-      openaiApiKey: shopifyCloudKeys?.openaiApiKey || "",
-      anthropicKeyAddedAt: shopifyCloudKeys?.anthropicKeyAddedAt || null,
-      geminiKeyAddedAt: shopifyCloudKeys?.geminiKeyAddedAt || null,
-      openaiKeyAddedAt: shopifyCloudKeys?.openaiKeyAddedAt || null,
-      anthropicPlanType: shopifyCloudKeys?.anthropicPlanType || "free",
-      geminiPlanType: shopifyCloudKeys?.geminiPlanType || "free",
-      openaiPlanType: shopifyCloudKeys?.openaiPlanType || "free",
-      expiredKeys: shopifyCloudKeys?.expiredKeys || [],
-      expiredNotices: shopifyCloudKeys?.expiredNotices || {},
+      shop: "",
+      anthropicApiKey: "",
+      geminiApiKey: "",
+      openaiApiKey: "",
+      anthropicKeyAddedAt: null,
+      geminiKeyAddedAt: null,
+      openaiKeyAddedAt: null,
+      anthropicPlanType: "free" as const,
+      geminiPlanType: "free" as const,
+      openaiPlanType: "free" as const,
+      expiredKeys: [],
+      expiredNotices: {},
     };
     return json({ settings: fallbackSettings, aiJobs: [] });
   }
 }
 
 export async function action({ request }: ActionFunctionArgs) {
-  await ensureTablesExist();
-  const { admin, session } = await authenticate.admin(request);
-  const shop = session.shop;
-
-  const formData = await request.formData();
-  const intent = formData.get("intent") as string;
-
-  // 1. DELETE SINGLE AUDIT JOB
-  if (intent === "deleteJob") {
-    const jobId = formData.get("jobId") as string;
-    if (jobId) {
-      await db.aiGenerationJob.deleteMany({
-        where: { id: jobId, shop },
-      });
-      await syncAiJobsToShopify(admin, shop, true);
-    }
-    return json({ success: true, message: "Audit history record deleted." });
-  }
-
-  // 2. CLEAR ALL AUDIT JOBS
-  if (intent === "clearAllJobs") {
-    await db.aiGenerationJob.deleteMany({
-      where: { shop },
-    });
-    await syncAiJobsToShopify(admin, shop, true);
-    return json({ success: true, message: "All audit history records cleared." });
-  }
-
-  // 3. RESET TIMER FOR A SPECIFIC PROVIDER
-  if (intent === "resetTimer") {
-    const provider = formData.get("provider") as string;
-    const nowIso = new Date().toISOString();
-
-    const metafieldUpdate: any = {};
-    if (provider === "claude") metafieldUpdate.anthropicKeyAddedAt = nowIso;
-    if (provider === "gemini") metafieldUpdate.geminiKeyAddedAt = nowIso;
-    if (provider === "openai") metafieldUpdate.openaiKeyAddedAt = nowIso;
-
-    await saveShopAIKeysToShopify(admin, metafieldUpdate);
-
-    try {
-      if (provider === "claude") {
-        await db.shopSettings.update({ where: { shop }, data: { anthropicKeyAddedAt: new Date(nowIso) } });
-      } else if (provider === "gemini") {
-        await db.shopSettings.update({ where: { shop }, data: { geminiKeyAddedAt: new Date(nowIso) } });
-      } else if (provider === "openai") {
-        await db.shopSettings.update({ where: { shop }, data: { openaiKeyAddedAt: new Date(nowIso) } });
-      }
-    } catch (dbErr) {
-      console.warn("DB update error on resetTimer:", dbErr);
-    }
-
-    return json({ success: true, message: `Validity timer reset for ${provider.toUpperCase()}.` });
-  }
-
-  // 4. TEST PROVIDER KEY LIVE
-  if (intent === "testKey") {
-    const provider = formData.get("provider") as "claude" | "gemini" | "openai";
-    const apiKey = (formData.get("apiKey") as string) || "";
-    const testResult = await testAIProviderKey(provider, apiKey);
-    return json({ testResult });
-  }
-
-  // 5. DEFAULT ACTION: SAVE API KEYS & ACCOUNT VALIDITY TIERS
-  const anthropicApiKeyRaw = formData.get("anthropicApiKey") as string;
-  const geminiApiKeyRaw = formData.get("geminiApiKey") as string;
-  const openaiApiKeyRaw = formData.get("openaiApiKey") as string;
-
-  const anthropicPlanType = ((formData.get("anthropicPlanType") as string) || "free") as "free" | "paid";
-  const geminiPlanType = ((formData.get("geminiPlanType") as string) || "free") as "free" | "paid";
-  const openaiPlanType = ((formData.get("openaiPlanType") as string) || "free") as "free" | "paid";
-
-  const anthropicApiKey =
-    anthropicApiKeyRaw !== null && anthropicApiKeyRaw !== undefined ? anthropicApiKeyRaw.trim() : null;
-  const geminiApiKey =
-    geminiApiKeyRaw !== null && geminiApiKeyRaw !== undefined ? geminiApiKeyRaw.trim() : null;
-  const openaiApiKey =
-    openaiApiKeyRaw !== null && openaiApiKeyRaw !== undefined ? openaiApiKeyRaw.trim() : null;
-
-  // Retrieve current existing keys and expired keys blacklist
-  const existingCloud = await getShopAIKeysFromShopify(admin);
-  const existingDb = await db.shopSettings.findUnique({ where: { shop } });
-
-  let expiredKeys: ExpiredKeyItem[] = [...(existingCloud?.expiredKeys || [])];
   try {
-    if ((existingDb as any)?.expiredKeys) {
-      const parsed = JSON.parse((existingDb as any).expiredKeys);
-      for (const item of parsed) {
-        if (!expiredKeys.some((e) => e.provider === item.provider && e.key === item.key)) {
-          expiredKeys.push(item);
+    await ensureTablesExist().catch(() => {});
+    const { admin, session } = await authenticate.admin(request);
+    const shop = session.shop;
+
+    const formData = await request.formData();
+    const intent = formData.get("intent") as string;
+
+    // 1. DELETE SINGLE AUDIT JOB
+    if (intent === "deleteJob") {
+      const jobId = formData.get("jobId") as string;
+      if (jobId) {
+        await db.aiGenerationJob.deleteMany({
+          where: { id: jobId, shop },
+        }).catch(() => {});
+        await syncAiJobsToShopify(admin, shop, true).catch(() => {});
+      }
+      return json({ success: true, message: "Audit history record deleted." });
+    }
+
+    // 2. CLEAR ALL AUDIT JOBS
+    if (intent === "clearAllJobs") {
+      await db.aiGenerationJob.deleteMany({
+        where: { shop },
+      }).catch(() => {});
+      await syncAiJobsToShopify(admin, shop, true).catch(() => {});
+      return json({ success: true, message: "All audit history records cleared." });
+    }
+
+    // Retrieve current existing keys and expired keys blacklist
+    const existingCloud = await getShopAIKeysFromShopify(admin).catch(() => null);
+    const existingDb = await db.shopSettings.findUnique({ where: { shop } }).catch(() => null);
+
+    const oldAnthropic = existingCloud?.anthropicApiKey ?? existingDb?.anthropicApiKey ?? "";
+    const oldGemini = existingCloud?.geminiApiKey ?? existingDb?.geminiApiKey ?? "";
+    const oldOpenai = existingCloud?.openaiApiKey ?? (existingDb as any)?.openaiApiKey ?? "";
+
+    // 3. RESET TIMER FOR A SPECIFIC PROVIDER
+    if (intent === "resetTimer") {
+      const provider = formData.get("provider") as string;
+      const nowIso = new Date().toISOString();
+
+      const metafieldUpdate: any = {};
+      if (provider === "claude") metafieldUpdate.anthropicKeyAddedAt = nowIso;
+      if (provider === "gemini") metafieldUpdate.geminiKeyAddedAt = nowIso;
+      if (provider === "openai") metafieldUpdate.openaiKeyAddedAt = nowIso;
+
+      await saveShopAIKeysToShopify(admin, metafieldUpdate).catch(() => false);
+
+      try {
+        if (provider === "claude") {
+          await db.shopSettings.update({ where: { shop }, data: { anthropicKeyAddedAt: new Date(nowIso) } });
+        } else if (provider === "gemini") {
+          await db.shopSettings.update({ where: { shop }, data: { geminiKeyAddedAt: new Date(nowIso) } });
+        } else if (provider === "openai") {
+          await db.shopSettings.update({ where: { shop }, data: { openaiKeyAddedAt: new Date(nowIso) } });
+        }
+      } catch (dbErr) {
+        console.warn("DB update error on resetTimer:", dbErr);
+      }
+
+      return json({ success: true, message: `Validity timer reset for ${provider.toUpperCase()}.` });
+    }
+
+    // 4. TEST PROVIDER KEY LIVE
+    if (intent === "testKey") {
+      const provider = formData.get("provider") as "claude" | "gemini" | "openai";
+      let apiKey = ((formData.get("apiKey") as string) || "").trim();
+
+      // If masked key was submitted for testing, retrieve the unmasked key from storage
+      if (apiKey.includes("•")) {
+        if (provider === "claude") apiKey = oldAnthropic;
+        if (provider === "gemini") apiKey = oldGemini;
+        if (provider === "openai") apiKey = oldOpenai;
+      }
+
+      const testResult = await testAIProviderKey(provider, apiKey);
+      return json({ testResult });
+    }
+
+    // 5. DEFAULT ACTION: SAVE API KEYS & ACCOUNT VALIDITY TIERS
+    const anthropicApiKeyRaw = formData.get("anthropicApiKey") as string | null;
+    const geminiApiKeyRaw = formData.get("geminiApiKey") as string | null;
+    const openaiApiKeyRaw = formData.get("openaiApiKey") as string | null;
+
+    const anthropicPlanType = ((formData.get("anthropicPlanType") as string) || "free") as "free" | "paid";
+    const geminiPlanType = ((formData.get("geminiPlanType") as string) || "free") as "free" | "paid";
+    const openaiPlanType = ((formData.get("openaiPlanType") as string) || "free") as "free" | "paid";
+
+    const isRealClaude = Boolean(anthropicApiKeyRaw && !anthropicApiKeyRaw.includes("•") && anthropicApiKeyRaw.trim().length > 0);
+    const isRealGemini = Boolean(geminiApiKeyRaw && !geminiApiKeyRaw.includes("•") && geminiApiKeyRaw.trim().length > 0);
+    const isRealOpenai = Boolean(openaiApiKeyRaw && !openaiApiKeyRaw.includes("•") && openaiApiKeyRaw.trim().length > 0);
+
+    // If masked dots were submitted, preserve existing keys so they are NOT overwritten with dots
+    const anthropicApiKey = isRealClaude
+      ? anthropicApiKeyRaw!.trim()
+      : anthropicApiKeyRaw && anthropicApiKeyRaw.includes("•")
+      ? oldAnthropic
+      : null;
+
+    const geminiApiKey = isRealGemini
+      ? geminiApiKeyRaw!.trim()
+      : geminiApiKeyRaw && geminiApiKeyRaw.includes("•")
+      ? oldGemini
+      : null;
+
+    const openaiApiKey = isRealOpenai
+      ? openaiApiKeyRaw!.trim()
+      : openaiApiKeyRaw && openaiApiKeyRaw.includes("•")
+      ? oldOpenai
+      : null;
+
+    let expiredKeys: ExpiredKeyItem[] = [...(existingCloud?.expiredKeys || [])];
+    try {
+      if ((existingDb as any)?.expiredKeys) {
+        const parsed = JSON.parse((existingDb as any).expiredKeys);
+        for (const item of parsed) {
+          if (!expiredKeys.some((e) => e.provider === item.provider && e.key === item.key)) {
+            expiredKeys.push(item);
+          }
         }
       }
+    } catch (_) {}
+
+    // ENFORCE REQUIREMENT: Check if user is attempting to re-add an expired API key
+    const validationErrors: { [provider: string]: string } = {};
+
+    if (isRealClaude && anthropicApiKey && isKeyInExpiredHistory(anthropicApiKey, "claude", expiredKeys)) {
+      validationErrors.claude = "You are trying to add an expired API key. Please provide a new API key.";
     }
-  } catch (_) {}
+    if (isRealGemini && geminiApiKey && isKeyInExpiredHistory(geminiApiKey, "gemini", expiredKeys)) {
+      validationErrors.gemini = "You are trying to add an expired API key. Please provide a new API key.";
+    }
+    if (isRealOpenai && openaiApiKey && isKeyInExpiredHistory(openaiApiKey, "openai", expiredKeys)) {
+      validationErrors.openai = "You are trying to add an expired API key. Please provide a new API key.";
+    }
 
-  // ENFORCE REQUIREMENT: Check if user is attempting to re-add an expired API key
-  const validationErrors: { [provider: string]: string } = {};
+    if (Object.keys(validationErrors).length > 0) {
+      return json({
+        success: false,
+        validationErrors,
+        message: "One or more API keys have expired previously and cannot be reused. Please provide a new API key.",
+      });
+    }
 
-  if (anthropicApiKey && isKeyInExpiredHistory(anthropicApiKey, "claude", expiredKeys)) {
-    validationErrors.claude = "You are trying to add an expired API key. Please provide a new API key.";
-  }
-  if (geminiApiKey && isKeyInExpiredHistory(geminiApiKey, "gemini", expiredKeys)) {
-    validationErrors.gemini = "You are trying to add an expired API key. Please provide a new API key.";
-  }
-  if (openaiApiKey && isKeyInExpiredHistory(openaiApiKey, "openai", expiredKeys)) {
-    validationErrors.openai = "You are trying to add an expired API key. Please provide a new API key.";
-  }
+    const nowIso = new Date().toISOString();
 
-  if (Object.keys(validationErrors).length > 0) {
-    return json({
-      success: false,
-      validationErrors,
-      message: "One or more API keys have expired previously and cannot be reused. Please provide a new API key.",
-    });
-  }
+    let anthropicKeyAddedAt =
+      existingCloud?.anthropicKeyAddedAt ?? safeIsoString((existingDb as any)?.anthropicKeyAddedAt) ?? null;
+    let geminiKeyAddedAt =
+      existingCloud?.geminiKeyAddedAt ?? safeIsoString((existingDb as any)?.geminiKeyAddedAt) ?? null;
+    let openaiKeyAddedAt =
+      existingCloud?.openaiKeyAddedAt ?? safeIsoString((existingDb as any)?.openaiKeyAddedAt) ?? null;
 
-  const oldAnthropic = existingCloud?.anthropicApiKey ?? existingDb?.anthropicApiKey ?? "";
-  const oldGemini = existingCloud?.geminiApiKey ?? existingDb?.geminiApiKey ?? "";
-  const oldOpenai = existingCloud?.openaiApiKey ?? (existingDb as any)?.openaiApiKey ?? "";
+    let expiredNotices: { [k: string]: string | null } = {
+      ...(existingCloud?.expiredNotices || {}),
+    };
 
-  const nowIso = new Date().toISOString();
+    // Update timestamps when key changes or is newly set, and clear notices
+    if (isRealClaude && anthropicApiKey && anthropicApiKey !== oldAnthropic) {
+      anthropicKeyAddedAt = nowIso;
+      expiredNotices.claude = null;
+    } else if (!anthropicApiKey) {
+      anthropicKeyAddedAt = null;
+    } else if (anthropicApiKey && !anthropicKeyAddedAt) {
+      anthropicKeyAddedAt = nowIso;
+    }
 
-  let anthropicKeyAddedAt =
-    existingCloud?.anthropicKeyAddedAt ?? (existingDb as any)?.anthropicKeyAddedAt ?? null;
-  let geminiKeyAddedAt =
-    existingCloud?.geminiKeyAddedAt ?? (existingDb as any)?.geminiKeyAddedAt ?? null;
-  let openaiKeyAddedAt =
-    existingCloud?.openaiKeyAddedAt ?? (existingDb as any)?.openaiKeyAddedAt ?? null;
+    if (isRealGemini && geminiApiKey && geminiApiKey !== oldGemini) {
+      geminiKeyAddedAt = nowIso;
+      expiredNotices.gemini = null;
+    } else if (!geminiApiKey) {
+      geminiKeyAddedAt = null;
+    } else if (geminiApiKey && !geminiKeyAddedAt) {
+      geminiKeyAddedAt = nowIso;
+    }
 
-  let expiredNotices: { [k: string]: string | null } = {
-    ...(existingCloud?.expiredNotices || {}),
-  };
+    if (isRealOpenai && openaiApiKey && openaiApiKey !== oldOpenai) {
+      openaiKeyAddedAt = nowIso;
+      expiredNotices.openai = null;
+    } else if (!openaiApiKey) {
+      openaiKeyAddedAt = null;
+    } else if (openaiApiKey && !openaiKeyAddedAt) {
+      openaiKeyAddedAt = nowIso;
+    }
 
-  // Update timestamps when key changes or is newly set, and clear notices
-  if (anthropicApiKey && anthropicApiKey !== oldAnthropic) {
-    anthropicKeyAddedAt = nowIso;
-    expiredNotices.claude = null;
-  } else if (!anthropicApiKey) {
-    anthropicKeyAddedAt = null;
-  } else if (anthropicApiKey && !anthropicKeyAddedAt) {
-    anthropicKeyAddedAt = nowIso;
-  }
+    let finalClaudePlan = anthropicPlanType;
+    let finalGeminiPlan = geminiPlanType;
+    let finalOpenaiPlan = openaiPlanType;
 
-  if (geminiApiKey && geminiApiKey !== oldGemini) {
-    geminiKeyAddedAt = nowIso;
-    expiredNotices.gemini = null;
-  } else if (!geminiApiKey) {
-    geminiKeyAddedAt = null;
-  } else if (geminiApiKey && !geminiKeyAddedAt) {
-    geminiKeyAddedAt = nowIso;
-  }
+    // Auto-detect tier via live API inspection if genuine new key is provided
+    if (isRealClaude && anthropicApiKey && anthropicApiKey !== oldAnthropic) {
+      try {
+        const testRes = await testAIProviderKey("claude", anthropicApiKey);
+        if (testRes.success && testRes.detectedTier) finalClaudePlan = testRes.detectedTier;
+      } catch (_) {}
+    }
+    if (isRealGemini && geminiApiKey && geminiApiKey !== oldGemini) {
+      try {
+        const testRes = await testAIProviderKey("gemini", geminiApiKey);
+        if (testRes.success && testRes.detectedTier) finalGeminiPlan = testRes.detectedTier;
+      } catch (_) {}
+    }
+    if (isRealOpenai && openaiApiKey && openaiApiKey !== oldOpenai) {
+      try {
+        const testRes = await testAIProviderKey("openai", openaiApiKey);
+        if (testRes.success && testRes.detectedTier) finalOpenaiPlan = testRes.detectedTier;
+      } catch (_) {}
+    }
 
-  if (openaiApiKey && openaiApiKey !== oldOpenai) {
-    openaiKeyAddedAt = nowIso;
-    expiredNotices.openai = null;
-  } else if (!openaiApiKey) {
-    openaiKeyAddedAt = null;
-  } else if (openaiApiKey && !openaiKeyAddedAt) {
-    openaiKeyAddedAt = nowIso;
-  }
+    // 1. Save permanently to Shopify Cloud (Shop Metafields) — survives all Render resets
+    await saveShopAIKeysToShopify(admin, {
+      anthropicApiKey,
+      geminiApiKey,
+      openaiApiKey,
+      anthropicKeyAddedAt,
+      geminiKeyAddedAt,
+      openaiKeyAddedAt,
+      anthropicPlanType: finalClaudePlan,
+      geminiPlanType: finalGeminiPlan,
+      openaiPlanType: finalOpenaiPlan,
+      expiredKeys,
+      expiredNotices,
+    }).catch((e) => console.warn("saveShopAIKeysToShopify warn:", e));
 
-  let finalClaudePlan = anthropicPlanType;
-  let finalGeminiPlan = geminiPlanType;
-  let finalOpenaiPlan = openaiPlanType;
-
-  // Auto-detect tier via live API inspection if key is provided
-  if (anthropicApiKey) {
+    // 2. Also update local DB
+    // CRITICAL GUARANTEE: Does NOT delete or alter any records in Review table!
     try {
-      const testRes = await testAIProviderKey("claude", anthropicApiKey);
-      if (testRes.success && testRes.detectedTier) finalClaudePlan = testRes.detectedTier;
-    } catch (_) {}
-  }
-  if (geminiApiKey) {
-    try {
-      const testRes = await testAIProviderKey("gemini", geminiApiKey);
-      if (testRes.success && testRes.detectedTier) finalGeminiPlan = testRes.detectedTier;
-    } catch (_) {}
-  }
-  if (openaiApiKey) {
-    try {
-      const testRes = await testAIProviderKey("openai", openaiApiKey);
-      if (testRes.success && testRes.detectedTier) finalOpenaiPlan = testRes.detectedTier;
-    } catch (_) {}
-  }
-
-  // 1. Save permanently to Shopify Cloud (Shop Metafields) — survives all Render resets
-  await saveShopAIKeysToShopify(admin, {
-    anthropicApiKey,
-    geminiApiKey,
-    openaiApiKey,
-    anthropicKeyAddedAt,
-    geminiKeyAddedAt,
-    openaiKeyAddedAt,
-    anthropicPlanType: finalClaudePlan,
-    geminiPlanType: finalGeminiPlan,
-    openaiPlanType: finalOpenaiPlan,
-    expiredKeys,
-    expiredNotices,
-  });
-
-  // 2. Also update local DB
-  // CRITICAL GUARANTEE: Does NOT delete or alter any records in Review table!
-  try {
-    await db.shopSettings.upsert({
-      where: { shop },
-      update: {
-        anthropicApiKey,
-        geminiApiKey,
-        openaiApiKey,
-        anthropicKeyAddedAt: anthropicKeyAddedAt ? new Date(anthropicKeyAddedAt) : null,
-        geminiKeyAddedAt: geminiKeyAddedAt ? new Date(geminiKeyAddedAt) : null,
-        openaiKeyAddedAt: openaiKeyAddedAt ? new Date(openaiKeyAddedAt) : null,
-        anthropicPlanType: finalClaudePlan,
-        geminiPlanType: finalGeminiPlan,
-        openaiPlanType: finalOpenaiPlan,
-        expiredKeys: JSON.stringify(expiredKeys),
-        expiredNotices: JSON.stringify(expiredNotices),
-      },
-      create: {
-        shop,
-        anthropicApiKey,
-        geminiApiKey,
-        openaiApiKey,
-        anthropicKeyAddedAt: anthropicKeyAddedAt ? new Date(anthropicKeyAddedAt) : null,
-        geminiKeyAddedAt: geminiKeyAddedAt ? new Date(geminiKeyAddedAt) : null,
-        openaiKeyAddedAt: openaiKeyAddedAt ? new Date(openaiKeyAddedAt) : null,
-        anthropicPlanType: finalClaudePlan,
-        geminiPlanType: finalGeminiPlan,
-        openaiPlanType: finalOpenaiPlan,
-        expiredKeys: JSON.stringify(expiredKeys),
-        expiredNotices: JSON.stringify(expiredNotices),
-      },
-    });
-  } catch (err) {
-    console.warn("Prisma upsert warning, executing raw SQL fallback:", err);
-    try {
-      const existing = await db.$queryRawUnsafe<any[]>(`SELECT id FROM ShopSettings WHERE shop = ?`, shop);
-      if (existing && existing.length > 0) {
-        await db.$executeRawUnsafe(
-          `UPDATE ShopSettings SET anthropicApiKey = ?, geminiApiKey = ?, openaiApiKey = ?, anthropicPlanType = ?, geminiPlanType = ?, openaiPlanType = ?, anthropicKeyAddedAt = ?, geminiKeyAddedAt = ?, openaiKeyAddedAt = ?, expiredKeys = ?, expiredNotices = ? WHERE shop = ?`,
+      await db.shopSettings.upsert({
+        where: { shop },
+        update: {
           anthropicApiKey,
           geminiApiKey,
           openaiApiKey,
-          anthropicPlanType,
-          geminiPlanType,
-          openaiPlanType,
-          anthropicKeyAddedAt,
-          geminiKeyAddedAt,
-          openaiKeyAddedAt,
-          JSON.stringify(expiredKeys),
-          JSON.stringify(expiredNotices),
-          shop
-        );
-      } else {
-        await db.$executeRawUnsafe(
-          `INSERT INTO ShopSettings (id, shop, anthropicApiKey, geminiApiKey, openaiApiKey, anthropicPlanType, geminiPlanType, openaiPlanType, anthropicKeyAddedAt, geminiKeyAddedAt, openaiKeyAddedAt, expiredKeys, expiredNotices) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          `set_${Date.now()}`,
+          anthropicKeyAddedAt: anthropicKeyAddedAt ? new Date(anthropicKeyAddedAt) : null,
+          geminiKeyAddedAt: geminiKeyAddedAt ? new Date(geminiKeyAddedAt) : null,
+          openaiKeyAddedAt: openaiKeyAddedAt ? new Date(openaiKeyAddedAt) : null,
+          anthropicPlanType: finalClaudePlan,
+          geminiPlanType: finalGeminiPlan,
+          openaiPlanType: finalOpenaiPlan,
+          expiredKeys: JSON.stringify(expiredKeys),
+          expiredNotices: JSON.stringify(expiredNotices),
+        },
+        create: {
           shop,
           anthropicApiKey,
           geminiApiKey,
           openaiApiKey,
-          anthropicPlanType,
-          geminiPlanType,
-          openaiPlanType,
-          anthropicKeyAddedAt,
-          geminiKeyAddedAt,
-          openaiKeyAddedAt,
-          JSON.stringify(expiredKeys),
-          JSON.stringify(expiredNotices)
-        );
+          anthropicKeyAddedAt: anthropicKeyAddedAt ? new Date(anthropicKeyAddedAt) : null,
+          geminiKeyAddedAt: geminiKeyAddedAt ? new Date(geminiKeyAddedAt) : null,
+          openaiKeyAddedAt: openaiKeyAddedAt ? new Date(openaiKeyAddedAt) : null,
+          anthropicPlanType: finalClaudePlan,
+          geminiPlanType: finalGeminiPlan,
+          openaiPlanType: finalOpenaiPlan,
+          expiredKeys: JSON.stringify(expiredKeys),
+          expiredNotices: JSON.stringify(expiredNotices),
+        },
+      });
+    } catch (err) {
+      console.warn("Prisma upsert warning, executing raw SQL fallback:", err);
+      try {
+        const existing = await db.$queryRawUnsafe<any[]>(`SELECT id FROM ShopSettings WHERE shop = ?`, shop);
+        if (existing && existing.length > 0) {
+          await db.$executeRawUnsafe(
+            `UPDATE ShopSettings SET anthropicApiKey = ?, geminiApiKey = ?, openaiApiKey = ?, anthropicPlanType = ?, geminiPlanType = ?, openaiPlanType = ?, anthropicKeyAddedAt = ?, geminiKeyAddedAt = ?, openaiKeyAddedAt = ?, expiredKeys = ?, expiredNotices = ? WHERE shop = ?`,
+            anthropicApiKey,
+            geminiApiKey,
+            openaiApiKey,
+            finalClaudePlan,
+            finalGeminiPlan,
+            finalOpenaiPlan,
+            anthropicKeyAddedAt,
+            geminiKeyAddedAt,
+            openaiKeyAddedAt,
+            JSON.stringify(expiredKeys),
+            JSON.stringify(expiredNotices),
+            shop
+          );
+        } else {
+          await db.$executeRawUnsafe(
+            `INSERT INTO ShopSettings (id, shop, anthropicApiKey, geminiApiKey, openaiApiKey, anthropicPlanType, geminiPlanType, openaiPlanType, anthropicKeyAddedAt, geminiKeyAddedAt, openaiKeyAddedAt, expiredKeys, expiredNotices) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            `set_${Date.now()}`,
+            shop,
+            anthropicApiKey,
+            geminiApiKey,
+            openaiApiKey,
+            finalClaudePlan,
+            finalGeminiPlan,
+            finalOpenaiPlan,
+            anthropicKeyAddedAt,
+            geminiKeyAddedAt,
+            openaiKeyAddedAt,
+            JSON.stringify(expiredKeys),
+            JSON.stringify(expiredNotices)
+          );
+        }
+      } catch (sqlErr) {
+        console.error("Raw SQL fallback error:", sqlErr);
       }
-    } catch (sqlErr) {
-      console.error("Raw SQL fallback error:", sqlErr);
     }
-  }
 
-  return json({ success: true, message: "API keys and validity preferences saved successfully." });
+    return json({ success: true, message: "API keys and validity preferences saved successfully." });
+  } catch (outerErr: any) {
+    console.error("Safely caught outer action error in AI settings:", outerErr);
+    return json({
+      success: false,
+      message: outerErr?.message || "An error occurred while saving AI settings. Please try again.",
+    });
+  }
 }
 
 // Client-side lifecycle calculation
@@ -445,15 +517,16 @@ function calculateValidityDetails(
   }
 
   const addedDate = addedAt ? new Date(addedAt) : new Date();
-  const expiryDate = new Date(addedDate);
+  const validAddedDate = isNaN(addedDate.getTime()) ? new Date() : addedDate;
+  const expiryDate = new Date(validAddedDate);
   expiryDate.setMonth(expiryDate.getMonth() + validityMonths);
 
   const now = new Date();
   const msRemaining = expiryDate.getTime() - now.getTime();
   const daysRemaining = Math.max(0, Math.ceil(msRemaining / (1000 * 60 * 60 * 24)));
 
-  const totalDurationMs = Math.max(1, expiryDate.getTime() - addedDate.getTime());
-  const msElapsed = Math.max(0, now.getTime() - addedDate.getTime());
+  const totalDurationMs = Math.max(1, expiryDate.getTime() - validAddedDate.getTime());
+  const msElapsed = Math.max(0, now.getTime() - validAddedDate.getTime());
   const progressPercent = Math.min(
     100,
     Math.max(0, Math.round((msElapsed / totalDurationMs) * 100))
@@ -473,26 +546,15 @@ function calculateValidityDetails(
     badgeText = `Due in ${daysRemaining} days`;
   }
 
-  const addedDateFormatted = addedDate.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-  const expiryDateFormatted = expiryDate.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-
   return {
     isConfigured: true,
     badgeTone,
     badgeText,
-    addedDateFormatted,
-    expiryDateFormatted,
-    daysRemaining,
-    daysElapsed,
-    progressPercent,
+    addedDateFormatted: safeFormatDate(validAddedDate),
+    expiryDateFormatted: safeFormatDate(expiryDate),
+    daysRemaining: isNaN(daysRemaining) ? 0 : daysRemaining,
+    daysElapsed: isNaN(msElapsed) ? 0 : Math.round(msElapsed / (1000 * 60 * 60 * 24)),
+    progressPercent: isNaN(progressPercent) ? 0 : progressPercent,
     isExpired,
     isExpiringSoon,
     validityMonths,
@@ -578,7 +640,7 @@ function ProviderKeyBlock({
             value={keyValue}
             onChange={onKeyChange}
             onBlur={() => {
-              if (keyValue && keyValue.trim().length >= 10 && !isTesting) {
+              if (keyValue && !keyValue.includes("•") && keyValue.trim().length >= 10 && !isTesting) {
                 onTestKey(provider, keyValue);
               }
             }}
@@ -796,30 +858,42 @@ export default function AiSettingsPage() {
     }
   };
 
-  const rows = aiJobs.map((j) => [
-    new Date(j.createdAt).toISOString().substring(0, 19).replace("T", " "),
-    j.provider.toUpperCase(),
-    j.modelUsed || "Default Model",
-    j.productId
-      ? j.productId === "ALL_PRODUCTS_BULK"
-        ? "All Store Products"
-        : j.productId.replace(/^gid:\/\/shopify\/Product\//, "Product #")
-      : "Single Generation",
-    j.language.toUpperCase(),
-    `${j.resultCount} Reviews`,
-    <Badge key={`st-${j.id}`} tone={j.status === "completed" ? "success" : "critical"}>
-      {j.status}
-    </Badge>,
-    <Button
-      key={`del-${j.id}`}
-      icon={DeleteIcon}
-      tone="critical"
-      size="micro"
-      onClick={() => handleDeleteJob(j.id)}
-    >
-      Delete
-    </Button>,
-  ]);
+  const rows = (aiJobs || []).map((j) => {
+    let formattedDate = "Recent";
+    try {
+      if (j.createdAt) {
+        const d = new Date(j.createdAt);
+        if (!isNaN(d.getTime())) {
+          formattedDate = d.toISOString().substring(0, 19).replace("T", " ");
+        }
+      }
+    } catch {}
+
+    return [
+      formattedDate,
+      (j.provider || "AI").toUpperCase(),
+      j.modelUsed || "Default Model",
+      j.productId
+        ? j.productId === "ALL_PRODUCTS_BULK"
+          ? "All Store Products"
+          : j.productId.replace(/^gid:\/\/shopify\/Product\//, "Product #")
+        : "Single Generation",
+      (j.language || "EN").toUpperCase(),
+      `${j.resultCount || 0} Reviews`,
+      <Badge key={`st-${j.id}`} tone={j.status === "completed" ? "success" : "critical"}>
+        {j.status || "completed"}
+      </Badge>,
+      <Button
+        key={`del-${j.id}`}
+        icon={DeleteIcon}
+        tone="critical"
+        size="micro"
+        onClick={() => handleDeleteJob(j.id)}
+      >
+        Delete
+      </Button>,
+    ];
+  });
 
   return (
     <Page fullWidth title="Multi-Provider AI Settings & Lifecycle Management">
@@ -982,6 +1056,27 @@ export default function AiSettingsPage() {
             </Card>
           </Layout.Section>
         </Layout>
+      </BlockStack>
+    </Page>
+  );
+}
+
+export function ErrorBoundary() {
+  const error: any = useRouteError();
+  console.error("AI Settings route ErrorBoundary caught:", error);
+  return (
+    <Page fullWidth title="AI Settings & Lifecycle Management">
+      <BlockStack gap="400">
+        <Banner tone="critical" title="Something went wrong loading AI Settings">
+          <p>
+            {error?.message || "An unexpected error occurred while loading this page. All your reviews and storefront data are completely safe."}
+          </p>
+        </Banner>
+        <Card padding="400">
+          <Button variant="primary" onClick={() => window.location.reload()}>
+            Reload AI Settings
+          </Button>
+        </Card>
       </BlockStack>
     </Page>
   );

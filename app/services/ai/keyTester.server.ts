@@ -19,6 +19,15 @@ export async function testAIProviderKey(
     };
   }
 
+  // Reject masked keys or keys with non-ASCII characters that would cause ByteString errors
+  if (cleanKey.includes("•") || /[^\x20-\x7E]/.test(cleanKey)) {
+    return {
+      success: false,
+      message: "Masked or invalid key characters detected. Please enter a genuine API key.",
+      provider,
+    };
+  }
+
   try {
     // 1. ANTHROPIC CLAUDE
     if (provider === "claude") {
@@ -34,6 +43,7 @@ export async function testAIProviderKey(
           max_tokens: 1,
           messages: [{ role: "user", content: "ping" }],
         }),
+        signal: AbortSignal.timeout(8000),
       });
 
       if (!res.ok) {
@@ -65,7 +75,7 @@ export async function testAIProviderKey(
     // 2. GOOGLE GEMINI
     if (provider === "gemini") {
       const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${cleanKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${cleanKey}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -73,6 +83,7 @@ export async function testAIProviderKey(
             contents: [{ parts: [{ text: "ping" }] }],
             generationConfig: { maxOutputTokens: 1 },
           }),
+          signal: AbortSignal.timeout(8000),
         }
       );
 
@@ -107,6 +118,7 @@ export async function testAIProviderKey(
           messages: [{ role: "user", content: "ping" }],
           max_tokens: 1,
         }),
+        signal: AbortSignal.timeout(8000),
       });
 
       if (!res.ok) {
