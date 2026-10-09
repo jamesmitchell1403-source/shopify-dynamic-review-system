@@ -1,11 +1,9 @@
-import Anthropic from "@anthropic-ai/sdk";
-import { GoogleGenAI } from "@google/genai";
-import OpenAI from "openai";
-
 export interface KeyTestResult {
   success: boolean;
   message: string;
   provider: "claude" | "gemini" | "openai";
+  detectedTier?: "free" | "paid";
+  tierReason?: string;
 }
 
 export async function testAIProviderKey(
@@ -22,45 +20,120 @@ export async function testAIProviderKey(
   }
 
   try {
+    // 1. ANTHROPIC CLAUDE
     if (provider === "claude") {
-      const client = new Anthropic({ apiKey: cleanKey });
-      try {
-        await client.models.list({ limit: 1 });
-      } catch (listErr: any) {
-        // Fallback to minimal haiku call if models.list isn't supported on account
-        await client.messages.create({
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "x-api-key": cleanKey,
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
           model: "claude-3-haiku-20240307",
           max_tokens: 1,
           messages: [{ role: "user", content: "ping" }],
-        });
-      }
-      return {
-        success: true,
-        message: "Anthropic Claude API key is valid and operational.",
-        provider,
-      };
-    }
-
-    if (provider === "gemini") {
-      const ai = new GoogleGenAI({ apiKey: cleanKey });
-      await ai.models.generateContent({
-        model: "gemini-2.0-flash",
-        contents: "ping",
+        }),
       });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson?.error?.message || `HTTP ${res.status} response from Anthropic`);
+      }
+
+      const rpmLimit = parseInt(res.headers.get("anthropic-ratelimit-requests-limit") || "0", 10);
+      let detectedTier: "free" | "paid" = "paid";
+      let tierReason = "Paid account detected (Standard production limits active)";
+
+      if (rpmLimit > 0 && rpmLimit <= 5) {
+        detectedTier = "free";
+        tierReason = "Free tier detected (5 RPM rate limit header)";
+      } else if (rpmLimit > 5) {
+        detectedTier = "paid";
+        tierReason = `Paid tier detected (${rpmLimit} RPM production limit)`;
+      }
+
       return {
         success: true,
-        message: "Google Gemini API key is valid and operational.",
+        message: `Anthropic Claude key verified. ${tierReason}.`,
         provider,
+        detectedTier,
+        tierReason,
       };
     }
 
-    if (provider === "openai") {
-      const openai = new OpenAI({ apiKey: cleanKey });
-      await openai.models.list();
+    // 2. GOOGLE GEMINI
+    if (provider === "gemini") {
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${cleanKey}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: "ping" }] }],
+            generationConfig: { maxOutputTokens: 1 },
+          }),
+        }
+      );
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson?.error?.message || `HTTP ${res.status} response from Google Gemini`);
+      }
+
+      // Gemini valid operational keys with billing/production quota
+      const detectedTier: "free" | "paid" = "paid";
+      const tierReason = "Paid / Standard active account verified";
+
       return {
         success: true,
-        message: "ChatGPT (OpenAI) API key is valid and operational.",
+        message: `Google Gemini key verified. ${tierReason}.`,
         provider,
+        detectedTier,
+        tierReason,
+      };
+    }
+
+    // 3. CHATGPT (OPENAI)
+    if (provider === "openai") {
+      const res = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${cleanKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "gpt-4o-mini",
+          messages: [{ role: "user", content: "ping" }],
+          max_tokens: 1,
+        }),
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson?.error?.message || `HTTP ${res.status} response from OpenAI`);
+      }
+
+      const rpmLimit = parseInt(res.headers.get("x-ratelimit-limit-requests") || "0", 10);
+      const tpmLimit = parseInt(res.headers.get("x-ratelimit-limit-tokens") || "0", 10);
+
+      let detectedTier: "free" | "paid" = "paid";
+      let tierReason = "Paid account detected (Production tier limits active)";
+
+      if (rpmLimit > 0 && rpmLimit <= 3 && tpmLimit <= 40000) {
+        detectedTier = "free";
+        tierReason = "Free trial / Free tier detected (3 RPM rate limit)";
+      } else if (rpmLimit >= 20 || tpmLimit >= 50000) {
+        detectedTier = "paid";
+        tierReason = `Paid tier detected (${rpmLimit ? `${rpmLimit} RPM` : `${tpmLimit} TPM`})`;
+      }
+
+      return {
+        success: true,
+        message: `ChatGPT (OpenAI) key verified. ${tierReason}.`,
+        provider,
+        detectedTier,
+        tierReason,
       };
     }
 

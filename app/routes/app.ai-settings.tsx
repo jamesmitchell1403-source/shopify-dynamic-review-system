@@ -302,6 +302,30 @@ export async function action({ request }: ActionFunctionArgs) {
     openaiKeyAddedAt = nowIso;
   }
 
+  let finalClaudePlan = anthropicPlanType;
+  let finalGeminiPlan = geminiPlanType;
+  let finalOpenaiPlan = openaiPlanType;
+
+  // Auto-detect tier via live API inspection if key is provided
+  if (anthropicApiKey) {
+    try {
+      const testRes = await testAIProviderKey("claude", anthropicApiKey);
+      if (testRes.success && testRes.detectedTier) finalClaudePlan = testRes.detectedTier;
+    } catch (_) {}
+  }
+  if (geminiApiKey) {
+    try {
+      const testRes = await testAIProviderKey("gemini", geminiApiKey);
+      if (testRes.success && testRes.detectedTier) finalGeminiPlan = testRes.detectedTier;
+    } catch (_) {}
+  }
+  if (openaiApiKey) {
+    try {
+      const testRes = await testAIProviderKey("openai", openaiApiKey);
+      if (testRes.success && testRes.detectedTier) finalOpenaiPlan = testRes.detectedTier;
+    } catch (_) {}
+  }
+
   // 1. Save permanently to Shopify Cloud (Shop Metafields) — survives all Render resets
   await saveShopAIKeysToShopify(admin, {
     anthropicApiKey,
@@ -310,9 +334,9 @@ export async function action({ request }: ActionFunctionArgs) {
     anthropicKeyAddedAt,
     geminiKeyAddedAt,
     openaiKeyAddedAt,
-    anthropicPlanType,
-    geminiPlanType,
-    openaiPlanType,
+    anthropicPlanType: finalClaudePlan,
+    geminiPlanType: finalGeminiPlan,
+    openaiPlanType: finalOpenaiPlan,
     expiredKeys,
     expiredNotices,
   });
@@ -329,9 +353,9 @@ export async function action({ request }: ActionFunctionArgs) {
         anthropicKeyAddedAt: anthropicKeyAddedAt ? new Date(anthropicKeyAddedAt) : null,
         geminiKeyAddedAt: geminiKeyAddedAt ? new Date(geminiKeyAddedAt) : null,
         openaiKeyAddedAt: openaiKeyAddedAt ? new Date(openaiKeyAddedAt) : null,
-        anthropicPlanType,
-        geminiPlanType,
-        openaiPlanType,
+        anthropicPlanType: finalClaudePlan,
+        geminiPlanType: finalGeminiPlan,
+        openaiPlanType: finalOpenaiPlan,
         expiredKeys: JSON.stringify(expiredKeys),
         expiredNotices: JSON.stringify(expiredNotices),
       },
@@ -343,9 +367,9 @@ export async function action({ request }: ActionFunctionArgs) {
         anthropicKeyAddedAt: anthropicKeyAddedAt ? new Date(anthropicKeyAddedAt) : null,
         geminiKeyAddedAt: geminiKeyAddedAt ? new Date(geminiKeyAddedAt) : null,
         openaiKeyAddedAt: openaiKeyAddedAt ? new Date(openaiKeyAddedAt) : null,
-        anthropicPlanType,
-        geminiPlanType,
-        openaiPlanType,
+        anthropicPlanType: finalClaudePlan,
+        geminiPlanType: finalGeminiPlan,
+        openaiPlanType: finalOpenaiPlan,
         expiredKeys: JSON.stringify(expiredKeys),
         expiredNotices: JSON.stringify(expiredNotices),
       },
@@ -553,6 +577,11 @@ function ProviderKeyBlock({
             type="password"
             value={keyValue}
             onChange={onKeyChange}
+            onBlur={() => {
+              if (keyValue && keyValue.trim().length >= 10 && !isTesting) {
+                onTestKey(provider, keyValue);
+              }
+            }}
             autoComplete="off"
             placeholder={placeholder}
             helpText={helpText}
@@ -595,7 +624,7 @@ function ProviderKeyBlock({
                   loading={isTesting}
                   onClick={() => onTestKey(provider, keyValue)}
                 >
-                  Test Connection
+                  Auto-Detect Tier & Test
                 </Button>
               </InlineStack>
             </InlineStack>
@@ -686,6 +715,14 @@ export default function AiSettingsPage() {
         ...prev,
         [res.provider]: { success: res.success, message: res.message },
       }));
+
+      // Automatically select Account Validity Tier based on live API inspection
+      if (res.detectedTier) {
+        if (res.provider === "claude") setClaudePlan(res.detectedTier);
+        if (res.provider === "gemini") setGeminiPlan(res.detectedTier);
+        if (res.provider === "openai") setOpenaiPlan(res.detectedTier);
+      }
+
       setTestingProvider(null);
     }
   }, [testFetcher.data]);
