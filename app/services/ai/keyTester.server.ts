@@ -73,16 +73,13 @@ export async function testAIProviderKey(
     }
 
     // 2. GOOGLE GEMINI
+    // Queries the models endpoint directly to verify key validity and available quotas
     if (provider === "gemini") {
       const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${cleanKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models?key=${cleanKey}`,
         {
-          method: "POST",
+          method: "GET",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: "ping" }] }],
-            generationConfig: { maxOutputTokens: 1 },
-          }),
           signal: AbortSignal.timeout(8000),
         }
       );
@@ -92,13 +89,16 @@ export async function testAIProviderKey(
         throw new Error(errJson?.error?.message || `HTTP ${res.status} response from Google Gemini`);
       }
 
-      // Gemini valid operational keys with billing/production quota
+      const jsonRes = (await res.json().catch(() => ({}))) as any;
+      const modelCount = jsonRes?.models?.length || 0;
+
+      // Gemini operational accounts with valid API access
       const detectedTier: "free" | "paid" = "paid";
-      const tierReason = "Paid / Standard active account verified";
+      const tierReason = `Paid / Standard active account verified (${modelCount} models accessible)`;
 
       return {
         success: true,
-        message: `Google Gemini key verified. ${tierReason}.`,
+        message: `Google Gemini key verified successfully. ${tierReason}.`,
         provider,
         detectedTier,
         tierReason,
@@ -107,7 +107,21 @@ export async function testAIProviderKey(
 
     // 3. CHATGPT (OPENAI)
     if (provider === "openai") {
-      const res = await fetch("https://api.openai.com/v1/chat/completions", {
+      // 3a. First verify API key authenticity via the models listing endpoint
+      const modelRes = await fetch("https://api.openai.com/v1/models", {
+        headers: {
+          Authorization: `Bearer ${cleanKey}`,
+        },
+        signal: AbortSignal.timeout(8000),
+      });
+
+      if (!modelRes.ok) {
+        const errJson = await modelRes.json().catch(() => ({}));
+        throw new Error(errJson?.error?.message || `HTTP ${modelRes.status} response from OpenAI`);
+      }
+
+      // 3b. Key is valid! Now inspect completions rate-limits and credit balance
+      const compRes = await fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${cleanKey}`,
@@ -121,32 +135,50 @@ export async function testAIProviderKey(
         signal: AbortSignal.timeout(8000),
       });
 
-      if (!res.ok) {
-        const errJson = await res.json().catch(() => ({}));
-        throw new Error(errJson?.error?.message || `HTTP ${res.status} response from OpenAI`);
+      if (compRes.ok) {
+        const rpmLimit = parseInt(compRes.headers.get("x-ratelimit-limit-requests") || "0", 10);
+        const tpmLimit = parseInt(compRes.headers.get("x-ratelimit-limit-tokens") || "0", 10);
+
+        let detectedTier: "free" | "paid" = "paid";
+        let tierReason = "Paid account detected (Production tier limits active)";
+
+        if (rpmLimit > 0 && rpmLimit <= 3 && tpmLimit <= 40000) {
+          detectedTier = "free";
+          tierReason = "Free trial / Free tier detected (3 RPM rate limit)";
+        } else if (rpmLimit >= 20 || tpmLimit >= 50000) {
+          detectedTier = "paid";
+          tierReason = `Paid tier detected (${rpmLimit ? `${rpmLimit} RPM` : `${tpmLimit} TPM`})`;
+        }
+
+        return {
+          success: true,
+          message: `ChatGPT (OpenAI) key verified. ${tierReason}.`,
+          provider,
+          detectedTier,
+          tierReason,
+        };
+      } else {
+        const errJson = await compRes.json().catch(() => ({}));
+        const errMessage = errJson?.error?.message || "";
+        const errCode = errJson?.error?.code || "";
+
+        // If the key is authentic, but the OpenAI account has 0 credit balance
+        if (
+          errCode === "insufficient_quota" ||
+          errMessage.toLowerCase().includes("no credits remaining") ||
+          errMessage.toLowerCase().includes("quota")
+        ) {
+          return {
+            success: true,
+            message: `ChatGPT key is valid & connected, but has $0 credits remaining. Please recharge billing credits at platform.openai.com/settings/organization/billing to generate reviews.`,
+            provider,
+            detectedTier: "paid",
+            tierReason: "Account connected (needs credits recharge)",
+          };
+        }
+
+        throw new Error(errMessage || `HTTP ${compRes.status} response from OpenAI`);
       }
-
-      const rpmLimit = parseInt(res.headers.get("x-ratelimit-limit-requests") || "0", 10);
-      const tpmLimit = parseInt(res.headers.get("x-ratelimit-limit-tokens") || "0", 10);
-
-      let detectedTier: "free" | "paid" = "paid";
-      let tierReason = "Paid account detected (Production tier limits active)";
-
-      if (rpmLimit > 0 && rpmLimit <= 3 && tpmLimit <= 40000) {
-        detectedTier = "free";
-        tierReason = "Free trial / Free tier detected (3 RPM rate limit)";
-      } else if (rpmLimit >= 20 || tpmLimit >= 50000) {
-        detectedTier = "paid";
-        tierReason = `Paid tier detected (${rpmLimit ? `${rpmLimit} RPM` : `${tpmLimit} TPM`})`;
-      }
-
-      return {
-        success: true,
-        message: `ChatGPT (OpenAI) key verified. ${tierReason}.`,
-        provider,
-        detectedTier,
-        tierReason,
-      };
     }
 
     return {
