@@ -53,41 +53,52 @@ export async function loader({ request }: LoaderFunctionArgs) {
     const shopifyCloudKeys = await getShopAIKeysFromShopify(admin);
     const localSettings = await db.shopSettings.findUnique({ where: { shop } });
 
+    const nowIso = new Date().toISOString();
+    const claudeKeyFinal =
+      purgeResult.activeKeys.anthropicApiKey ||
+      shopifyCloudKeys?.anthropicApiKey ||
+      localSettings?.anthropicApiKey ||
+      "";
+    const geminiKeyFinal =
+      purgeResult.activeKeys.geminiApiKey ||
+      shopifyCloudKeys?.geminiApiKey ||
+      localSettings?.geminiApiKey ||
+      "";
+    const openaiKeyFinal =
+      purgeResult.activeKeys.openaiApiKey ||
+      shopifyCloudKeys?.openaiApiKey ||
+      (localSettings as any)?.openaiApiKey ||
+      "";
+
+    const anthropicKeyAddedAt =
+      purgeResult.activeKeys.anthropicKeyAddedAt ||
+      shopifyCloudKeys?.anthropicKeyAddedAt ||
+      (localSettings?.anthropicKeyAddedAt
+        ? new Date(localSettings.anthropicKeyAddedAt).toISOString()
+        : claudeKeyFinal ? nowIso : null);
+
+    const geminiKeyAddedAt =
+      purgeResult.activeKeys.geminiKeyAddedAt ||
+      shopifyCloudKeys?.geminiKeyAddedAt ||
+      (localSettings?.geminiKeyAddedAt
+        ? new Date(localSettings.geminiKeyAddedAt).toISOString()
+        : geminiKeyFinal ? nowIso : null);
+
+    const openaiKeyAddedAt =
+      purgeResult.activeKeys.openaiKeyAddedAt ||
+      shopifyCloudKeys?.openaiKeyAddedAt ||
+      ((localSettings as any)?.openaiKeyAddedAt
+        ? new Date((localSettings as any).openaiKeyAddedAt).toISOString()
+        : openaiKeyFinal ? nowIso : null);
+
     const mergedSettings = {
       shop,
-      anthropicApiKey:
-        purgeResult.activeKeys.anthropicApiKey ||
-        shopifyCloudKeys?.anthropicApiKey ||
-        localSettings?.anthropicApiKey ||
-        "",
-      geminiApiKey:
-        purgeResult.activeKeys.geminiApiKey ||
-        shopifyCloudKeys?.geminiApiKey ||
-        localSettings?.geminiApiKey ||
-        "",
-      openaiApiKey:
-        purgeResult.activeKeys.openaiApiKey ||
-        shopifyCloudKeys?.openaiApiKey ||
-        (localSettings as any)?.openaiApiKey ||
-        "",
-      anthropicKeyAddedAt:
-        purgeResult.activeKeys.anthropicKeyAddedAt ||
-        shopifyCloudKeys?.anthropicKeyAddedAt ||
-        (localSettings?.anthropicKeyAddedAt
-          ? new Date(localSettings.anthropicKeyAddedAt).toISOString()
-          : null),
-      geminiKeyAddedAt:
-        purgeResult.activeKeys.geminiKeyAddedAt ||
-        shopifyCloudKeys?.geminiKeyAddedAt ||
-        (localSettings?.geminiKeyAddedAt
-          ? new Date(localSettings.geminiKeyAddedAt).toISOString()
-          : null),
-      openaiKeyAddedAt:
-        purgeResult.activeKeys.openaiKeyAddedAt ||
-        shopifyCloudKeys?.openaiKeyAddedAt ||
-        ((localSettings as any)?.openaiKeyAddedAt
-          ? new Date((localSettings as any).openaiKeyAddedAt).toISOString()
-          : null),
+      anthropicApiKey: claudeKeyFinal,
+      geminiApiKey: geminiKeyFinal,
+      openaiApiKey: openaiKeyFinal,
+      anthropicKeyAddedAt,
+      geminiKeyAddedAt,
+      openaiKeyAddedAt,
       anthropicPlanType:
         purgeResult.activeKeys.anthropicPlanType ||
         shopifyCloudKeys?.anthropicPlanType ||
@@ -393,7 +404,7 @@ function calculateValidityDetails(
 ) {
   const validityMonths = planType === "paid" ? 12 : 3;
 
-  if (!hasKey || !addedAt) {
+  if (!hasKey) {
     return {
       isConfigured: false,
       badgeTone: undefined as any,
@@ -409,7 +420,7 @@ function calculateValidityDetails(
     };
   }
 
-  const addedDate = new Date(addedAt);
+  const addedDate = addedAt ? new Date(addedAt) : new Date();
   const expiryDate = new Date(addedDate);
   expiryDate.setMonth(expiryDate.getMonth() + validityMonths);
 

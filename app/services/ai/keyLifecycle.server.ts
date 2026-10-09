@@ -68,21 +68,23 @@ export async function checkAndPurgeExpiredKeys(admin: any, shop: string) {
   const openaiKey =
     shopifyCloudKeys?.openaiApiKey || (localSettings as any)?.openaiApiKey || "";
 
+  const nowIso = new Date().toISOString();
+
   const anthropicAddedAt =
     shopifyCloudKeys?.anthropicKeyAddedAt ||
     (localSettings?.anthropicKeyAddedAt
       ? new Date(localSettings.anthropicKeyAddedAt).toISOString()
-      : null);
+      : anthropicKey ? nowIso : null);
   const geminiAddedAt =
     shopifyCloudKeys?.geminiKeyAddedAt ||
     (localSettings?.geminiKeyAddedAt
       ? new Date(localSettings.geminiKeyAddedAt).toISOString()
-      : null);
+      : geminiKey ? nowIso : null);
   const openaiAddedAt =
     shopifyCloudKeys?.openaiKeyAddedAt ||
     ((localSettings as any)?.openaiKeyAddedAt
       ? new Date((localSettings as any).openaiKeyAddedAt).toISOString()
-      : null);
+      : openaiKey ? nowIso : null);
 
   const anthropicPlan: "free" | "paid" =
     shopifyCloudKeys?.anthropicPlanType ||
@@ -131,8 +133,6 @@ export async function checkAndPurgeExpiredKeys(admin: any, shop: string) {
   let purgedClaude = false;
   let purgedGemini = false;
   let purgedOpenai = false;
-
-  const nowIso = new Date().toISOString();
 
   // 1. Check Anthropic Claude
   if (anthropicKey && anthropicAddedAt && isKeyExpired(anthropicAddedAt, anthropicPlan)) {
