@@ -41,6 +41,11 @@ model ShopSettings {
   anthropicKeyAddedAt   DateTime?
   geminiKeyAddedAt      DateTime?
   openaiKeyAddedAt      DateTime?
+  anthropicPlanType     String   @default("free")
+  geminiPlanType        String   @default("free")
+  openaiPlanType        String   @default("free")
+  expiredKeys           String   @default("[]")
+  expiredNotices        String   @default("{}")
   widgetPosition        String   @default("bottom-left")
   widgetLayoutStyle     String   @default("layout-1")
   widgetDelaySeconds    Int      @default(1)

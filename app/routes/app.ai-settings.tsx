@@ -1,5 +1,5 @@
 import { json, LoaderFunctionArgs, ActionFunctionArgs } from "@remix-run/node";
-import { useLoaderData, useSubmit, useNavigation, useFetcher } from "@remix-run/react";
+import { useLoaderData, useSubmit, useNavigation, useFetcher, useActionData } from "@remix-run/react";
 import { useState, useEffect } from "react";
 import {
   Page,
@@ -21,81 +21,90 @@ import {
 import { DeleteIcon, RefreshIcon } from "@shopify/polaris-icons";
 import { authenticate } from "../shopify.server";
 import db, { ensureTablesExist } from "../db.server";
-import { getShopAIKeysFromShopify, saveShopAIKeysToShopify } from "../services/shopifyMetafields.server";
+import { getShopAIKeysFromShopify, saveShopAIKeysToShopify, ExpiredKeyItem } from "../services/shopifyMetafields.server";
 import { ensureAiJobsRestored, syncAiJobsToShopify } from "../services/reviewPersistence.server";
 import { testAIProviderKey } from "../services/ai/keyTester.server";
+import {
+  checkAndPurgeExpiredKeys,
+  isKeyInExpiredHistory,
+  computeExpirationDate,
+  getValidityMonths,
+} from "../services/ai/keyLifecycle.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   await ensureTablesExist();
   const { admin, session } = await authenticate.admin(request);
   const shop = session.shop;
 
-  let settings: any = null;
   let aiJobs: any[] = [];
 
   try {
     await ensureAiJobsRestored(admin, shop);
-
-    settings = await db.shopSettings.findUnique({ where: { shop } });
-    if (!settings) {
-      settings = await db.shopSettings.create({ data: { shop } });
-    }
 
     aiJobs = await db.aiGenerationJob.findMany({
       where: { shop },
       orderBy: { createdAt: "desc" },
     });
 
-    // Read persistent API keys stored in Shopify's cloud (Shop Metafields)
+    // Run auto-expiration check: removes keys older than 3 months (free) or 12 months (paid)
+    // CRITICAL GUARANTEE: Does NOT touch or delete any review data!
+    const purgeResult = await checkAndPurgeExpiredKeys(admin, shop);
+
     const shopifyCloudKeys = await getShopAIKeysFromShopify(admin);
-
-    const anthropicApiKey =
-      shopifyCloudKeys?.anthropicApiKey || settings?.anthropicApiKey || process.env.ANTHROPIC_API_KEY || "";
-    const geminiApiKey =
-      shopifyCloudKeys?.geminiApiKey || settings?.geminiApiKey || process.env.GEMINI_API_KEY || "";
-    const openaiApiKey =
-      shopifyCloudKeys?.openaiApiKey || (settings as any)?.openaiApiKey || process.env.OPENAI_API_KEY || "";
-
-    const aiRotationDays =
-      shopifyCloudKeys?.aiRotationDays || (settings as any)?.aiRotationDays || 90;
-
-    const defaultAddedDate = settings?.updatedAt
-      ? new Date(settings.updatedAt).toISOString()
-      : new Date().toISOString();
-
-    const anthropicKeyAddedAt =
-      shopifyCloudKeys?.anthropicKeyAddedAt ||
-      (settings?.anthropicKeyAddedAt
-        ? new Date(settings.anthropicKeyAddedAt).toISOString()
-        : anthropicApiKey
-        ? defaultAddedDate
-        : null);
-
-    const geminiKeyAddedAt =
-      shopifyCloudKeys?.geminiKeyAddedAt ||
-      (settings?.geminiKeyAddedAt
-        ? new Date(settings.geminiKeyAddedAt).toISOString()
-        : geminiApiKey
-        ? defaultAddedDate
-        : null);
-
-    const openaiKeyAddedAt =
-      shopifyCloudKeys?.openaiKeyAddedAt ||
-      (settings?.openaiKeyAddedAt
-        ? new Date(settings.openaiKeyAddedAt).toISOString()
-        : openaiApiKey
-        ? defaultAddedDate
-        : null);
+    const localSettings = await db.shopSettings.findUnique({ where: { shop } });
 
     const mergedSettings = {
-      ...settings,
-      anthropicApiKey,
-      geminiApiKey,
-      openaiApiKey,
-      aiRotationDays,
-      anthropicKeyAddedAt,
-      geminiKeyAddedAt,
-      openaiKeyAddedAt,
+      shop,
+      anthropicApiKey:
+        purgeResult.activeKeys.anthropicApiKey ||
+        shopifyCloudKeys?.anthropicApiKey ||
+        localSettings?.anthropicApiKey ||
+        "",
+      geminiApiKey:
+        purgeResult.activeKeys.geminiApiKey ||
+        shopifyCloudKeys?.geminiApiKey ||
+        localSettings?.geminiApiKey ||
+        "",
+      openaiApiKey:
+        purgeResult.activeKeys.openaiApiKey ||
+        shopifyCloudKeys?.openaiApiKey ||
+        (localSettings as any)?.openaiApiKey ||
+        "",
+      anthropicKeyAddedAt:
+        purgeResult.activeKeys.anthropicKeyAddedAt ||
+        shopifyCloudKeys?.anthropicKeyAddedAt ||
+        (localSettings?.anthropicKeyAddedAt
+          ? new Date(localSettings.anthropicKeyAddedAt).toISOString()
+          : null),
+      geminiKeyAddedAt:
+        purgeResult.activeKeys.geminiKeyAddedAt ||
+        shopifyCloudKeys?.geminiKeyAddedAt ||
+        (localSettings?.geminiKeyAddedAt
+          ? new Date(localSettings.geminiKeyAddedAt).toISOString()
+          : null),
+      openaiKeyAddedAt:
+        purgeResult.activeKeys.openaiKeyAddedAt ||
+        shopifyCloudKeys?.openaiKeyAddedAt ||
+        ((localSettings as any)?.openaiKeyAddedAt
+          ? new Date((localSettings as any).openaiKeyAddedAt).toISOString()
+          : null),
+      anthropicPlanType:
+        purgeResult.activeKeys.anthropicPlanType ||
+        shopifyCloudKeys?.anthropicPlanType ||
+        (localSettings as any)?.anthropicPlanType ||
+        "free",
+      geminiPlanType:
+        purgeResult.activeKeys.geminiPlanType ||
+        shopifyCloudKeys?.geminiPlanType ||
+        (localSettings as any)?.geminiPlanType ||
+        "free",
+      openaiPlanType:
+        purgeResult.activeKeys.openaiPlanType ||
+        shopifyCloudKeys?.openaiPlanType ||
+        (localSettings as any)?.openaiPlanType ||
+        "free",
+      expiredKeys: purgeResult.expiredKeys || [],
+      expiredNotices: purgeResult.expiredNotices || {},
     };
 
     return json({ settings: mergedSettings, aiJobs });
@@ -104,13 +113,17 @@ export async function loader({ request }: LoaderFunctionArgs) {
     const shopifyCloudKeys = await getShopAIKeysFromShopify(admin);
     const fallbackSettings = {
       shop,
-      anthropicApiKey: shopifyCloudKeys?.anthropicApiKey || process.env.ANTHROPIC_API_KEY || "",
-      geminiApiKey: shopifyCloudKeys?.geminiApiKey || process.env.GEMINI_API_KEY || "",
-      openaiApiKey: shopifyCloudKeys?.openaiApiKey || process.env.OPENAI_API_KEY || "",
-      aiRotationDays: shopifyCloudKeys?.aiRotationDays || 90,
+      anthropicApiKey: shopifyCloudKeys?.anthropicApiKey || "",
+      geminiApiKey: shopifyCloudKeys?.geminiApiKey || "",
+      openaiApiKey: shopifyCloudKeys?.openaiApiKey || "",
       anthropicKeyAddedAt: shopifyCloudKeys?.anthropicKeyAddedAt || null,
       geminiKeyAddedAt: shopifyCloudKeys?.geminiKeyAddedAt || null,
       openaiKeyAddedAt: shopifyCloudKeys?.openaiKeyAddedAt || null,
+      anthropicPlanType: shopifyCloudKeys?.anthropicPlanType || "free",
+      geminiPlanType: shopifyCloudKeys?.geminiPlanType || "free",
+      openaiPlanType: shopifyCloudKeys?.openaiPlanType || "free",
+      expiredKeys: shopifyCloudKeys?.expiredKeys || [],
+      expiredNotices: shopifyCloudKeys?.expiredNotices || {},
     };
     return json({ settings: fallbackSettings, aiJobs: [] });
   }
@@ -145,7 +158,7 @@ export async function action({ request }: ActionFunctionArgs) {
     return json({ success: true, message: "All audit history records cleared." });
   }
 
-  // 3. RESET ROTATION TIMER FOR A SPECIFIC PROVIDER
+  // 3. RESET TIMER FOR A SPECIFIC PROVIDER
   if (intent === "resetTimer") {
     const provider = formData.get("provider") as string;
     const nowIso = new Date().toISOString();
@@ -169,7 +182,7 @@ export async function action({ request }: ActionFunctionArgs) {
       console.warn("DB update error on resetTimer:", dbErr);
     }
 
-    return json({ success: true, message: `Rotation timer reset for ${provider.toUpperCase()}.` });
+    return json({ success: true, message: `Validity timer reset for ${provider.toUpperCase()}.` });
   }
 
   // 4. TEST PROVIDER KEY LIVE
@@ -180,12 +193,14 @@ export async function action({ request }: ActionFunctionArgs) {
     return json({ testResult });
   }
 
-  // 5. DEFAULT ACTION: Save API keys & rotation policy
+  // 5. DEFAULT ACTION: SAVE API KEYS & ACCOUNT VALIDITY TIERS
   const anthropicApiKeyRaw = formData.get("anthropicApiKey") as string;
   const geminiApiKeyRaw = formData.get("geminiApiKey") as string;
   const openaiApiKeyRaw = formData.get("openaiApiKey") as string;
-  const aiRotationDaysRaw = formData.get("aiRotationDays") as string;
-  const aiRotationDays = aiRotationDaysRaw ? parseInt(aiRotationDaysRaw, 10) : 90;
+
+  const anthropicPlanType = ((formData.get("anthropicPlanType") as string) || "free") as "free" | "paid";
+  const geminiPlanType = ((formData.get("geminiPlanType") as string) || "free") as "free" | "paid";
+  const openaiPlanType = ((formData.get("openaiPlanType") as string) || "free") as "free" | "paid";
 
   const anthropicApiKey =
     anthropicApiKeyRaw !== null && anthropicApiKeyRaw !== undefined ? anthropicApiKeyRaw.trim() : null;
@@ -194,9 +209,42 @@ export async function action({ request }: ActionFunctionArgs) {
   const openaiApiKey =
     openaiApiKeyRaw !== null && openaiApiKeyRaw !== undefined ? openaiApiKeyRaw.trim() : null;
 
-  // Retrieve current existing keys to know if any were added/updated
+  // Retrieve current existing keys and expired keys blacklist
   const existingCloud = await getShopAIKeysFromShopify(admin);
   const existingDb = await db.shopSettings.findUnique({ where: { shop } });
+
+  let expiredKeys: ExpiredKeyItem[] = [...(existingCloud?.expiredKeys || [])];
+  try {
+    if ((existingDb as any)?.expiredKeys) {
+      const parsed = JSON.parse((existingDb as any).expiredKeys);
+      for (const item of parsed) {
+        if (!expiredKeys.some((e) => e.provider === item.provider && e.key === item.key)) {
+          expiredKeys.push(item);
+        }
+      }
+    }
+  } catch (_) {}
+
+  // ENFORCE REQUIREMENT: Check if user is attempting to re-add an expired API key
+  const validationErrors: { [provider: string]: string } = {};
+
+  if (anthropicApiKey && isKeyInExpiredHistory(anthropicApiKey, "claude", expiredKeys)) {
+    validationErrors.claude = "You are trying to add an expired API key. Please provide a new API key.";
+  }
+  if (geminiApiKey && isKeyInExpiredHistory(geminiApiKey, "gemini", expiredKeys)) {
+    validationErrors.gemini = "You are trying to add an expired API key. Please provide a new API key.";
+  }
+  if (openaiApiKey && isKeyInExpiredHistory(openaiApiKey, "openai", expiredKeys)) {
+    validationErrors.openai = "You are trying to add an expired API key. Please provide a new API key.";
+  }
+
+  if (Object.keys(validationErrors).length > 0) {
+    return json({
+      success: false,
+      validationErrors,
+      message: "One or more API keys have expired previously and cannot be reused. Please provide a new API key.",
+    });
+  }
 
   const oldAnthropic = existingCloud?.anthropicApiKey ?? existingDb?.anthropicApiKey ?? "";
   const oldGemini = existingCloud?.geminiApiKey ?? existingDb?.geminiApiKey ?? "";
@@ -211,9 +259,14 @@ export async function action({ request }: ActionFunctionArgs) {
   let openaiKeyAddedAt =
     existingCloud?.openaiKeyAddedAt ?? (existingDb as any)?.openaiKeyAddedAt ?? null;
 
-  // Update timestamps if key was changed or newly set
+  let expiredNotices: { [k: string]: string | null } = {
+    ...(existingCloud?.expiredNotices || {}),
+  };
+
+  // Update timestamps when key changes or is newly set, and clear notices
   if (anthropicApiKey && anthropicApiKey !== oldAnthropic) {
     anthropicKeyAddedAt = nowIso;
+    expiredNotices.claude = null;
   } else if (!anthropicApiKey) {
     anthropicKeyAddedAt = null;
   } else if (anthropicApiKey && !anthropicKeyAddedAt) {
@@ -222,6 +275,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
   if (geminiApiKey && geminiApiKey !== oldGemini) {
     geminiKeyAddedAt = nowIso;
+    expiredNotices.gemini = null;
   } else if (!geminiApiKey) {
     geminiKeyAddedAt = null;
   } else if (geminiApiKey && !geminiKeyAddedAt) {
@@ -230,6 +284,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
   if (openaiApiKey && openaiApiKey !== oldOpenai) {
     openaiKeyAddedAt = nowIso;
+    expiredNotices.openai = null;
   } else if (!openaiApiKey) {
     openaiKeyAddedAt = null;
   } else if (openaiApiKey && !openaiKeyAddedAt) {
@@ -244,10 +299,15 @@ export async function action({ request }: ActionFunctionArgs) {
     anthropicKeyAddedAt,
     geminiKeyAddedAt,
     openaiKeyAddedAt,
-    aiRotationDays,
+    anthropicPlanType,
+    geminiPlanType,
+    openaiPlanType,
+    expiredKeys,
+    expiredNotices,
   });
 
   // 2. Also update local DB
+  // CRITICAL GUARANTEE: Does NOT delete or alter any records in Review table!
   try {
     await db.shopSettings.upsert({
       where: { shop },
@@ -255,20 +315,28 @@ export async function action({ request }: ActionFunctionArgs) {
         anthropicApiKey,
         geminiApiKey,
         openaiApiKey,
-        aiRotationDays,
         anthropicKeyAddedAt: anthropicKeyAddedAt ? new Date(anthropicKeyAddedAt) : null,
         geminiKeyAddedAt: geminiKeyAddedAt ? new Date(geminiKeyAddedAt) : null,
         openaiKeyAddedAt: openaiKeyAddedAt ? new Date(openaiKeyAddedAt) : null,
+        anthropicPlanType,
+        geminiPlanType,
+        openaiPlanType,
+        expiredKeys: JSON.stringify(expiredKeys),
+        expiredNotices: JSON.stringify(expiredNotices),
       },
       create: {
         shop,
         anthropicApiKey,
         geminiApiKey,
         openaiApiKey,
-        aiRotationDays,
         anthropicKeyAddedAt: anthropicKeyAddedAt ? new Date(anthropicKeyAddedAt) : null,
         geminiKeyAddedAt: geminiKeyAddedAt ? new Date(geminiKeyAddedAt) : null,
         openaiKeyAddedAt: openaiKeyAddedAt ? new Date(openaiKeyAddedAt) : null,
+        anthropicPlanType,
+        geminiPlanType,
+        openaiPlanType,
+        expiredKeys: JSON.stringify(expiredKeys),
+        expiredNotices: JSON.stringify(expiredNotices),
       },
     });
   } catch (err) {
@@ -277,28 +345,36 @@ export async function action({ request }: ActionFunctionArgs) {
       const existing = await db.$queryRawUnsafe<any[]>(`SELECT id FROM ShopSettings WHERE shop = ?`, shop);
       if (existing && existing.length > 0) {
         await db.$executeRawUnsafe(
-          `UPDATE ShopSettings SET anthropicApiKey = ?, geminiApiKey = ?, openaiApiKey = ?, aiRotationDays = ?, anthropicKeyAddedAt = ?, geminiKeyAddedAt = ?, openaiKeyAddedAt = ? WHERE shop = ?`,
+          `UPDATE ShopSettings SET anthropicApiKey = ?, geminiApiKey = ?, openaiApiKey = ?, anthropicPlanType = ?, geminiPlanType = ?, openaiPlanType = ?, anthropicKeyAddedAt = ?, geminiKeyAddedAt = ?, openaiKeyAddedAt = ?, expiredKeys = ?, expiredNotices = ? WHERE shop = ?`,
           anthropicApiKey,
           geminiApiKey,
           openaiApiKey,
-          aiRotationDays,
+          anthropicPlanType,
+          geminiPlanType,
+          openaiPlanType,
           anthropicKeyAddedAt,
           geminiKeyAddedAt,
           openaiKeyAddedAt,
+          JSON.stringify(expiredKeys),
+          JSON.stringify(expiredNotices),
           shop
         );
       } else {
         await db.$executeRawUnsafe(
-          `INSERT INTO ShopSettings (id, shop, anthropicApiKey, geminiApiKey, openaiApiKey, aiRotationDays, anthropicKeyAddedAt, geminiKeyAddedAt, openaiKeyAddedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO ShopSettings (id, shop, anthropicApiKey, geminiApiKey, openaiApiKey, anthropicPlanType, geminiPlanType, openaiPlanType, anthropicKeyAddedAt, geminiKeyAddedAt, openaiKeyAddedAt, expiredKeys, expiredNotices) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           `set_${Date.now()}`,
           shop,
           anthropicApiKey,
           geminiApiKey,
           openaiApiKey,
-          aiRotationDays,
+          anthropicPlanType,
+          geminiPlanType,
+          openaiPlanType,
           anthropicKeyAddedAt,
           geminiKeyAddedAt,
-          openaiKeyAddedAt
+          openaiKeyAddedAt,
+          JSON.stringify(expiredKeys),
+          JSON.stringify(expiredNotices)
         );
       }
     } catch (sqlErr) {
@@ -306,11 +382,17 @@ export async function action({ request }: ActionFunctionArgs) {
     }
   }
 
-  return json({ success: true, message: "API keys and rotation settings saved successfully." });
+  return json({ success: true, message: "API keys and validity preferences saved successfully." });
 }
 
-// Helper to calculate countdown, expiration, and percentage elapsed
-function calculateRotation(addedAt: string | null | undefined, hasKey: boolean, rotationDays: number) {
+// Client-side lifecycle calculation
+function calculateValidityDetails(
+  addedAt: string | null | undefined,
+  hasKey: boolean,
+  planType: "free" | "paid"
+) {
+  const validityMonths = planType === "paid" ? 12 : 3;
+
   if (!hasKey || !addedAt) {
     return {
       isConfigured: false,
@@ -323,28 +405,34 @@ function calculateRotation(addedAt: string | null | undefined, hasKey: boolean, 
       progressPercent: 0,
       isExpired: false,
       isExpiringSoon: false,
+      validityMonths,
     };
   }
 
   const addedDate = new Date(addedAt);
+  const expiryDate = new Date(addedDate);
+  expiryDate.setMonth(expiryDate.getMonth() + validityMonths);
+
   const now = new Date();
+  const msRemaining = expiryDate.getTime() - now.getTime();
+  const daysRemaining = Math.max(0, Math.ceil(msRemaining / (1000 * 60 * 60 * 24)));
+
+  const totalDurationMs = Math.max(1, expiryDate.getTime() - addedDate.getTime());
   const msElapsed = Math.max(0, now.getTime() - addedDate.getTime());
-  const daysElapsed = Math.floor(msElapsed / (1000 * 60 * 60 * 24));
-  const daysRemaining = rotationDays - daysElapsed;
-  const expiryDate = new Date(addedDate.getTime() + rotationDays * 24 * 60 * 60 * 1000);
+  const progressPercent = Math.min(
+    100,
+    Math.max(0, Math.round((msElapsed / totalDurationMs) * 100))
+  );
 
-  const progressPercent = Math.min(100, Math.max(0, Math.round((daysElapsed / rotationDays) * 100)));
-
-  const isExpired = daysRemaining <= 0;
+  const isExpired = msRemaining <= 0;
   const isExpiringSoon = daysRemaining > 0 && daysRemaining <= 14;
 
   let badgeTone: "success" | "warning" | "critical" = "success";
-  let badgeText = `${daysRemaining} days remaining`;
+  let badgeText = `${daysRemaining} days remaining (${validityMonths} Mo. Plan)`;
 
   if (isExpired) {
     badgeTone = "critical";
-    const daysOverdue = Math.abs(daysRemaining);
-    badgeText = daysOverdue === 0 ? "Rotation Due Today" : `Rotation Overdue (${daysOverdue}d)`;
+    badgeText = "Expired & Removed";
   } else if (isExpiringSoon) {
     badgeTone = "warning";
     badgeText = `Due in ${daysRemaining} days`;
@@ -372,6 +460,7 @@ function calculateRotation(addedAt: string | null | undefined, hasKey: boolean, 
     progressPercent,
     isExpired,
     isExpiringSoon,
+    validityMonths,
   };
 }
 
@@ -382,7 +471,11 @@ function ProviderKeyBlock({
   onKeyChange,
   placeholder,
   helpText,
-  rotation,
+  planType,
+  onPlanChange,
+  validity,
+  expiredNotice,
+  validationError,
   onResetTimer,
   onTestKey,
   isTesting,
@@ -394,25 +487,70 @@ function ProviderKeyBlock({
   onKeyChange: (val: string) => void;
   placeholder: string;
   helpText: string;
-  rotation: ReturnType<typeof calculateRotation>;
+  planType: "free" | "paid";
+  onPlanChange: (val: "free" | "paid") => void;
+  validity: ReturnType<typeof calculateValidityDetails>;
+  expiredNotice?: string | null;
+  validationError?: string | null;
   onResetTimer: (p: "claude" | "gemini" | "openai") => void;
   onTestKey: (p: "claude" | "gemini" | "openai", k: string) => void;
   isTesting: boolean;
   testResult?: { success: boolean; message: string };
 }) {
   return (
-    <BlockStack gap="200">
-      <TextField
-        label={label}
-        type="password"
-        value={keyValue}
-        onChange={onKeyChange}
-        autoComplete="off"
-        placeholder={placeholder}
-        helpText={helpText}
-      />
+    <BlockStack gap="300">
+      {/* 1. Rejection Error Banner (if user tries to add an expired key) */}
+      {validationError && (
+        <Banner tone="critical" title="Expired Key Rejected">
+          <p>{validationError}</p>
+        </Banner>
+      )}
 
-      {rotation.isConfigured ? (
+      {/* 2. Auto-Removal Message (if previous key expired after 3 or 12 months) */}
+      {expiredNotice && !keyValue && (
+        <Banner tone="warning" title="API Key Expired & Removed">
+          <p>{expiredNotice}</p>
+        </Banner>
+      )}
+
+      <InlineStack align="space-between" blockAlign="center">
+        <Text as="h3" variant="headingSm" fontWeight="semibold">
+          {label}
+        </Text>
+        <Badge tone={validity.isConfigured ? validity.badgeTone : undefined}>
+          {validity.badgeText}
+        </Badge>
+      </InlineStack>
+
+      <InlineStack gap="300" blockAlign="end">
+        <div style={{ flex: "0 0 220px" }}>
+          <Select
+            label="Account Validity Tier"
+            options={[
+              { label: "Free Account (3-Month Validity)", value: "free" },
+              { label: "Paid Account (12-Month Validity)", value: "paid" },
+            ]}
+            value={planType}
+            onChange={(val) => onPlanChange(val as "free" | "paid")}
+            helpText={planType === "free" ? "Auto-expires after 3 months" : "Auto-expires after 12 months"}
+          />
+        </div>
+
+        <div style={{ flex: "1 1 auto" }}>
+          <TextField
+            label="API Key"
+            type="password"
+            value={keyValue}
+            onChange={onKeyChange}
+            autoComplete="off"
+            placeholder={placeholder}
+            helpText={helpText}
+            error={Boolean(validationError)}
+          />
+        </div>
+      </InlineStack>
+
+      {validity.isConfigured ? (
         <Box
           padding="300"
           background="bg-surface-secondary"
@@ -424,9 +562,11 @@ function ProviderKeyBlock({
             <InlineStack align="space-between" blockAlign="center">
               <InlineStack gap="200" blockAlign="center">
                 <Text as="span" variant="bodySm" fontWeight="semibold">
-                  Rotation Status:
+                  Validity Window:
                 </Text>
-                <Badge tone={rotation.badgeTone}>{rotation.badgeText}</Badge>
+                <Badge tone={planType === "paid" ? "info" : "attention"}>
+                  {planType === "paid" ? "Paid Account (12 Months)" : "Free Account (3 Months)"}
+                </Badge>
               </InlineStack>
 
               <InlineStack gap="100">
@@ -450,11 +590,11 @@ function ProviderKeyBlock({
             </InlineStack>
 
             <ProgressBar
-              progress={rotation.progressPercent}
+              progress={validity.progressPercent}
               tone={
-                rotation.isExpired
+                validity.isExpired
                   ? "critical"
-                  : rotation.isExpiringSoon
+                  : validity.isExpiringSoon
                   ? "highlight"
                   : "success"
               }
@@ -463,20 +603,20 @@ function ProviderKeyBlock({
 
             <InlineStack align="space-between" blockAlign="center">
               <Text as="span" variant="bodyXs" tone="subdued">
-                Configured: <strong>{rotation.addedDateFormatted}</strong>
+                Added: <strong>{validity.addedDateFormatted}</strong>
               </Text>
               <Text
                 as="span"
                 variant="bodyXs"
                 tone={
-                  rotation.isExpired
+                  validity.isExpired
                     ? "critical"
-                    : rotation.isExpiringSoon
+                    : validity.isExpiringSoon
                     ? "caution"
                     : "subdued"
                 }
               >
-                Next Due: <strong>{rotation.expiryDateFormatted}</strong>
+                Expires: <strong>{validity.expiryDateFormatted}</strong>
               </Text>
             </InlineStack>
 
@@ -488,12 +628,15 @@ function ProviderKeyBlock({
           </BlockStack>
         </Box>
       ) : (
-        <InlineStack align="space-between" blockAlign="center">
-          <Badge tone={undefined}>Not Configured</Badge>
+        <Box
+          padding="200"
+          background="bg-surface-tertiary"
+          borderRadius="200"
+        >
           <Text as="span" variant="bodyXs" tone="subdued">
-            Enter key to activate rotation tracking
+            Enter your API key and choose Free (3 Months) or Paid (12 Months) to activate automatic expiration tracking.
           </Text>
-        </InlineStack>
+        </Box>
       )}
     </BlockStack>
   );
@@ -503,25 +646,21 @@ export default function AiSettingsPage() {
   const { settings, aiJobs } = useLoaderData<typeof loader>();
   const submit = useSubmit();
   const navigation = useNavigation();
+  const actionData = useActionData<any>();
   const testFetcher = useFetcher<any>();
   const resetFetcher = useFetcher<any>();
 
   const [claudeKey, setClaudeKey] = useState<string>(settings?.anthropicApiKey || "");
   const [geminiKey, setGeminiKey] = useState<string>(settings?.geminiApiKey || "");
-  const [openaiKey, setOpenaiKey] = useState<string>((settings as any)?.openaiApiKey || "");
-  const [rotationDays, setRotationDays] = useState<string>(
-    String((settings as any)?.aiRotationDays || 90)
-  );
+  const [openaiKey, setOpenaiKey] = useState<string>(settings?.openaiApiKey || "");
 
-  const [claudeAddedAt, setClaudeAddedAt] = useState<string | null>(
-    (settings as any)?.anthropicKeyAddedAt || null
-  );
-  const [geminiAddedAt, setGeminiAddedAt] = useState<string | null>(
-    (settings as any)?.geminiKeyAddedAt || null
-  );
-  const [openaiAddedAt, setOpenaiAddedAt] = useState<string | null>(
-    (settings as any)?.openaiKeyAddedAt || null
-  );
+  const [claudePlan, setClaudePlan] = useState<"free" | "paid">(settings?.anthropicPlanType || "free");
+  const [geminiPlan, setGeminiPlan] = useState<"free" | "paid">(settings?.geminiPlanType || "free");
+  const [openaiPlan, setOpenaiPlan] = useState<"free" | "paid">(settings?.openaiPlanType || "free");
+
+  const [claudeAddedAt, setClaudeAddedAt] = useState<string | null>(settings?.anthropicKeyAddedAt || null);
+  const [geminiAddedAt, setGeminiAddedAt] = useState<string | null>(settings?.geminiKeyAddedAt || null);
+  const [openaiAddedAt, setOpenaiAddedAt] = useState<string | null>(settings?.openaiKeyAddedAt || null);
 
   const [savedSuccess, setSavedSuccess] = useState<boolean>(false);
   const [testResults, setTestResults] = useState<{
@@ -540,41 +679,21 @@ export default function AiSettingsPage() {
     }
   }, [testFetcher.data]);
 
-  const claudeRotation = calculateRotation(
+  const claudeValidity = calculateValidityDetails(
     claudeAddedAt,
     Boolean(claudeKey && claudeKey.trim().length > 0),
-    Number(rotationDays)
+    claudePlan
   );
-  const geminiRotation = calculateRotation(
+  const geminiValidity = calculateValidityDetails(
     geminiAddedAt,
     Boolean(geminiKey && geminiKey.trim().length > 0),
-    Number(rotationDays)
+    geminiPlan
   );
-  const openaiRotation = calculateRotation(
+  const openaiValidity = calculateValidityDetails(
     openaiAddedAt,
     Boolean(openaiKey && openaiKey.trim().length > 0),
-    Number(rotationDays)
+    openaiPlan
   );
-
-  // Compute overall rotation alert warnings
-  const overdueProviders: string[] = [];
-  const expiringSoonProviders: string[] = [];
-
-  if (claudeRotation.isConfigured) {
-    if (claudeRotation.isExpired) overdueProviders.push("Anthropic Claude");
-    else if (claudeRotation.isExpiringSoon)
-      expiringSoonProviders.push(`Anthropic Claude (${claudeRotation.daysRemaining}d left)`);
-  }
-  if (geminiRotation.isConfigured) {
-    if (geminiRotation.isExpired) overdueProviders.push("Google Gemini");
-    else if (geminiRotation.isExpiringSoon)
-      expiringSoonProviders.push(`Google Gemini (${geminiRotation.daysRemaining}d left)`);
-  }
-  if (openaiRotation.isConfigured) {
-    if (openaiRotation.isExpired) overdueProviders.push("ChatGPT (OpenAI)");
-    else if (openaiRotation.isExpiringSoon)
-      expiringSoonProviders.push(`ChatGPT (OpenAI) (${openaiRotation.daysRemaining}d left)`);
-  }
 
   const handleSave = () => {
     const fd = new FormData();
@@ -582,7 +701,9 @@ export default function AiSettingsPage() {
     fd.append("anthropicApiKey", claudeKey);
     fd.append("geminiApiKey", geminiKey);
     fd.append("openaiApiKey", openaiKey);
-    fd.append("aiRotationDays", rotationDays);
+    fd.append("anthropicPlanType", claudePlan);
+    fd.append("geminiPlanType", geminiPlan);
+    fd.append("openaiPlanType", openaiPlan);
 
     submit(fd, { method: "post" });
     setSavedSuccess(true);
@@ -653,76 +774,68 @@ export default function AiSettingsPage() {
   ]);
 
   return (
-    <Page fullWidth title="Multi-Provider AI Settings & Audit Logs">
+    <Page fullWidth title="Multi-Provider AI Settings & Lifecycle Management">
       <BlockStack gap="500">
-        <Banner title="Provider-Agnostic AI Service Layer & Lifecycle Tracking" tone="info">
+        <Banner title="Multi-Provider AI Model Configuration & Expiration Tracking" tone="info">
           <p>
             Configure <strong>Anthropic Claude</strong>, <strong>Google Gemini</strong>, and <strong>ChatGPT (OpenAI)</strong> API keys.
-            The system automatically tracks expiration and rotation cycles to ensure continuous, uninterrupted review generation.
+            Free account keys automatically expire after <strong>3 months</strong>, and paid account keys expire after <strong>12 months</strong>.
+            Expired keys are automatically purged to keep your system clean, and cannot be reused.
           </p>
         </Banner>
 
-        {/* Dynamic Rotation Alerts */}
-        {overdueProviders.length > 0 && (
-          <Banner tone="critical" title="Action Required: AI API Key Rotation Overdue">
+        {/* DATA INTEGRITY GUARANTEE BANNER */}
+        <Banner tone="success" title="Review Data Protection Guarantee">
+          <p>
+            All customer reviews, AI-generated reviews, published ratings, and storefront displays are <strong>permanently protected</strong>.
+            API key expiration affects <em>only</em> review generation for that model until a new key is added. Review data is <strong>never</strong> deleted or altered by key expiration.
+          </p>
+        </Banner>
+
+        {actionData?.validationErrors && (
+          <Banner tone="critical" title="Action Required: Expired Key Rejected">
             <p>
-              The following configured API keys have passed their <strong>{rotationDays}-day rotation policy</strong>:{" "}
-              <strong>{overdueProviders.join(", ")}</strong>. Generating new keys in your provider developer consoles maintains account security and prevents service interruptions.
+              {actionData.message || "You are trying to add an expired API key. Please provide a new API key."}
             </p>
           </Banner>
         )}
 
-        {expiringSoonProviders.length > 0 && overdueProviders.length === 0 && (
-          <Banner tone="warning" title="Upcoming AI Key Rotation Notice">
-            <p>
-              The following AI keys are approaching their rotation schedule:{" "}
-              <strong>{expiringSoonProviders.join(", ")}</strong>. Please prepare replacement keys soon.
-            </p>
-          </Banner>
-        )}
-
-        {savedSuccess && (
+        {savedSuccess && !actionData?.validationErrors && (
           <Banner tone="success" title="AI Settings Updated">
-            <p>API keys and rotation preferences saved successfully.</p>
+            <p>API keys and validity preferences saved successfully.</p>
           </Banner>
         )}
 
         <Layout>
           <Layout.Section variant="oneHalf">
             <Card padding="500">
-              <BlockStack gap="400">
+              <BlockStack gap="500">
                 <InlineStack align="space-between" blockAlign="center">
                   <Text as="h2" variant="headingMd">
                     AI Provider Configuration
                   </Text>
-                  <Badge tone="info">Automatic Rotation Active</Badge>
+                  <Badge tone="info">3-Month Free / 12-Month Paid</Badge>
                 </InlineStack>
 
-                <Select
-                  label="Rotation Reminder Policy"
-                  options={[
-                    { label: "30 Days (Monthly — Strict Security)", value: "30" },
-                    { label: "60 Days (Every 2 Months)", value: "60" },
-                    { label: "90 Days (Quarterly — Recommended)", value: "90" },
-                    { label: "180 Days (Semi-Annual)", value: "180" },
-                    { label: "365 Days (Annual)", value: "365" },
-                  ]}
-                  value={rotationDays}
-                  onChange={setRotationDays}
-                  helpText="Sets the reminder schedule to rotate your AI keys. The system counts down days remaining and warns you before expiration."
-                />
+                <Text as="p" tone="subdued">
+                  Select your account type for each model to track its expiration period (3 months for Free accounts, 12 months for Paid accounts).
+                </Text>
 
                 <Divider />
 
                 {/* Anthropic Claude */}
                 <ProviderKeyBlock
-                  label="Anthropic Claude API Key"
+                  label="Anthropic Claude"
                   provider="claude"
                   keyValue={claudeKey}
                   onKeyChange={setClaudeKey}
                   placeholder="sk-ant-..."
                   helpText="Required for Claude vision & text review generation."
-                  rotation={claudeRotation}
+                  planType={claudePlan}
+                  onPlanChange={setClaudePlan}
+                  validity={claudeValidity}
+                  expiredNotice={settings?.expiredNotices?.claude}
+                  validationError={actionData?.validationErrors?.claude}
                   onResetTimer={handleResetTimer}
                   onTestKey={handleTestKey}
                   isTesting={testingProvider === "claude"}
@@ -733,13 +846,17 @@ export default function AiSettingsPage() {
 
                 {/* Google Gemini */}
                 <ProviderKeyBlock
-                  label="Google Gemini API Key"
+                  label="Google Gemini"
                   provider="gemini"
                   keyValue={geminiKey}
                   onKeyChange={setGeminiKey}
                   placeholder="AIzaSy..."
                   helpText="Required for Gemini multimodal & auto-tagging."
-                  rotation={geminiRotation}
+                  planType={geminiPlan}
+                  onPlanChange={setGeminiPlan}
+                  validity={geminiValidity}
+                  expiredNotice={settings?.expiredNotices?.gemini}
+                  validationError={actionData?.validationErrors?.gemini}
                   onResetTimer={handleResetTimer}
                   onTestKey={handleTestKey}
                   isTesting={testingProvider === "gemini"}
@@ -750,13 +867,17 @@ export default function AiSettingsPage() {
 
                 {/* ChatGPT (OpenAI) */}
                 <ProviderKeyBlock
-                  label="ChatGPT (OpenAI) API Key"
+                  label="ChatGPT (OpenAI)"
                   provider="openai"
                   keyValue={openaiKey}
                   onKeyChange={setOpenaiKey}
                   placeholder="sk-proj-..."
                   helpText="Required for ChatGPT (gpt-4o / gpt-4o-mini) review generation."
-                  rotation={openaiRotation}
+                  planType={openaiPlan}
+                  onPlanChange={setOpenaiPlan}
+                  validity={openaiValidity}
+                  expiredNotice={settings?.expiredNotices?.openai}
+                  validationError={actionData?.validationErrors?.openai}
                   onResetTimer={handleResetTimer}
                   onTestKey={handleTestKey}
                   isTesting={testingProvider === "openai"}
