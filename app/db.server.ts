@@ -46,15 +46,6 @@ export async function ensureTablesExist() {
             anthropicApiKey TEXT,
             geminiApiKey TEXT,
             openaiApiKey TEXT,
-            aiRotationDays INTEGER DEFAULT 90,
-            anthropicKeyAddedAt DATETIME,
-            geminiKeyAddedAt DATETIME,
-            openaiKeyAddedAt DATETIME,
-            anthropicPlanType TEXT DEFAULT 'free',
-            geminiPlanType TEXT DEFAULT 'free',
-            openaiPlanType TEXT DEFAULT 'free',
-            expiredKeys TEXT DEFAULT '[]',
-            expiredNotices TEXT DEFAULT '{}',
             widgetPosition TEXT DEFAULT 'bottom-left',
             widgetLayoutStyle TEXT DEFAULT 'layout-1',
             widgetDelaySeconds INTEGER DEFAULT 4,
@@ -70,33 +61,6 @@ export async function ensureTablesExist() {
 
         try {
           await prisma.$executeRawUnsafe(`ALTER TABLE ShopSettings ADD COLUMN openaiApiKey TEXT;`);
-        } catch (_) {}
-        try {
-          await prisma.$executeRawUnsafe(`ALTER TABLE ShopSettings ADD COLUMN aiRotationDays INTEGER DEFAULT 90;`);
-        } catch (_) {}
-        try {
-          await prisma.$executeRawUnsafe(`ALTER TABLE ShopSettings ADD COLUMN anthropicKeyAddedAt DATETIME;`);
-        } catch (_) {}
-        try {
-          await prisma.$executeRawUnsafe(`ALTER TABLE ShopSettings ADD COLUMN geminiKeyAddedAt DATETIME;`);
-        } catch (_) {}
-        try {
-          await prisma.$executeRawUnsafe(`ALTER TABLE ShopSettings ADD COLUMN openaiKeyAddedAt DATETIME;`);
-        } catch (_) {}
-        try {
-          await prisma.$executeRawUnsafe(`ALTER TABLE ShopSettings ADD COLUMN anthropicPlanType TEXT DEFAULT 'free';`);
-        } catch (_) {}
-        try {
-          await prisma.$executeRawUnsafe(`ALTER TABLE ShopSettings ADD COLUMN geminiPlanType TEXT DEFAULT 'free';`);
-        } catch (_) {}
-        try {
-          await prisma.$executeRawUnsafe(`ALTER TABLE ShopSettings ADD COLUMN openaiPlanType TEXT DEFAULT 'free';`);
-        } catch (_) {}
-        try {
-          await prisma.$executeRawUnsafe(`ALTER TABLE ShopSettings ADD COLUMN expiredKeys TEXT DEFAULT '[]';`);
-        } catch (_) {}
-        try {
-          await prisma.$executeRawUnsafe(`ALTER TABLE ShopSettings ADD COLUMN expiredNotices TEXT DEFAULT '{}';`);
         } catch (_) {}
 
         await prisma.$executeRawUnsafe(`

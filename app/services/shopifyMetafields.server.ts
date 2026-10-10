@@ -1,28 +1,7 @@
-export interface ExpiredKeyItem {
-  key: string;
-  provider: "claude" | "gemini" | "openai";
-  planType: "free" | "paid";
-  addedAt: string;
-  expiredAt: string;
-}
-
 export interface SavedAIKeys {
   anthropicApiKey?: string | null;
   geminiApiKey?: string | null;
   openaiApiKey?: string | null;
-  anthropicKeyAddedAt?: string | null;
-  geminiKeyAddedAt?: string | null;
-  openaiKeyAddedAt?: string | null;
-  anthropicPlanType?: "free" | "paid";
-  geminiPlanType?: "free" | "paid";
-  openaiPlanType?: "free" | "paid";
-  aiRotationDays?: number | null;
-  expiredKeys?: ExpiredKeyItem[];
-  expiredNotices?: {
-    claude?: string | null;
-    gemini?: string | null;
-    openai?: string | null;
-  };
 }
 
 export async function getShopAIKeysFromShopify(admin: any): Promise<SavedAIKeys | null> {
@@ -45,15 +24,6 @@ export async function getShopAIKeysFromShopify(admin: any): Promise<SavedAIKeys 
         anthropicApiKey: parsed.anthropicApiKey || null,
         geminiApiKey: parsed.geminiApiKey || null,
         openaiApiKey: parsed.openaiApiKey || null,
-        anthropicKeyAddedAt: parsed.anthropicKeyAddedAt || null,
-        geminiKeyAddedAt: parsed.geminiKeyAddedAt || null,
-        openaiKeyAddedAt: parsed.openaiKeyAddedAt || null,
-        anthropicPlanType: parsed.anthropicPlanType || "free",
-        geminiPlanType: parsed.geminiPlanType || "free",
-        openaiPlanType: parsed.openaiPlanType || "free",
-        aiRotationDays: typeof parsed.aiRotationDays === "number" ? parsed.aiRotationDays : (parsed.aiRotationDays ? parseInt(parsed.aiRotationDays, 10) : 90),
-        expiredKeys: Array.isArray(parsed.expiredKeys) ? parsed.expiredKeys : [],
-        expiredNotices: parsed.expiredNotices || {},
       };
     }
   } catch (err) {
@@ -87,15 +57,6 @@ export async function saveShopAIKeysToShopify(
       anthropicApiKey: keys.anthropicApiKey !== undefined ? keys.anthropicApiKey : (existing?.anthropicApiKey || ""),
       geminiApiKey: keys.geminiApiKey !== undefined ? keys.geminiApiKey : (existing?.geminiApiKey || ""),
       openaiApiKey: keys.openaiApiKey !== undefined ? keys.openaiApiKey : (existing?.openaiApiKey || ""),
-      anthropicKeyAddedAt: keys.anthropicKeyAddedAt !== undefined ? keys.anthropicKeyAddedAt : (existing?.anthropicKeyAddedAt || null),
-      geminiKeyAddedAt: keys.geminiKeyAddedAt !== undefined ? keys.geminiKeyAddedAt : (existing?.geminiKeyAddedAt || null),
-      openaiKeyAddedAt: keys.openaiKeyAddedAt !== undefined ? keys.openaiKeyAddedAt : (existing?.openaiKeyAddedAt || null),
-      anthropicPlanType: keys.anthropicPlanType !== undefined ? keys.anthropicPlanType : (existing?.anthropicPlanType || "free"),
-      geminiPlanType: keys.geminiPlanType !== undefined ? keys.geminiPlanType : (existing?.geminiPlanType || "free"),
-      openaiPlanType: keys.openaiPlanType !== undefined ? keys.openaiPlanType : (existing?.openaiPlanType || "free"),
-      aiRotationDays: keys.aiRotationDays !== undefined ? keys.aiRotationDays : (existing?.aiRotationDays || 90),
-      expiredKeys: keys.expiredKeys !== undefined ? keys.expiredKeys : (existing?.expiredKeys || []),
-      expiredNotices: keys.expiredNotices !== undefined ? keys.expiredNotices : (existing?.expiredNotices || {}),
     };
 
     const valueStr = JSON.stringify(mergedKeys);

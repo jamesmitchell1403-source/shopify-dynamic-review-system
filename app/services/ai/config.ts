@@ -1,6 +1,5 @@
 import db from "../../db.server";
 import { getShopAIKeysFromShopify } from "../shopifyMetafields.server";
-import { isKeyExpired } from "./keyLifecycle.server";
 
 export interface AIConfig {
   defaultProvider: "claude" | "gemini" | "openai";
@@ -22,15 +21,9 @@ export async function getShopAIConfig(shopDomain: string, admin?: any): Promise<
   if (admin) {
     const cloudKeys = await getShopAIKeysFromShopify(admin);
     if (cloudKeys) {
-      if (cloudKeys.anthropicApiKey && !isKeyExpired(cloudKeys.anthropicKeyAddedAt, cloudKeys.anthropicPlanType)) {
-        anthropicApiKey = cloudKeys.anthropicApiKey;
-      }
-      if (cloudKeys.geminiApiKey && !isKeyExpired(cloudKeys.geminiKeyAddedAt, cloudKeys.geminiPlanType)) {
-        geminiApiKey = cloudKeys.geminiApiKey;
-      }
-      if (cloudKeys.openaiApiKey && !isKeyExpired(cloudKeys.openaiKeyAddedAt, cloudKeys.openaiPlanType)) {
-        openaiApiKey = cloudKeys.openaiApiKey;
-      }
+      if (cloudKeys.anthropicApiKey) anthropicApiKey = cloudKeys.anthropicApiKey;
+      if (cloudKeys.geminiApiKey) geminiApiKey = cloudKeys.geminiApiKey;
+      if (cloudKeys.openaiApiKey) openaiApiKey = cloudKeys.openaiApiKey;
     }
   }
 
@@ -43,23 +36,9 @@ export async function getShopAIConfig(shopDomain: string, admin?: any): Promise<
       if (settings.defaultAiProvider) {
         defaultProvider = settings.defaultAiProvider as "claude" | "gemini" | "openai";
       }
-      if (settings.anthropicApiKey && !isKeyExpired(settings.anthropicKeyAddedAt, settings.anthropicPlanType)) {
-        anthropicApiKey = settings.anthropicApiKey;
-      } else if (settings.anthropicApiKey && isKeyExpired(settings.anthropicKeyAddedAt, settings.anthropicPlanType)) {
-        anthropicApiKey = undefined;
-      }
-
-      if (settings.geminiApiKey && !isKeyExpired(settings.geminiKeyAddedAt, settings.geminiPlanType)) {
-        geminiApiKey = settings.geminiApiKey;
-      } else if (settings.geminiApiKey && isKeyExpired(settings.geminiKeyAddedAt, settings.geminiPlanType)) {
-        geminiApiKey = undefined;
-      }
-
-      if ((settings as any).openaiApiKey && !isKeyExpired((settings as any).openaiKeyAddedAt, (settings as any).openaiPlanType)) {
-        openaiApiKey = (settings as any).openaiApiKey;
-      } else if ((settings as any).openaiApiKey && isKeyExpired((settings as any).openaiKeyAddedAt, (settings as any).openaiPlanType)) {
-        openaiApiKey = undefined;
-      }
+      if (settings.anthropicApiKey) anthropicApiKey = settings.anthropicApiKey;
+      if (settings.geminiApiKey) geminiApiKey = settings.geminiApiKey;
+      if ((settings as any).openaiApiKey) openaiApiKey = (settings as any).openaiApiKey;
     }
   } catch (error) {
     console.warn("Error fetching ShopSettings in getShopAIConfig:", error);

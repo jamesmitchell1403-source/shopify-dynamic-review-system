@@ -72,36 +72,7 @@ export default function App() {
 }
 
 export function ErrorBoundary() {
-  const error = useRouteError();
-  try {
-    return boundary.error(error);
-  } catch (err: any) {
-    return (
-      <div style={{ padding: "40px 20px", maxWidth: "600px", margin: "0 auto", fontFamily: "sans-serif" }}>
-        <div style={{ background: "#FFF4F4", border: "1px solid #E0B4B4", borderRadius: "8px", padding: "20px" }}>
-          <h2 style={{ color: "#9F3A38", marginTop: 0 }}>Application Notice</h2>
-          <p style={{ color: "#414141", lineHeight: 1.5 }}>
-            {err?.message || "An issue occurred while loading this section. Please refresh or try again."}
-          </p>
-          <button
-            onClick={() => window.location.reload()}
-            style={{
-              marginTop: "12px",
-              padding: "8px 16px",
-              backgroundColor: "#2C6ECB",
-              color: "#FFF",
-              border: "none",
-              borderRadius: "4px",
-              cursor: "pointer",
-              fontWeight: 600,
-            }}
-          >
-            Refresh Page
-          </button>
-        </div>
-      </div>
-    );
-  }
+  return boundary.error(useRouteError());
 }
 
 export const headers: HeadersFunction = (headersArgs) => {
