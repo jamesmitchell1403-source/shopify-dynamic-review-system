@@ -231,8 +231,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
   ];
   const completedChecklistCount = checklistItems.filter((c) => c.completed).length;
 
-  // 10. Recent reviews for moderation table
-  const recentReviews = reviews.slice(0, 30).map((r) => ({
+  // 10. Reviews for moderation table (full list for client pagination & bulk management)
+  const recentReviews = reviews.map((r) => ({
     id: r.id,
     reviewerName: r.reviewerName || "Verified Buyer",
     rating: r.rating || 5,
@@ -309,6 +309,33 @@ export async function action({ request }: ActionFunctionArgs) {
     });
     await syncReviewsToShopify(admin, shop);
     return json({ success: true, message: "Review deleted." });
+  }
+
+  if (intent === "deleteSelected") {
+    const ids = formData.getAll("ids") as string[];
+    if (ids.length > 0) {
+      await recordDeletedReviewIds(admin, shop, ids);
+      await db.review.deleteMany({
+        where: { AND: [shopWhere, { id: { in: ids } }] },
+      });
+      await syncReviewsToShopify(admin, shop);
+      return json({ success: true, message: `${ids.length} review(s) deleted.` });
+    }
+    return json({ success: true });
+  }
+
+  if (intent === "deleteAll") {
+    const allReviews = await db.review.findMany({
+      where: shopWhere,
+      select: { id: true },
+    });
+    const allIds = allReviews.map((r) => r.id);
+    if (allIds.length > 0) {
+      await recordDeletedReviewIds(admin, shop, allIds);
+    }
+    await db.review.deleteMany({ where: shopWhere });
+    await syncReviewsToShopify(admin, shop, true);
+    return json({ success: true, message: "All reviews permanently deleted." });
   }
 
   return json({ success: true });
@@ -555,8 +582,31 @@ export default function DynamicReviewDashboard() {
   // Table filter tabs: published, pending, ai_drafts
   const [tableFilter, setTableFilter] = useState<"published" | "pending" | "ai_drafts">("published");
 
-  // Filtered recent reviews
+  // Table pagination state
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(10);
+
+  // Checkbox selection state
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  // Confirmation modal popup state
+  const [deleteModal, setDeleteModal] = useState<{
+    open: boolean;
+    type: "single" | "selected" | "all";
+    reviewId?: string;
+    reviewerName?: string;
+    count?: number;
+  }>({ open: false, type: "single" });
+
+  const handleTabChange = (filter: "published" | "pending" | "ai_drafts") => {
+    setTableFilter(filter);
+    setCurrentPage(1);
+    setSelectedIds(new Set());
+  };
+
+  // Filtered reviews
   const filteredReviews = useMemo(() => {
+    if (!data?.recentReviews) return [];
     if (tableFilter === "published") {
       return data.recentReviews.filter((r: any) => r.isPublished);
     }
@@ -567,7 +617,55 @@ export default function DynamicReviewDashboard() {
       return data.recentReviews.filter((r: any) => r.isAiGenerated);
     }
     return data.recentReviews;
-  }, [data.recentReviews, tableFilter]);
+  }, [data?.recentReviews, tableFilter]);
+
+  // Pagination calculations
+  const totalReviewsCount = filteredReviews.length;
+  const totalPages = Math.max(1, Math.ceil(totalReviewsCount / pageSize));
+  const safeCurrentPage = Math.min(Math.max(1, currentPage), totalPages);
+  const startIndex = (safeCurrentPage - 1) * pageSize;
+  const endIndex = Math.min(startIndex + pageSize, totalReviewsCount);
+  const paginatedReviews = filteredReviews.slice(startIndex, endIndex);
+
+  // Selection calculations
+  const currentPageIds = useMemo(() => paginatedReviews.map((r: any) => r.id), [paginatedReviews]);
+  const isAllCurrentPageSelected =
+    currentPageIds.length > 0 && currentPageIds.every((id: string) => selectedIds.has(id));
+  const isSomeCurrentPageSelected =
+    currentPageIds.some((id: string) => selectedIds.has(id)) && !isAllCurrentPageSelected;
+
+  const handleToggleSelectAll = () => {
+    if (isAllCurrentPageSelected) {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        currentPageIds.forEach((id: string) => next.delete(id));
+        return next;
+      });
+    } else {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        currentPageIds.forEach((id: string) => next.add(id));
+        return next;
+      });
+    }
+  };
+
+  const handleToggleSelectOne = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handleSelectAllFiltered = () => {
+    setSelectedIds(new Set(filteredReviews.map((r: any) => r.id)));
+  };
+
+  const handleClearSelection = () => {
+    setSelectedIds(new Set());
+  };
 
   const handleTogglePublish = (reviewId: string) => {
     const fd = new FormData();
@@ -576,13 +674,52 @@ export default function DynamicReviewDashboard() {
     fetcher.submit(fd, { method: "post" });
   };
 
-  const handleDeleteReview = (reviewId: string) => {
-    if (confirm("Are you sure you want to delete this review?")) {
-      const fd = new FormData();
+  const handlePromptDeleteOne = (reviewId: string, reviewerName: string) => {
+    setDeleteModal({
+      open: true,
+      type: "single",
+      reviewId,
+      reviewerName,
+    });
+  };
+
+  const handlePromptDeleteSelected = () => {
+    if (selectedIds.size === 0) return;
+    setDeleteModal({
+      open: true,
+      type: "selected",
+      count: selectedIds.size,
+    });
+  };
+
+  const handlePromptDeleteAll = () => {
+    setDeleteModal({
+      open: true,
+      type: "all",
+      count: data.totalReviews,
+    });
+  };
+
+  const handleConfirmDelete = () => {
+    const fd = new FormData();
+    if (deleteModal.type === "single" && deleteModal.reviewId) {
       fd.append("intent", "deleteReview");
-      fd.append("reviewId", reviewId);
-      fetcher.submit(fd, { method: "post" });
+      fd.append("reviewId", deleteModal.reviewId);
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(deleteModal.reviewId!);
+        return next;
+      });
+    } else if (deleteModal.type === "selected") {
+      fd.append("intent", "deleteSelected");
+      selectedIds.forEach((id) => fd.append("ids", id));
+      setSelectedIds(new Set());
+    } else if (deleteModal.type === "all") {
+      fd.append("intent", "deleteAll");
+      setSelectedIds(new Set());
     }
+    fetcher.submit(fd, { method: "post" });
+    setDeleteModal({ open: false, type: "single" });
   };
 
   return (
@@ -1002,7 +1139,7 @@ export default function DynamicReviewDashboard() {
             {/* Filter Tabs */}
             <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
               <button
-                onClick={() => setTableFilter("published")}
+                onClick={() => handleTabChange("published")}
                 style={{
                   padding: "6px 14px",
                   borderRadius: "8px",
@@ -1019,7 +1156,7 @@ export default function DynamicReviewDashboard() {
               </button>
 
               <button
-                onClick={() => setTableFilter("pending")}
+                onClick={() => handleTabChange("pending")}
                 style={{
                   padding: "6px 14px",
                   borderRadius: "8px",
@@ -1036,7 +1173,7 @@ export default function DynamicReviewDashboard() {
               </button>
 
               <button
-                onClick={() => setTableFilter("ai_drafts")}
+                onClick={() => handleTabChange("ai_drafts")}
                 style={{
                   padding: "6px 14px",
                   borderRadius: "8px",
@@ -1053,26 +1190,173 @@ export default function DynamicReviewDashboard() {
               </button>
             </div>
 
-            <button
-              onClick={() => navigate("/app/reviews")}
+            {/* Right Action Buttons */}
+            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              {data.totalReviews > 0 && (
+                <button
+                  onClick={handlePromptDeleteAll}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    padding: "6px 12px",
+                    borderRadius: "8px",
+                    border: "1px solid #fecaca",
+                    backgroundColor: "#fff1f2",
+                    color: "#b91c1c",
+                    fontSize: "13px",
+                    fontWeight: "700",
+                    cursor: "pointer",
+                    transition: "all 0.15s ease",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = "#fee2e2";
+                    e.currentTarget.style.borderColor = "#f87171";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = "#fff1f2";
+                    e.currentTarget.style.borderColor = "#fecaca";
+                  }}
+                >
+                  <Icon source={DeleteIcon} tone="critical" />
+                  Delete All Reviews
+                </button>
+              )}
+
+              <button
+                onClick={() => navigate("/app/reviews")}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  color: "#2563eb",
+                  fontSize: "13px",
+                  fontWeight: "700",
+                  cursor: "pointer",
+                  padding: "6px 8px",
+                }}
+              >
+                View all
+              </button>
+            </div>
+          </div>
+
+          {/* Bulk Selection Action Bar */}
+          {selectedIds.size > 0 && (
+            <div
               style={{
-                background: "transparent",
-                border: "none",
-                color: "#2563eb",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                flexWrap: "wrap",
+                gap: "10px",
+                padding: "10px 16px",
+                marginBottom: "14px",
+                backgroundColor: "#eff6ff",
+                border: "1px solid #bfdbfe",
+                borderRadius: "10px",
+                color: "#1e40af",
                 fontSize: "13px",
-                fontWeight: "700",
-                cursor: "pointer",
+                fontWeight: 600,
               }}
             >
-              View all
-            </button>
-          </div>
+              <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+                  <span
+                    style={{
+                      width: "18px",
+                      height: "18px",
+                      borderRadius: "4px",
+                      backgroundColor: "#2563eb",
+                      color: "#ffffff",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: "11px",
+                      fontWeight: "bold",
+                    }}
+                  >
+                    ✓
+                  </span>
+                  <strong>{selectedIds.size}</strong> review{selectedIds.size > 1 ? "s" : ""} selected
+                </span>
+
+                {selectedIds.size < totalReviewsCount && (
+                  <button
+                    onClick={handleSelectAllFiltered}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      color: "#1d4ed8",
+                      fontSize: "13px",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      textDecoration: "underline",
+                      padding: 0,
+                    }}
+                  >
+                    Select all {totalReviewsCount} {tableFilter === "ai_drafts" ? "AI draft" : tableFilter} reviews
+                  </button>
+                )}
+              </div>
+
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <button
+                  onClick={handleClearSelection}
+                  style={{
+                    background: "#ffffff",
+                    border: "1px solid #cbd5e1",
+                    borderRadius: "6px",
+                    padding: "5px 12px",
+                    fontSize: "12px",
+                    fontWeight: 600,
+                    color: "#475569",
+                    cursor: "pointer",
+                  }}
+                >
+                  Deselect
+                </button>
+
+                <button
+                  onClick={handlePromptDeleteSelected}
+                  style={{
+                    background: "#ef4444",
+                    border: "none",
+                    borderRadius: "6px",
+                    padding: "5px 14px",
+                    fontSize: "12px",
+                    fontWeight: 700,
+                    color: "#ffffff",
+                    cursor: "pointer",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "4px",
+                    boxShadow: "0 1px 2px rgba(239, 68, 68, 0.2)",
+                  }}
+                >
+                  <Icon source={DeleteIcon} />
+                  Delete Selected ({selectedIds.size})
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Table Container */}
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: "13px" }}>
               <thead>
                 <tr style={{ borderBottom: "1px solid #e2e8f0", color: "#64748b", fontWeight: 600 }}>
+                  <th style={{ padding: "12px 14px", width: "40px" }}>
+                    <input
+                      type="checkbox"
+                      checked={isAllCurrentPageSelected}
+                      ref={(el) => {
+                        if (el) el.indeterminate = isSomeCurrentPageSelected;
+                      }}
+                      onChange={handleToggleSelectAll}
+                      style={{ width: "16px", height: "16px", cursor: "pointer", accentColor: "#2563eb" }}
+                      title="Select all on this page"
+                    />
+                  </th>
                   <th style={{ padding: "12px 14px" }}>Reviewer</th>
                   <th style={{ padding: "12px 14px" }}>Rating</th>
                   <th style={{ padding: "12px 14px" }}>Review</th>
@@ -1082,14 +1366,14 @@ export default function DynamicReviewDashboard() {
                 </tr>
               </thead>
               <tbody>
-                {filteredReviews.length === 0 ? (
+                {paginatedReviews.length === 0 ? (
                   <tr>
-                    <td colSpan={6} style={{ padding: "28px", textAlign: "center", color: "#94a3b8" }}>
+                    <td colSpan={7} style={{ padding: "28px", textAlign: "center", color: "#94a3b8" }}>
                       No reviews found in this view.
                     </td>
                   </tr>
                 ) : (
-                  filteredReviews.map((r: any) => {
+                  paginatedReviews.map((r: any) => {
                     const starsStr = "★".repeat(r.rating || 5) + "☆".repeat(Math.max(0, 5 - (r.rating || 5)));
                     const isAmazon = (r.source || "").includes("AMAZON");
                     const isFlipkart = (r.source || "").includes("FLIPKART");
@@ -1116,16 +1400,31 @@ export default function DynamicReviewDashboard() {
                       ? { bg: "#f3e8ff", color: "#7e22ce" }
                       : { bg: "#dcfce7", color: "#166534" };
 
+                    const isChecked = selectedIds.has(r.id);
+
                     return (
                       <tr
                         key={r.id}
                         style={{
                           borderBottom: "1px solid #f1f5f9",
+                          backgroundColor: isChecked ? "#f0f9ff" : "transparent",
                           transition: "background 0.15s ease",
                         }}
-                        onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#f8fafc")}
-                        onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+                        onMouseEnter={(e) => {
+                          if (!isChecked) e.currentTarget.style.backgroundColor = "#f8fafc";
+                        }}
+                        onMouseLeave={(e) => {
+                          if (!isChecked) e.currentTarget.style.backgroundColor = "transparent";
+                        }}
                       >
+                        <td style={{ padding: "12px 14px", width: "40px" }}>
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => handleToggleSelectOne(r.id)}
+                            style={{ width: "16px", height: "16px", cursor: "pointer", accentColor: "#2563eb" }}
+                          />
+                        </td>
                         <td style={{ padding: "12px 14px", fontWeight: 700, color: "#0f172a" }}>
                           {r.reviewerName}
                         </td>
@@ -1181,7 +1480,7 @@ export default function DynamicReviewDashboard() {
                             </button>
                             <button
                               title="Delete Review"
-                              onClick={() => handleDeleteReview(r.id)}
+                              onClick={() => handlePromptDeleteOne(r.id, r.reviewerName)}
                               style={{
                                 background: "none",
                                 border: "none",
@@ -1202,7 +1501,237 @@ export default function DynamicReviewDashboard() {
               </tbody>
             </table>
           </div>
+
+          {/* Pagination Toolbar */}
+          {totalReviewsCount > 0 && (
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: "12px",
+                marginTop: "18px",
+                paddingTop: "14px",
+                borderTop: "1px solid #f1f5f9",
+                fontSize: "13px",
+                color: "#64748b",
+              }}
+            >
+              {/* Left: Showing X-Y of Z & rows per page */}
+              <div style={{ display: "flex", alignItems: "center", gap: "14px", flexWrap: "wrap" }}>
+                <span>
+                  Showing <strong style={{ color: "#0f172a" }}>{startIndex + 1}</strong>–<strong style={{ color: "#0f172a" }}>{endIndex}</strong> of <strong style={{ color: "#0f172a" }}>{totalReviewsCount}</strong> reviews
+                </span>
+
+                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <span>Per page:</span>
+                  <select
+                    value={pageSize}
+                    onChange={(e) => {
+                      setPageSize(Number(e.target.value));
+                      setCurrentPage(1);
+                    }}
+                    style={{
+                      padding: "3px 8px",
+                      borderRadius: "6px",
+                      border: "1px solid #cbd5e1",
+                      backgroundColor: "#ffffff",
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      color: "#334155",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <option value={10}>10</option>
+                    <option value={20}>20</option>
+                    <option value={50}>50</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Right: Previous / Next & Page Numbers */}
+              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <button
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  disabled={safeCurrentPage <= 1}
+                  style={{
+                    padding: "5px 12px",
+                    borderRadius: "6px",
+                    border: "1px solid #e2e8f0",
+                    backgroundColor: safeCurrentPage <= 1 ? "#f8fafc" : "#ffffff",
+                    color: safeCurrentPage <= 1 ? "#94a3b8" : "#334155",
+                    fontSize: "12px",
+                    fontWeight: 600,
+                    cursor: safeCurrentPage <= 1 ? "not-allowed" : "pointer",
+                  }}
+                >
+                  Previous
+                </button>
+
+                {Array.from({ length: totalPages }, (_, i) => i + 1)
+                  .filter((p) => {
+                    return p === 1 || p === totalPages || Math.abs(p - safeCurrentPage) <= 1;
+                  })
+                  .map((p, idx, arr) => {
+                    const prev = arr[idx - 1];
+                    const showEllipsis = prev && p - prev > 1;
+                    return (
+                      <span key={p} style={{ display: "inline-flex", alignItems: "center" }}>
+                        {showEllipsis && <span style={{ padding: "0 4px", color: "#94a3b8" }}>...</span>}
+                        <button
+                          onClick={() => setCurrentPage(p)}
+                          style={{
+                            minWidth: "30px",
+                            height: "30px",
+                            borderRadius: "6px",
+                            border: safeCurrentPage === p ? "none" : "1px solid #e2e8f0",
+                            backgroundColor: safeCurrentPage === p ? "#2563eb" : "#ffffff",
+                            color: safeCurrentPage === p ? "#ffffff" : "#475569",
+                            fontSize: "12px",
+                            fontWeight: 700,
+                            cursor: "pointer",
+                          }}
+                        >
+                          {p}
+                        </button>
+                      </span>
+                    );
+                  })}
+
+                <button
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={safeCurrentPage >= totalPages}
+                  style={{
+                    padding: "5px 12px",
+                    borderRadius: "6px",
+                    border: "1px solid #e2e8f0",
+                    backgroundColor: safeCurrentPage >= totalPages ? "#f8fafc" : "#ffffff",
+                    color: safeCurrentPage >= totalPages ? "#94a3b8" : "#334155",
+                    fontSize: "12px",
+                    fontWeight: 600,
+                    cursor: safeCurrentPage >= totalPages ? "not-allowed" : "pointer",
+                  }}
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
         </div>
+
+        {/* Confirmation Modal Popup for Deletion */}
+        {deleteModal.open && (
+          <div
+            style={{
+              position: "fixed",
+              inset: 0,
+              backgroundColor: "rgba(15, 23, 42, 0.65)",
+              backdropFilter: "blur(2px)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              zIndex: 9999,
+              padding: "16px",
+            }}
+            onClick={() => setDeleteModal({ open: false, type: "single" })}
+          >
+            <div
+              style={{
+                backgroundColor: "#ffffff",
+                borderRadius: "16px",
+                maxWidth: "460px",
+                width: "100%",
+                padding: "24px",
+                boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.2), 0 10px 10px -5px rgba(0, 0, 0, 0.08)",
+                border: "1px solid #f1f5f9",
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div style={{ display: "flex", alignItems: "flex-start", gap: "14px", marginBottom: "16px" }}>
+                <div
+                  style={{
+                    width: "44px",
+                    height: "44px",
+                    borderRadius: "12px",
+                    backgroundColor: "#fee2e2",
+                    color: "#dc2626",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0,
+                    fontSize: "20px",
+                  }}
+                >
+                  ⚠️
+                </div>
+                <div>
+                  <h3 style={{ margin: "0 0 6px 0", fontSize: "17px", fontWeight: "700", color: "#0f172a" }}>
+                    {deleteModal.type === "all"
+                      ? "Delete ALL Reviews?"
+                      : deleteModal.type === "selected"
+                      ? `Delete ${deleteModal.count} Selected Reviews?`
+                      : `Delete Review from ${deleteModal.reviewerName || "Customer"}?`}
+                  </h3>
+                  <p style={{ margin: 0, fontSize: "13px", color: "#64748b", lineHeight: "1.5" }}>
+                    {deleteModal.type === "all"
+                      ? `This will permanently delete ALL ${deleteModal.count || data.totalReviews} reviews from your database and remove them from your Shopify storefront metafields. This action cannot be undone.`
+                      : deleteModal.type === "selected"
+                      ? `This will permanently delete the ${deleteModal.count} selected reviews from your database and remove them from your Shopify storefront metafields. This action cannot be undone.`
+                      : "This will permanently delete this review from your store. This action cannot be undone."}
+                  </p>
+                </div>
+              </div>
+
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "flex-end",
+                  gap: "10px",
+                  marginTop: "20px",
+                  paddingTop: "16px",
+                  borderTop: "1px solid #f1f5f9",
+                }}
+              >
+                <button
+                  onClick={() => setDeleteModal({ open: false, type: "single" })}
+                  style={{
+                    padding: "8px 16px",
+                    borderRadius: "8px",
+                    border: "1px solid #cbd5e1",
+                    backgroundColor: "#ffffff",
+                    color: "#334155",
+                    fontSize: "13px",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleConfirmDelete}
+                  style={{
+                    padding: "8px 18px",
+                    borderRadius: "8px",
+                    border: "none",
+                    backgroundColor: "#dc2626",
+                    color: "#ffffff",
+                    fontSize: "13px",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    boxShadow: "0 2px 4px rgba(220, 38, 38, 0.25)",
+                  }}
+                >
+                  {deleteModal.type === "all"
+                    ? "Yes, Delete All Reviews"
+                    : deleteModal.type === "selected"
+                    ? `Delete ${deleteModal.count} Reviews`
+                    : "Delete Review"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </BlockStack>
     </Page>
   );
