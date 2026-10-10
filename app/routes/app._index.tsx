@@ -1,5 +1,5 @@
 import { json, LoaderFunctionArgs, ActionFunctionArgs } from "@remix-run/node";
-import { useLoaderData, useNavigate, useFetcher } from "@remix-run/react";
+import { useLoaderData, useNavigate, useFetcher, useRouteError } from "@remix-run/react";
 import { useState, useMemo } from "react";
 import {
   Page,
@@ -584,8 +584,6 @@ export default function DynamicReviewDashboard() {
       fetcher.submit(fd, { method: "post" });
     }
   };
-
-  const requestRate = data.totalReviews > 0 ? Math.min(100, Math.round((data.totalReviews / (data.totalQrScans + data.totalReviews || 100)) * 100)) : 18;
 
   return (
     <Page fullWidth title="Dynamic Review Ecosystem Dashboard">
@@ -1206,6 +1204,34 @@ export default function DynamicReviewDashboard() {
           </div>
         </div>
       </BlockStack>
+    </Page>
+  );
+}
+
+export function ErrorBoundary() {
+  const error = useRouteError();
+  const navigate = useNavigate();
+
+  return (
+    <Page title="Dynamic Review Ecosystem Dashboard">
+      <Card>
+        <BlockStack gap="400">
+          <Text as="h2" variant="headingMd" tone="critical">
+            Dashboard Loading Notice
+          </Text>
+          <Text as="p" variant="bodyMd" tone="subdued">
+            {error instanceof Error ? error.message : "The dashboard encountered a momentary connection interruption."}
+          </Text>
+          <InlineStack gap="300">
+            <Button variant="primary" onClick={() => window.location.reload()}>
+              Reload Dashboard
+            </Button>
+            <Button onClick={() => navigate("/app/reviews")}>
+              View Reviews List
+            </Button>
+          </InlineStack>
+        </BlockStack>
+      </Card>
     </Page>
   );
 }

@@ -16,10 +16,10 @@ export const links = () => [
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   await ensureTablesExist();
-  await authenticate.admin(request);
+  const { session } = await authenticate.admin(request);
 
   const url = new URL(request.url);
-  const shop = url.searchParams.get("shop") || request.headers.get("referer") || "";
+  const shop = session?.shop || url.searchParams.get("shop") || request.headers.get("referer") || "";
 
   let apiKey = "d97376e1be723a9166b7ec705c55c610";
   if (shop.includes("james-practice")) {
