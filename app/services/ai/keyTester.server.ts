@@ -4,6 +4,7 @@ export interface KeyTestResult {
   provider: "claude" | "gemini" | "openai";
   detectedTier?: "free" | "paid";
   tierReason?: string;
+  tierIndeterminate?: boolean;
 }
 
 export async function testAIProviderKey(
@@ -52,28 +53,34 @@ export async function testAIProviderKey(
       }
 
       const rpmLimit = parseInt(res.headers.get("anthropic-ratelimit-requests-limit") || "0", 10);
-      let detectedTier: "free" | "paid" = "paid";
-      let tierReason = "Paid account detected (Standard production limits active)";
+      let detectedTier: "free" | "paid" | undefined = undefined;
+      let tierReason = "Unable to determine account tier";
+      let tierIndeterminate = true;
 
       if (rpmLimit > 0 && rpmLimit <= 5) {
         detectedTier = "free";
         tierReason = "Free tier detected (5 RPM rate limit header)";
+        tierIndeterminate = false;
       } else if (rpmLimit > 5) {
         detectedTier = "paid";
         tierReason = `Paid tier detected (${rpmLimit} RPM production limit)`;
+        tierIndeterminate = false;
       }
 
       return {
         success: true,
-        message: `Anthropic Claude key verified. ${tierReason}.`,
+        message: tierIndeterminate
+          ? "Anthropic Claude key verified. Unable to determine account tier — please verify and select Free (3-Month) or Paid (12-Month) tier above."
+          : `Anthropic Claude key verified. ${tierReason}.`,
         provider,
         detectedTier,
         tierReason,
+        tierIndeterminate,
       };
     }
 
     // 2. GOOGLE GEMINI
-    // Queries the models endpoint directly to verify key validity and available quotas
+    // Queries the models endpoint directly to verify key validity
     if (provider === "gemini") {
       const res = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models?key=${cleanKey}`,
@@ -92,16 +99,16 @@ export async function testAIProviderKey(
       const jsonRes = (await res.json().catch(() => ({}))) as any;
       const modelCount = jsonRes?.models?.length || 0;
 
-      // Gemini operational accounts with valid API access
-      const detectedTier: "free" | "paid" = "paid";
-      const tierReason = `Paid / Standard active account verified (${modelCount} models accessible)`;
-
+      // Google Gemini REST API does NOT expose billing or rate limit headers.
+      // Free accounts (Google AI Studio) and Paid accounts (Google Cloud billing) share the same API endpoints and models.
+      // Therefore, the system MUST NOT automatically classify this as Paid.
       return {
         success: true,
-        message: `Google Gemini key verified successfully. ${tierReason}.`,
+        message: `Google Gemini key verified successfully (${modelCount} models accessible). Unable to determine account tier automatically (Gemini API does not expose billing tier). Please select Free (3-Month) or Paid (12-Month) tier above.`,
         provider,
-        detectedTier,
-        tierReason,
+        detectedTier: undefined, // Never hardcode paid!
+        tierReason: "Unable to determine account tier",
+        tierIndeterminate: true,
       };
     }
 
@@ -139,23 +146,29 @@ export async function testAIProviderKey(
         const rpmLimit = parseInt(compRes.headers.get("x-ratelimit-limit-requests") || "0", 10);
         const tpmLimit = parseInt(compRes.headers.get("x-ratelimit-limit-tokens") || "0", 10);
 
-        let detectedTier: "free" | "paid" = "paid";
-        let tierReason = "Paid account detected (Production tier limits active)";
+        let detectedTier: "free" | "paid" | undefined = undefined;
+        let tierReason = "Unable to determine account tier";
+        let tierIndeterminate = true;
 
         if (rpmLimit > 0 && rpmLimit <= 3 && tpmLimit <= 40000) {
           detectedTier = "free";
           tierReason = "Free trial / Free tier detected (3 RPM rate limit)";
+          tierIndeterminate = false;
         } else if (rpmLimit >= 20 || tpmLimit >= 50000) {
           detectedTier = "paid";
           tierReason = `Paid tier detected (${rpmLimit ? `${rpmLimit} RPM` : `${tpmLimit} TPM`})`;
+          tierIndeterminate = false;
         }
 
         return {
           success: true,
-          message: `ChatGPT (OpenAI) key verified. ${tierReason}.`,
+          message: tierIndeterminate
+            ? "ChatGPT (OpenAI) key verified. Unable to determine account tier — please verify and select Free (3-Month) or Paid (12-Month) tier above."
+            : `ChatGPT (OpenAI) key verified. ${tierReason}.`,
           provider,
           detectedTier,
           tierReason,
+          tierIndeterminate,
         };
       } else {
         const errJson = await compRes.json().catch(() => ({}));
@@ -170,10 +183,11 @@ export async function testAIProviderKey(
         ) {
           return {
             success: true,
-            message: `ChatGPT key is valid & connected, but has $0 credits remaining. Please recharge billing credits at platform.openai.com/settings/organization/billing to generate reviews.`,
+            message: `ChatGPT key is valid & connected, but has $0 credits remaining. Unable to determine account tier — please verify and select Free (3-Month) or Paid (12-Month) tier above, and recharge billing credits at platform.openai.com.`,
             provider,
-            detectedTier: "paid",
-            tierReason: "Account connected (needs credits recharge)",
+            detectedTier: undefined,
+            tierReason: "Unable to determine account tier",
+            tierIndeterminate: true,
           };
         }
 

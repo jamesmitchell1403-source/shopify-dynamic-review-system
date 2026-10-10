@@ -146,10 +146,12 @@ export async function loader({ request }: LoaderFunctionArgs) {
         (localSettings as any)?.anthropicPlanType ||
         "free",
       geminiPlanType:
-        purgeResult.activeKeys.geminiPlanType ||
-        shopifyCloudKeys?.geminiPlanType ||
-        (localSettings as any)?.geminiPlanType ||
-        "free",
+        (localSettings as any)?.geminiPlanType === "free"
+          ? "free"
+          : (purgeResult.activeKeys.geminiPlanType ||
+             shopifyCloudKeys?.geminiPlanType ||
+             (localSettings as any)?.geminiPlanType ||
+             "free"),
       openaiPlanType:
         purgeResult.activeKeys.openaiPlanType ||
         shopifyCloudKeys?.openaiPlanType ||
@@ -367,29 +369,9 @@ export async function action({ request }: ActionFunctionArgs) {
       openaiKeyAddedAt = nowIso;
     }
 
-    let finalClaudePlan = anthropicPlanType;
-    let finalGeminiPlan = geminiPlanType;
-    let finalOpenaiPlan = openaiPlanType;
-
-    // Auto-detect tier via live API inspection if genuine new key is provided
-    if (isRealClaude && anthropicApiKey && anthropicApiKey !== oldAnthropic) {
-      try {
-        const testRes = await testAIProviderKey("claude", anthropicApiKey);
-        if (testRes.success && testRes.detectedTier) finalClaudePlan = testRes.detectedTier;
-      } catch (_) {}
-    }
-    if (isRealGemini && geminiApiKey && geminiApiKey !== oldGemini) {
-      try {
-        const testRes = await testAIProviderKey("gemini", geminiApiKey);
-        if (testRes.success && testRes.detectedTier) finalGeminiPlan = testRes.detectedTier;
-      } catch (_) {}
-    }
-    if (isRealOpenai && openaiApiKey && openaiApiKey !== oldOpenai) {
-      try {
-        const testRes = await testAIProviderKey("openai", openaiApiKey);
-        if (testRes.success && testRes.detectedTier) finalOpenaiPlan = testRes.detectedTier;
-      } catch (_) {}
-    }
+    const finalClaudePlan = anthropicPlanType;
+    const finalGeminiPlan = geminiPlanType;
+    const finalOpenaiPlan = openaiPlanType;
 
     // 1. Save permanently to Shopify Cloud (Shop Metafields) — survives all Render resets
     await saveShopAIKeysToShopify(admin, {
@@ -590,7 +572,13 @@ function ProviderKeyBlock({
   validationError?: string | null;
   onTestKey: (p: "claude" | "gemini" | "openai", k: string) => void;
   isTesting: boolean;
-  testResult?: { success: boolean; message: string };
+  testResult?: {
+    success: boolean;
+    message: string;
+    detectedTier?: "free" | "paid";
+    tierReason?: string;
+    tierIndeterminate?: boolean;
+  };
 }) {
   const debounceTimerRef = useRef<any>(null);
 
@@ -683,9 +671,13 @@ function ProviderKeyBlock({
               </InlineStack>
 
               {isTesting ? (
-                <Badge tone="attention">Auto-detecting Tier...</Badge>
+                <Badge tone="attention">Testing key...</Badge>
               ) : testResult?.success ? (
-                <Badge tone="success">Verified & Active</Badge>
+                testResult.tierIndeterminate || !testResult.detectedTier ? (
+                  <Badge tone="warning">Unable to determine account tier</Badge>
+                ) : (
+                  <Badge tone="success">Verified & Active</Badge>
+                )
               ) : null}
             </InlineStack>
 
@@ -721,7 +713,15 @@ function ProviderKeyBlock({
             </InlineStack>
 
             {testResult && (
-              <Banner tone={testResult.success ? "success" : "critical"}>
+              <Banner
+                tone={
+                  !testResult.success
+                    ? "critical"
+                    : testResult.tierIndeterminate || !testResult.detectedTier
+                    ? "warning"
+                    : "success"
+                }
+              >
                 <p>{testResult.message}</p>
               </Banner>
             )}
@@ -764,8 +764,26 @@ export default function AiSettingsPage() {
 
   const [savedSuccess, setSavedSuccess] = useState<boolean>(false);
   const [testResults, setTestResults] = useState<{
-    [provider: string]: { success: boolean; message: string };
-  }>({});
+    [provider: string]: {
+      success: boolean;
+      message: string;
+      detectedTier?: "free" | "paid";
+      tierReason?: string;
+      tierIndeterminate?: boolean;
+    };
+  }>(() => {
+    const initial: any = {};
+    if (settings?.geminiApiKey) {
+      initial.gemini = {
+        success: true,
+        message:
+          "Google Gemini key configured. Unable to determine account tier automatically (Gemini API does not expose billing tier). Please verify and select Free (3-Month) or Paid (12-Month) tier above.",
+        tierIndeterminate: true,
+        tierReason: "Unable to determine account tier",
+      };
+    }
+    return initial;
+  });
   const [testingProvider, setTestingProvider] = useState<string | null>(null);
 
   useEffect(() => {
@@ -773,10 +791,16 @@ export default function AiSettingsPage() {
       const res = testFetcher.data.testResult;
       setTestResults((prev) => ({
         ...prev,
-        [res.provider]: { success: res.success, message: res.message },
+        [res.provider]: {
+          success: res.success,
+          message: res.message,
+          detectedTier: res.detectedTier,
+          tierReason: res.tierReason,
+          tierIndeterminate: res.tierIndeterminate,
+        },
       }));
 
-      // Automatically select Account Validity Tier based on live API inspection
+      // Automatically select Account Validity Tier ONLY when reliably detected
       if (res.detectedTier) {
         if (res.provider === "claude") setClaudePlan(res.detectedTier);
         if (res.provider === "gemini") setGeminiPlan(res.detectedTier);

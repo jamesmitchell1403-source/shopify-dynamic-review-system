@@ -105,8 +105,9 @@ export async function checkAndPurgeExpiredKeys(admin: any, shop: string) {
       shopifyCloudKeys?.anthropicPlanType ||
       ((localSettings as any)?.anthropicPlanType === "paid" ? "paid" : "free");
     const geminiPlan: "free" | "paid" =
-      shopifyCloudKeys?.geminiPlanType ||
-      ((localSettings as any)?.geminiPlanType === "paid" ? "paid" : "free");
+      (localSettings as any)?.geminiPlanType === "free"
+        ? "free"
+        : (shopifyCloudKeys?.geminiPlanType || ((localSettings as any)?.geminiPlanType === "paid" ? "paid" : "free"));
     const openaiPlan: "free" | "paid" =
       shopifyCloudKeys?.openaiPlanType ||
       ((localSettings as any)?.openaiPlanType === "paid" ? "paid" : "free");
