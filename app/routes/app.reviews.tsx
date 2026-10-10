@@ -19,8 +19,20 @@ import {
   Modal,
   FormLayout,
   DropZone,
+  Icon,
 } from "@shopify/polaris";
-import { SearchIcon, CheckIcon, DeleteIcon, EditIcon } from "@shopify/polaris-icons";
+import {
+  SearchIcon,
+  CheckIcon,
+  DeleteIcon,
+  EditIcon,
+  ImageIcon,
+  MenuHorizontalIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  ViewIcon,
+  HideIcon,
+} from "@shopify/polaris-icons";
 import { authenticate } from "../shopify.server";
 import db, { ensureTablesExist } from "../db.server";
 import { ensureReviewsAndSettingsRestored, syncReviewsToShopify, uploadReviewMediaToShopify, recordDeletedReviewIds } from "../services/reviewPersistence.server";
@@ -39,8 +51,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
   }
 
   const url = new URL(request.url);
+  const tabFilter = url.searchParams.get("tab") || "all";
   const sourceFilter = url.searchParams.get("source") || "ALL";
   const statusFilter = url.searchParams.get("status") || "ALL";
+  const ratingFilter = url.searchParams.get("rating") || "ALL";
   const searchQuery = url.searchParams.get("search") || "";
   const productFilter = url.searchParams.get("product") || "ALL";
   const productSearchQuery = url.searchParams.get("productSearch") || "";
@@ -114,12 +128,28 @@ export async function loader({ request }: LoaderFunctionArgs) {
         productId: true,
         productHandle: true,
         bodyShort: true,
+        rating: true,
+        source: true,
         isPublished: true,
+        isAiGenerated: true,
+        imageUrl: true,
+        videoUrl: true,
       },
     });
   } catch (e) {
     console.error("Error fetching all reviews for stats:", e);
   }
+
+  // Summary counts for top KPI cards & tabs matching reference design
+  const totalReviews = allShopReviews.length;
+  const publishedReviews = allShopReviews.filter((r) => r.isPublished).length;
+  const pendingReviews = allShopReviews.filter((r) => !r.isPublished).length;
+  const aiGeneratedCount = allShopReviews.filter((r) => r.isAiGenerated).length;
+  const importedCount = allShopReviews.filter((r) => {
+    const s = (r.source || "").toUpperCase();
+    return s.includes("AMAZON") || s.includes("FLIPKART") || s.includes("ALIBABA") || s.includes("IMPORT");
+  }).length;
+  const mediaCount = allShopReviews.filter((r) => Boolean(r.imageUrl || r.videoUrl)).length;
 
   // Group stats by product title
   const productStatsMap = new Map<string, { title: string; count: number; published: number; pending: number }>();
@@ -147,9 +177,40 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   // 3. Construct database query for reviews table
   const whereClause: any = { ...shopWhereClause };
-  if (sourceFilter !== "ALL") whereClause.source = sourceFilter;
-  if (statusFilter === "PUBLISHED") whereClause.isPublished = true;
-  if (statusFilter === "PENDING") whereClause.isPublished = false;
+
+  // Tab filtering
+  if (tabFilter === "published") {
+    whereClause.isPublished = true;
+  } else if (tabFilter === "pending") {
+    whereClause.isPublished = false;
+  } else if (tabFilter === "imported") {
+    whereClause.source = {
+      in: ["IMPORTED_AMAZON", "IMPORTED_FLIPKART", "IMPORTED_ALIBABA", "AMAZON", "FLIPKART", "ALIBABA"],
+    };
+  } else if (tabFilter === "ai_drafts") {
+    whereClause.isAiGenerated = true;
+  }
+
+  // Source filtering
+  if (sourceFilter !== "ALL") {
+    if (sourceFilter === "STORE") {
+      whereClause.isAiGenerated = false;
+      whereClause.source = { notIn: ["IMPORTED_AMAZON", "IMPORTED_FLIPKART", "IMPORTED_ALIBABA", "AMAZON", "FLIPKART", "ALIBABA"] };
+    } else if (sourceFilter === "AMAZON") {
+      whereClause.source = { in: ["IMPORTED_AMAZON", "AMAZON"] };
+    } else if (sourceFilter === "FLIPKART") {
+      whereClause.source = { in: ["IMPORTED_FLIPKART", "FLIPKART"] };
+    } else if (sourceFilter === "ALIBABA") {
+      whereClause.source = { in: ["IMPORTED_ALIBABA", "ALIBABA"] };
+    } else if (sourceFilter === "AI") {
+      whereClause.isAiGenerated = true;
+    }
+  }
+
+  // Rating filtering
+  if (ratingFilter !== "ALL") {
+    whereClause.rating = Number(ratingFilter);
+  }
 
   if (searchQuery.trim() !== "") {
     whereClause.AND = [
@@ -159,6 +220,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
           { reviewerName: { contains: searchQuery } },
           { bodyShort: { contains: searchQuery } },
           { bodyFull: { contains: searchQuery } },
+          { productHandle: { contains: searchQuery } },
         ],
       },
     ];
@@ -179,6 +241,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
       ...r,
       productTitle: resolveProductTitle(r),
     }));
+
+    // Filter by media if media tab active
+    if (tabFilter === "media") {
+      enrichedReviews = enrichedReviews.filter((r) => Boolean(r.imageUrl || r.videoUrl));
+    }
 
     // Filter by selected productTitle if productFilter is active
     if (productFilter !== "ALL") {
@@ -287,8 +354,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   return json({
     reviews,
+    tabFilter,
     sourceFilter,
     statusFilter,
+    ratingFilter,
     searchQuery,
     productFilter,
     productSearchQuery,
@@ -299,6 +368,12 @@ export async function loader({ request }: LoaderFunctionArgs) {
     totalReviewsCount,
     totalPages,
     totalShopReviewsCount: allShopReviews.length,
+    totalReviews,
+    publishedReviews,
+    pendingReviews,
+    aiGeneratedCount,
+    importedCount,
+    mediaCount,
     shopifyFiles,
   });
 }
@@ -319,6 +394,24 @@ export async function action({ request }: ActionFunctionArgs) {
         where: { id: reviewId },
         data: { isPublished: !review.isPublished },
       });
+    }
+  } else if (intent === "approveSelected") {
+    const ids = formData.getAll("ids") as string[];
+    if (ids.length > 0) {
+      await db.review.updateMany({
+        where: { AND: [shopWhere, { id: { in: ids } }] },
+        data: { isPublished: true },
+      });
+      await syncReviewsToShopify(admin, shop);
+    }
+  } else if (intent === "unpublishSelected") {
+    const ids = formData.getAll("ids") as string[];
+    if (ids.length > 0) {
+      await db.review.updateMany({
+        where: { AND: [shopWhere, { id: { in: ids } }] },
+        data: { isPublished: false },
+      });
+      await syncReviewsToShopify(admin, shop);
     }
   } else if (intent === "approveAllPending") {
     await db.review.updateMany({
@@ -429,11 +522,22 @@ export async function action({ request }: ActionFunctionArgs) {
   return json({ success: true });
 }
 
+function getInitials(name: string): string {
+  if (!name || !name.trim()) return "CU";
+  const parts = name.trim().split(/\s+/);
+  if (parts.length === 1) {
+    return parts[0].substring(0, 2).toUpperCase();
+  }
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
 export default function ReviewsPage() {
   const {
     reviews,
+    tabFilter = "all",
     sourceFilter,
     statusFilter,
+    ratingFilter = "ALL",
     searchQuery,
     productFilter,
     productSearchQuery,
@@ -444,6 +548,12 @@ export default function ReviewsPage() {
     totalReviewsCount,
     totalPages,
     totalShopReviewsCount,
+    totalReviews = 0,
+    publishedReviews = 0,
+    pendingReviews = 0,
+    aiGeneratedCount = 0,
+    importedCount = 0,
+    mediaCount = 0,
     shopifyFiles = [],
   } = useLoaderData<typeof loader>();
 
@@ -454,6 +564,16 @@ export default function ReviewsPage() {
   const [searchValue, setSearchValue] = useState<string>(searchQuery);
   const [productSearchValue, setProductSearchValue] = useState<string>(productSearchQuery);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  // CONFIRMATION DIALOG MODAL STATE FOR DELETIONS
+  const [deleteConfirmModal, setDeleteConfirmModal] = useState<{
+    open: boolean;
+    type: "single" | "selected" | "all";
+    id?: string;
+    count?: number;
+  }>({ open: false, type: "single" });
+
+  const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
 
   // MEDIA SOURCE SELECTION STATE (Shopify Store Files vs Local Computer)
   const [mediaSourceMode, setMediaSourceMode] = useState<"shopify_files" | "computer_upload">("shopify_files");
@@ -607,7 +727,6 @@ export default function ReviewsPage() {
   const allSelected =
     allCurrentIds.length > 0 &&
     allCurrentIds.every((id: string) => selectedIds.has(id));
-  const someSelected = selectedIds.size > 0;
 
   const toggleSelectAll = useCallback(() => {
     if (allSelected) {
@@ -637,12 +756,6 @@ export default function ReviewsPage() {
     navigate(`/app/reviews?${params.toString()}`);
   };
 
-  const handleProductChange = (val: string) => updateFilters({ product: val, page: "1" });
-  const handleSourceChange = (val: string) => updateFilters({ source: val, page: "1" });
-  const handleStatusChange = (val: string) => updateFilters({ status: val, page: "1" });
-  const handleSearchSubmit = () => updateFilters({ search: searchValue, page: "1" });
-  const handleProductSearchSubmit = () => updateFilters({ productSearch: productSearchValue, page: "1" });
-
   const handleTogglePublish = (id: string) => {
     const fd = new FormData();
     fd.append("intent", "togglePublish");
@@ -650,45 +763,39 @@ export default function ReviewsPage() {
     submit(fd, { method: "post" });
   };
 
-  const handleApproveAllPending = () => {
-    if (confirm("Approve and publish ALL pending draft reviews for your store?")) {
-      const fd = new FormData();
-      fd.append("intent", "approveAllPending");
-      submit(fd, { method: "post" });
-    }
+  const handleBulkApprove = () => {
+    if (selectedIds.size === 0) return;
+    const fd = new FormData();
+    fd.append("intent", "approveSelected");
+    selectedIds.forEach((id) => fd.append("ids", id));
+    submit(fd, { method: "post" });
   };
 
-  const handleDelete = (id: string) => {
-    if (confirm("Are you sure you want to delete this review?")) {
+  const handleBulkUnpublish = () => {
+    if (selectedIds.size === 0) return;
+    const fd = new FormData();
+    fd.append("intent", "unpublishSelected");
+    selectedIds.forEach((id) => fd.append("ids", id));
+    submit(fd, { method: "post" });
+  };
+
+  const executeConfirmDelete = () => {
+    const { type, id } = deleteConfirmModal;
+    setDeleteConfirmModal({ open: false, type: "single" });
+
+    if (type === "single" && id) {
       const fd = new FormData();
       fd.append("intent", "delete");
       fd.append("reviewId", id);
       submit(fd, { method: "post" });
-    }
-  };
-
-  const handleBulkDelete = () => {
-    if (selectedIds.size === 0) return;
-    if (
-      confirm(
-        `Are you sure you want to delete ${selectedIds.size} selected review${selectedIds.size > 1 ? "s" : ""}? This cannot be undone.`
-      )
-    ) {
+    } else if (type === "selected") {
+      if (selectedIds.size === 0) return;
       const fd = new FormData();
       fd.append("intent", "deleteSelected");
-      selectedIds.forEach((id) => fd.append("ids", id));
+      selectedIds.forEach((sid) => fd.append("ids", sid));
       submit(fd, { method: "post" });
       setSelectedIds(new Set());
-    }
-  };
-
-  const handleDeleteAll = () => {
-    if (
-      confirm(
-        `⚠️ WARNING: This will permanently delete ALL ${totalReviewsCount} reviews for your store. This cannot be undone!`
-      ) &&
-      confirm("Are you absolutely sure? ALL reviews will be deleted forever.")
-    ) {
+    } else if (type === "all") {
       const fd = new FormData();
       fd.append("intent", "deleteAll");
       submit(fd, { method: "post" });
@@ -699,305 +806,977 @@ export default function ReviewsPage() {
   const startRecord = totalReviewsCount > 0 ? (page - 1) * pageSize + 1 : 0;
   const endRecord = Math.min(page * pageSize, totalReviewsCount);
 
-  // Select-all header checkbox cell
-  const selectAllCell = (
-    <div style={{ display: "flex", alignItems: "center", paddingLeft: "2px" }}>
-      <Checkbox
-        label=""
-        labelHidden
-        checked={allSelected}
-        onChange={toggleSelectAll}
-      />
-    </div>
-  );
-
-  const rows = reviews.map((r: any) => [
-    <div
-      key={`cb-${r.id}`}
-      style={{ display: "flex", alignItems: "center", paddingLeft: "2px" }}
-    >
-      <Checkbox
-        label=""
-        labelHidden
-        checked={selectedIds.has(r.id)}
-        onChange={() => toggleSelectOne(r.id)}
-      />
-    </div>,
-
-    <BlockStack key={`r-${r.id}`} gap="100">
-      <Text as="span" fontWeight="bold">
-        {r.reviewerName || "Verified Buyer"}
-      </Text>
-      {r.isVerifiedPurchase && (
-        <Badge tone="success">Verified Purchase</Badge>
-      )}
-    </BlockStack>,
-
-    <BlockStack key={`p-${r.id}`} gap="050">
-      <Text as="span" fontWeight="bold" variant="bodySm">
-        {r.productTitle}
-      </Text>
-    </BlockStack>,
-
-    `${r.rating} ⭐`,
-
-    <BlockStack key={`b-${r.id}`} gap="100">
-      {(r.imageUrl || r.videoUrl) && (
-        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
-          {r.videoUrl ? (
-            <div style={{ position: "relative", width: "44px", height: "44px", borderRadius: "6px", overflow: "hidden", background: "#000", flexShrink: 0 }}>
-              <video src={r.videoUrl} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-              <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", fontSize: "10px", color: "#fff" }}>▶</div>
-            </div>
-          ) : (
-            <img src={r.imageUrl} alt="Review media" style={{ width: "44px", height: "44px", objectFit: "cover", borderRadius: "6px", border: "1px solid #ddd", flexShrink: 0 }} />
-          )}
-          <Badge tone="info">{r.videoUrl ? "Video Review" : "Image Review"}</Badge>
-        </div>
-      )}
-      <Text as="span" variant="bodySm" fontWeight="bold">
-        {r.bodyShort}
-      </Text>
-      <Text as="span" variant="bodyXs" tone="subdued">
-        {(r.bodyFull || "").length > 120
-          ? `${(r.bodyFull || "").substring(0, 120)}...`
-          : r.bodyFull}
-      </Text>
-      {r.externalUrl && (
-        <Text as="span" variant="bodyXs" tone="subdued">
-          🔗 {r.externalUrl}
-        </Text>
-      )}
-      {r.isAiGenerated && (
-        <InlineStack>
-          <Badge tone="warning">AI-Generated Draft</Badge>
-        </InlineStack>
-      )}
-    </BlockStack>,
-
-    <Badge key={`s-${r.id}`} tone={r.source.startsWith("IMPORTED") ? "attention" : "success"}>
-      {r.source.replace("IMPORTED_", "")}
-    </Badge>,
-
-    <Badge key={`st-${r.id}`} tone={r.isPublished ? "success" : "warning"}>
-      {r.isPublished ? "Published" : "Pending"}
-    </Badge>,
-
-    <InlineStack key={`a-${r.id}`} gap="200">
-      <Button
-        size="micro"
-        icon={EditIcon}
-        onClick={() => handleOpenEdit(r)}
-      >
-        Edit
-      </Button>
-      <Button
-        size="micro"
-        onClick={() => handleOpenUploadMedia(r)}
-      >
-        {r.imageUrl || r.videoUrl ? "📷 Media ✓" : "+ Upload Media"}
-      </Button>
-      <Button
-        size="micro"
-        tone={r.isPublished ? "critical" : "success"}
-        onClick={() => handleTogglePublish(r.id)}
-      >
-        {r.isPublished ? "Unpublish" : "Approve & Publish"}
-      </Button>
-      <Button
-        size="micro"
-        tone="critical"
-        icon={DeleteIcon}
-        onClick={() => handleDelete(r.id)}
-      >
-        Delete
-      </Button>
-    </InlineStack>,
-  ]);
-
   return (
     <Page fullWidth title="Reviews Moderation & Management">
-      <BlockStack gap="500">
-        <Banner title="Review Moderation Queue" tone="info">
-          <p>
-            Manage, verify, edit, approve, and publish customer reviews. Use the full-width management table to filter reviews by product title, marketplace source, or moderation status.
-          </p>
-        </Banner>
+      <div style={{ maxWidth: "1280px", margin: "0 auto", padding: "8px 0 32px 0" }}>
+        {/* TOP 4 SUMMARY STAT CARDS MATCHING REFERENCE DESIGN */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+            gap: "16px",
+            marginBottom: "20px",
+          }}
+        >
+          {/* Card 1: Total */}
+          <div
+            style={{
+              backgroundColor: "#ffffff",
+              border: "1px solid #e2e8f0",
+              borderRadius: "12px",
+              padding: "18px 20px",
+              boxShadow: "0 1px 2px rgba(0,0,0,0.03)",
+            }}
+          >
+            <div style={{ fontSize: "13px", fontWeight: 500, color: "#64748b", marginBottom: "6px" }}>
+              Total
+            </div>
+            <div style={{ fontSize: "28px", fontWeight: 700, color: "#0f172a", lineHeight: 1.1 }}>
+              {totalReviews}
+            </div>
+          </div>
 
-        {selectedProductSummary && (
-          <Banner tone="info" title={`Product Overview: ${selectedProductSummary.title}`}>
-            <p style={{ fontWeight: 600 }}>
-              Total Reviews for this Product: {selectedProductSummary.count} review{selectedProductSummary.count > 1 ? "s" : ""} 
-              ({selectedProductSummary.published} Published, {selectedProductSummary.pending} Pending)
-            </p>
-          </Banner>
-        )}
+          {/* Card 2: Published */}
+          <div
+            style={{
+              backgroundColor: "#ffffff",
+              border: "1px solid #e2e8f0",
+              borderRadius: "12px",
+              padding: "18px 20px",
+              boxShadow: "0 1px 2px rgba(0,0,0,0.03)",
+            }}
+          >
+            <div style={{ fontSize: "13px", fontWeight: 500, color: "#64748b", marginBottom: "6px" }}>
+              Published
+            </div>
+            <div style={{ fontSize: "28px", fontWeight: 700, color: "#16a34a", lineHeight: 1.1 }}>
+              {publishedReviews}
+            </div>
+          </div>
 
-        <Card padding="500">
-          <BlockStack gap="400">
-            {/* SEARCH AND BULK ACTIONS */}
-            <InlineStack align="space-between" blockAlign="center">
-              <div style={{ display: "flex", gap: "12px", width: "650px" }}>
-                <div style={{ flex: 1 }}>
-                  <TextField
-                    label=""
-                    labelHidden
-                    placeholder="Search by Product Title (e.g. Hoodie, Sheet Set)..."
-                    value={productSearchValue}
-                    onChange={setProductSearchValue}
-                    prefix={<SearchIcon />}
-                    onBlur={handleProductSearchSubmit}
-                    autoComplete="off"
-                  />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <TextField
-                    label=""
-                    labelHidden
-                    placeholder="Search by reviewer name or text snippet..."
-                    value={searchValue}
-                    onChange={setSearchValue}
-                    prefix={<SearchIcon />}
-                    onBlur={handleSearchSubmit}
-                    autoComplete="off"
-                  />
-                </div>
+          {/* Card 3: Needs approval (Distinctive amber border matching reference screenshot) */}
+          <div
+            style={{
+              backgroundColor: "#ffffff",
+              border: "2px solid #f59e0b",
+              borderRadius: "12px",
+              padding: "18px 20px",
+              boxShadow: "0 1px 4px rgba(245, 158, 11, 0.1)",
+            }}
+          >
+            <div style={{ fontSize: "13px", fontWeight: 500, color: "#475569", marginBottom: "6px" }}>
+              Needs approval
+            </div>
+            <div style={{ fontSize: "28px", fontWeight: 700, color: "#d97706", lineHeight: 1.1 }}>
+              {pendingReviews}
+            </div>
+          </div>
+
+          {/* Card 4: AI drafts (private) */}
+          <div
+            style={{
+              backgroundColor: "#ffffff",
+              border: "1px solid #e2e8f0",
+              borderRadius: "12px",
+              padding: "18px 20px",
+              boxShadow: "0 1px 2px rgba(0,0,0,0.03)",
+            }}
+          >
+            <div style={{ fontSize: "13px", fontWeight: 500, color: "#64748b", marginBottom: "6px" }}>
+              AI drafts (private)
+            </div>
+            <div style={{ fontSize: "28px", fontWeight: 700, color: "#0f172a", lineHeight: 1.1 }}>
+              {aiGeneratedCount}
+            </div>
+          </div>
+        </div>
+
+        {/* MAIN REVIEWS MODERATION CARD */}
+        <div
+          style={{
+            backgroundColor: "#ffffff",
+            border: "1px solid #e2e8f0",
+            borderRadius: "14px",
+            boxShadow: "0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.02)",
+            overflow: "hidden",
+          }}
+        >
+          {/* TABS ROW MATCHING REFERENCE DESIGN */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "24px",
+              padding: "0 20px",
+              borderBottom: "1px solid #e2e8f0",
+              overflowX: "auto",
+            }}
+          >
+            {[
+              { id: "all", label: `All ${totalReviews}` },
+              { id: "published", label: `Published ${publishedReviews}` },
+              { id: "pending", label: `Pending ${pendingReviews}` },
+              { id: "imported", label: `Imported ${importedCount}` },
+              { id: "media", label: `With media ${mediaCount}` },
+              { id: "ai_drafts", label: `AI drafts ${aiGeneratedCount}` },
+            ].map((tab) => {
+              const isActive = tabFilter === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => updateFilters({ tab: tab.id, page: "1" })}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    borderBottom: isActive ? "2px solid #2563eb" : "2px solid transparent",
+                    padding: "14px 2px",
+                    fontSize: "14px",
+                    fontWeight: isActive ? 600 : 500,
+                    color: isActive ? "#2563eb" : "#64748b",
+                    cursor: "pointer",
+                    whiteSpace: "nowrap",
+                    transition: "all 0.15s ease",
+                  }}
+                >
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* SEARCH AND FILTERS TOOLBAR */}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: "12px",
+              padding: "16px 20px",
+            }}
+          >
+            {/* Search input with search icon */}
+            <div style={{ position: "relative", flex: 1, minWidth: "260px" }}>
+              <span
+                style={{
+                  position: "absolute",
+                  left: "12px",
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  color: "#94a3b8",
+                  display: "flex",
+                  alignItems: "center",
+                  pointerEvents: "none",
+                }}
+              >
+                <Icon source={SearchIcon} />
+              </span>
+              <input
+                type="text"
+                value={searchValue}
+                onChange={(e) => setSearchValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") updateFilters({ search: searchValue, page: "1" });
+                }}
+                onBlur={() => updateFilters({ search: searchValue, page: "1" })}
+                placeholder="Search reviewer, product or text"
+                style={{
+                  width: "100%",
+                  padding: "8px 12px 8px 36px",
+                  borderRadius: "8px",
+                  border: "1px solid #cbd5e1",
+                  fontSize: "13px",
+                  outline: "none",
+                  color: "#0f172a",
+                  boxSizing: "border-box",
+                }}
+              />
+            </div>
+
+            {/* Dropdowns & Delete All Action */}
+            <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+              {/* Product Filter */}
+              <select
+                value={productFilter}
+                onChange={(e) => updateFilters({ product: e.target.value, page: "1" })}
+                style={{
+                  padding: "8px 12px",
+                  borderRadius: "8px",
+                  border: "1px solid #cbd5e1",
+                  fontSize: "13px",
+                  backgroundColor: "#ffffff",
+                  color: "#334155",
+                  cursor: "pointer",
+                  outline: "none",
+                  maxWidth: "200px",
+                }}
+              >
+                <option value="ALL">Product: All</option>
+                {productOptionsList.map((p: any) => (
+                  <option key={p.title} value={p.title}>
+                    {p.title} ({p.count})
+                  </option>
+                ))}
+              </select>
+
+              {/* Source Filter */}
+              <select
+                value={sourceFilter}
+                onChange={(e) => updateFilters({ source: e.target.value, page: "1" })}
+                style={{
+                  padding: "8px 12px",
+                  borderRadius: "8px",
+                  border: "1px solid #cbd5e1",
+                  fontSize: "13px",
+                  backgroundColor: "#ffffff",
+                  color: "#334155",
+                  cursor: "pointer",
+                  outline: "none",
+                }}
+              >
+                <option value="ALL">Source: All</option>
+                <option value="STORE">Store</option>
+                <option value="AMAZON">Amazon</option>
+                <option value="FLIPKART">Flipkart</option>
+                <option value="ALIBABA">Alibaba</option>
+                <option value="AI">AI Generated</option>
+              </select>
+
+              {/* Rating Filter */}
+              <select
+                value={ratingFilter}
+                onChange={(e) => updateFilters({ rating: e.target.value, page: "1" })}
+                style={{
+                  padding: "8px 12px",
+                  borderRadius: "8px",
+                  border: "1px solid #cbd5e1",
+                  fontSize: "13px",
+                  backgroundColor: "#ffffff",
+                  color: "#334155",
+                  cursor: "pointer",
+                  outline: "none",
+                }}
+              >
+                <option value="ALL">Rating: All</option>
+                <option value="5">5 Stars</option>
+                <option value="4">4 Stars</option>
+                <option value="3">3 Stars</option>
+                <option value="2">2 Stars</option>
+                <option value="1">1 Star</option>
+              </select>
+
+              {/* Delete All Reviews Button */}
+              <button
+                onClick={() => setDeleteConfirmModal({ open: true, type: "all" })}
+                title="Delete all reviews with confirmation"
+                style={{
+                  padding: "8px 12px",
+                  borderRadius: "8px",
+                  border: "1px solid #fecaca",
+                  backgroundColor: "#fff5f5",
+                  color: "#dc2626",
+                  fontSize: "12px",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "4px",
+                }}
+              >
+                <span>🗑</span> Delete All
+              </button>
+            </div>
+          </div>
+
+          {/* BULK ACTIONS BAR (When reviews are selected) */}
+          {selectedIds.size > 0 && (
+            <div
+              style={{
+                margin: "0 20px 16px 20px",
+                padding: "10px 16px",
+                backgroundColor: "#dbeafe",
+                border: "1px solid #bfdbfe",
+                borderRadius: "8px",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: "12px",
+              }}
+            >
+              <div style={{ fontWeight: 600, color: "#1d4ed8", fontSize: "14px" }}>
+                {selectedIds.size} selected
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <button
+                  onClick={handleBulkApprove}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    padding: "6px 14px",
+                    borderRadius: "6px",
+                    border: "1px solid #94a3b8",
+                    backgroundColor: "#ffffff",
+                    color: "#0f172a",
+                    fontSize: "13px",
+                    fontWeight: 500,
+                    cursor: "pointer",
+                  }}
+                >
+                  <span>✓</span> Approve
+                </button>
+
+                <button
+                  onClick={handleBulkUnpublish}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    padding: "6px 14px",
+                    borderRadius: "6px",
+                    border: "1px solid #94a3b8",
+                    backgroundColor: "#ffffff",
+                    color: "#0f172a",
+                    fontSize: "13px",
+                    fontWeight: 500,
+                    cursor: "pointer",
+                  }}
+                >
+                  <span>⃠</span> Unpublish
+                </button>
+
+                <button
+                  onClick={() =>
+                    setDeleteConfirmModal({
+                      open: true,
+                      type: "selected",
+                      count: selectedIds.size,
+                    })
+                  }
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    padding: "6px 14px",
+                    borderRadius: "6px",
+                    border: "1px solid #fca5a5",
+                    backgroundColor: "#fee2e2",
+                    color: "#b91c1c",
+                    fontSize: "13px",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  <span>🗑</span> Delete
+                </button>
+
+                <button
+                  onClick={() => setSelectedIds(new Set())}
+                  style={{
+                    padding: "6px 10px",
+                    borderRadius: "6px",
+                    border: "none",
+                    backgroundColor: "transparent",
+                    color: "#64748b",
+                    fontSize: "12px",
+                    fontWeight: 500,
+                    cursor: "pointer",
+                    textDecoration: "underline",
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* TABLE MATCHING REFERENCE DESIGN */}
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
+              <thead>
+                <tr style={{ borderBottom: "1px solid #e2e8f0", backgroundColor: "#ffffff" }}>
+                  <th style={{ padding: "14px 16px", width: "40px" }}>
+                    <input
+                      type="checkbox"
+                      checked={allSelected}
+                      onChange={toggleSelectAll}
+                      style={{ width: "16px", height: "16px", cursor: "pointer", accentColor: "#2563eb" }}
+                    />
+                  </th>
+                  <th style={{ padding: "14px 16px", fontSize: "13px", fontWeight: 600, color: "#475569" }}>Reviewer</th>
+                  <th style={{ padding: "14px 16px", fontSize: "13px", fontWeight: 600, color: "#475569" }}>Product</th>
+                  <th style={{ padding: "14px 16px", fontSize: "13px", fontWeight: 600, color: "#475569" }}>Rating</th>
+                  <th style={{ padding: "14px 16px", fontSize: "13px", fontWeight: 600, color: "#475569" }}>Review</th>
+                  <th style={{ padding: "14px 16px", fontSize: "13px", fontWeight: 600, color: "#475569" }}>Source</th>
+                  <th style={{ padding: "14px 16px", fontSize: "13px", fontWeight: 600, color: "#475569" }}>Status</th>
+                  <th style={{ padding: "14px 16px", fontSize: "13px", fontWeight: 600, color: "#475569" }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {reviews.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} style={{ padding: "36px 20px", textAlign: "center", color: "#64748b", fontSize: "14px" }}>
+                      No reviews match your selected filters.
+                    </td>
+                  </tr>
+                ) : (
+                  reviews.map((r: any) => {
+                    const isAiDraft = r.isAiGenerated;
+                    const rowBg = isAiDraft ? "#fef3c7" : "#ffffff";
+
+                    return (
+                      <tr
+                        key={r.id}
+                        style={{
+                          borderBottom: "1px solid #f1f5f9",
+                          backgroundColor: rowBg,
+                          transition: "background-color 0.1s ease",
+                        }}
+                      >
+                        {/* Checkbox */}
+                        <td style={{ padding: "14px 16px" }}>
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.has(r.id)}
+                            onChange={() => toggleSelectOne(r.id)}
+                            style={{ width: "16px", height: "16px", cursor: "pointer", accentColor: "#2563eb" }}
+                          />
+                        </td>
+
+                        {/* Reviewer */}
+                        <td style={{ padding: "14px 16px" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                            <div
+                              style={{
+                                width: "36px",
+                                height: "36px",
+                                borderRadius: "50%",
+                                backgroundColor: isAiDraft ? "#fde68a" : "#dbeafe",
+                                color: isAiDraft ? "#92400e" : "#1e40af",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                fontSize: "12px",
+                                fontWeight: 700,
+                                flexShrink: 0,
+                              }}
+                            >
+                              {getInitials(r.reviewerName || "Buyer")}
+                            </div>
+                            <div style={{ display: "flex", flexDirection: "column" }}>
+                              <span
+                                style={{
+                                  fontSize: "13px",
+                                  fontWeight: 600,
+                                  color: "#0f172a",
+                                  maxWidth: "140px",
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                  whiteSpace: "nowrap",
+                                }}
+                                title={r.reviewerName || "Verified Buyer"}
+                              >
+                                {r.reviewerName || "Verified Buyer"}
+                              </span>
+                              {isAiDraft ? (
+                                <span style={{ fontSize: "11px", fontWeight: 600, color: "#b45309", marginTop: "2px" }}>
+                                  AI draft
+                                </span>
+                              ) : r.isVerifiedPurchase ? (
+                                <span
+                                  style={{
+                                    display: "inline-block",
+                                    marginTop: "2px",
+                                    fontSize: "10px",
+                                    fontWeight: 600,
+                                    color: "#15803d",
+                                    backgroundColor: "#dcfce7",
+                                    padding: "1px 7px",
+                                    borderRadius: "10px",
+                                    width: "fit-content",
+                                  }}
+                                >
+                                  Verified order
+                                </span>
+                              ) : r.source?.startsWith("IMPORTED") ? (
+                                <span
+                                  style={{
+                                    display: "inline-block",
+                                    marginTop: "2px",
+                                    fontSize: "10px",
+                                    fontWeight: 600,
+                                    color: "#64748b",
+                                    backgroundColor: "#f1f5f9",
+                                    padding: "1px 7px",
+                                    borderRadius: "10px",
+                                    width: "fit-content",
+                                  }}
+                                >
+                                  Imported
+                                </span>
+                              ) : null}
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* Product */}
+                        <td style={{ padding: "14px 16px", fontSize: "13px", fontWeight: 500, color: "#1e293b", maxWidth: "160px" }}>
+                          <div
+                            style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                            title={r.productTitle}
+                          >
+                            {r.productTitle}
+                          </div>
+                        </td>
+
+                        {/* Rating */}
+                        <td style={{ padding: "14px 16px", whiteSpace: "nowrap" }}>
+                          <span style={{ color: "#b45309", fontSize: "14px", letterSpacing: "1px" }}>
+                            {"★".repeat(Math.max(1, Math.min(5, r.rating || 5)))}
+                          </span>
+                        </td>
+
+                        {/* Review Snippet + Media Thumbnail */}
+                        <td style={{ padding: "14px 16px", fontSize: "13px", color: "#334155", maxWidth: "240px" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                            {(r.imageUrl || r.videoUrl) && (
+                              <div
+                                style={{
+                                  width: "32px",
+                                  height: "32px",
+                                  borderRadius: "6px",
+                                  overflow: "hidden",
+                                  flexShrink: 0,
+                                  border: "1px solid #e2e8f0",
+                                  backgroundColor: "#f8fafc",
+                                }}
+                              >
+                                {r.videoUrl ? (
+                                  <video src={r.videoUrl} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                                ) : (
+                                  <img src={r.imageUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                                )}
+                              </div>
+                            )}
+                            <span
+                              style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                              title={r.bodyShort || r.bodyFull || ""}
+                            >
+                              {r.bodyShort || r.bodyFull || "Review content"}
+                            </span>
+                            {(r.imageUrl || r.videoUrl) && (
+                              <span
+                                style={{
+                                  fontSize: "10px",
+                                  fontWeight: 600,
+                                  color: "#0284c7",
+                                  backgroundColor: "#e0f2fe",
+                                  padding: "1px 6px",
+                                  borderRadius: "4px",
+                                  flexShrink: 0,
+                                }}
+                              >
+                                {r.videoUrl ? "Video" : "Photo"}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+
+                        {/* Source */}
+                        <td style={{ padding: "14px 16px", whiteSpace: "nowrap" }}>
+                          {(() => {
+                            const srcUpper = (r.source || "").toUpperCase();
+                            let label = "Store";
+                            let bg = "#dcfce7";
+                            let col = "#15803d";
+
+                            if (isAiDraft || srcUpper.includes("AI")) {
+                              label = "AI generated";
+                              bg = "#f1f5f9";
+                              col = "#475569";
+                            } else if (srcUpper.includes("ALIBABA")) {
+                              label = "Alibaba";
+                              bg = "#fef3c7";
+                              col = "#b45309";
+                            } else if (srcUpper.includes("FLIPKART")) {
+                              label = "Flipkart";
+                              bg = "#e0f2fe";
+                              col = "#0284c7";
+                            } else if (srcUpper.includes("AMAZON")) {
+                              label = "Amazon";
+                              bg = "#fef3c7";
+                              col = "#b45309";
+                            }
+
+                            return (
+                              <span
+                                style={{
+                                  display: "inline-block",
+                                  padding: "3px 10px",
+                                  borderRadius: "12px",
+                                  fontSize: "11px",
+                                  fontWeight: 600,
+                                  backgroundColor: bg,
+                                  color: col,
+                                }}
+                              >
+                                {label}
+                              </span>
+                            );
+                          })()}
+                        </td>
+
+                        {/* Status */}
+                        <td style={{ padding: "14px 16px", whiteSpace: "nowrap" }}>
+                          {(() => {
+                            if (isAiDraft && !r.isPublished) {
+                              return (
+                                <span
+                                  style={{
+                                    display: "inline-block",
+                                    padding: "3px 10px",
+                                    borderRadius: "12px",
+                                    fontSize: "11px",
+                                    fontWeight: 600,
+                                    backgroundColor: "#fee2e2",
+                                    color: "#dc2626",
+                                  }}
+                                >
+                                  Hidden
+                                </span>
+                              );
+                            }
+                            if (r.isPublished) {
+                              return (
+                                <span
+                                  style={{
+                                    display: "inline-block",
+                                    padding: "3px 10px",
+                                    borderRadius: "12px",
+                                    fontSize: "11px",
+                                    fontWeight: 600,
+                                    backgroundColor: "#dcfce7",
+                                    color: "#15803d",
+                                  }}
+                                >
+                                  Published
+                                </span>
+                              );
+                            }
+                            return (
+                              <span
+                                style={{
+                                  display: "inline-block",
+                                  padding: "3px 10px",
+                                  borderRadius: "12px",
+                                  fontSize: "11px",
+                                  fontWeight: 600,
+                                  backgroundColor: "#fef3c7",
+                                  color: "#b45309",
+                                }}
+                              >
+                                Pending
+                              </span>
+                            );
+                          })()}
+                        </td>
+
+                        {/* Actions */}
+                        <td style={{ padding: "14px 16px", whiteSpace: "nowrap" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                            {/* Edit button */}
+                            <button
+                              onClick={() => handleOpenEdit(r)}
+                              title="Edit review"
+                              style={{
+                                width: "30px",
+                                height: "30px",
+                                borderRadius: "6px",
+                                border: "1px solid #cbd5e1",
+                                backgroundColor: "#ffffff",
+                                color: "#475569",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                cursor: "pointer",
+                              }}
+                            >
+                              <Icon source={EditIcon} />
+                            </button>
+
+                            {/* Media Upload button */}
+                            <button
+                              onClick={() => handleOpenUploadMedia(r)}
+                              title="Upload or manage media"
+                              style={{
+                                width: "30px",
+                                height: "30px",
+                                borderRadius: "6px",
+                                border: "1px solid #cbd5e1",
+                                backgroundColor: "#ffffff",
+                                color: "#475569",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                cursor: "pointer",
+                              }}
+                            >
+                              <Icon source={ImageIcon} />
+                            </button>
+
+                            {/* Approve / Publish toggle button */}
+                            <button
+                              onClick={() => handleTogglePublish(r.id)}
+                              title={r.isPublished ? "Unpublish review" : "Approve and publish"}
+                              style={{
+                                width: "30px",
+                                height: "30px",
+                                borderRadius: "6px",
+                                border: r.isPublished ? "1px solid #cbd5e1" : "1px solid #86efac",
+                                backgroundColor: r.isPublished ? "#ffffff" : "#f0fdf4",
+                                color: r.isPublished ? "#64748b" : "#15803d",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                cursor: "pointer",
+                              }}
+                            >
+                              <Icon source={CheckIcon} />
+                            </button>
+
+                            {/* Delete button (styled red on AI draft as shown in screenshot row 5) */}
+                            <button
+                              onClick={() => setDeleteConfirmModal({ open: true, type: "single", id: r.id })}
+                              title="Delete review"
+                              style={{
+                                width: "30px",
+                                height: "30px",
+                                borderRadius: "6px",
+                                border: isAiDraft ? "1px solid #fca5a5" : "1px solid #cbd5e1",
+                                backgroundColor: isAiDraft ? "#fee2e2" : "#ffffff",
+                                color: "#dc2626",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                cursor: "pointer",
+                              }}
+                            >
+                              <Icon source={DeleteIcon} />
+                            </button>
+
+                            {/* More Menu */}
+                            <div style={{ position: "relative" }}>
+                              <button
+                                onClick={() => setActiveMenuId(activeMenuId === r.id ? null : r.id)}
+                                title="More options"
+                                style={{
+                                  width: "30px",
+                                  height: "30px",
+                                  borderRadius: "6px",
+                                  border: "1px solid #cbd5e1",
+                                  backgroundColor: "#ffffff",
+                                  color: "#475569",
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  cursor: "pointer",
+                                }}
+                              >
+                                <Icon source={MenuHorizontalIcon} />
+                              </button>
+
+                              {activeMenuId === r.id && (
+                                <div
+                                  style={{
+                                    position: "absolute",
+                                    right: 0,
+                                    top: "34px",
+                                    backgroundColor: "#ffffff",
+                                    border: "1px solid #e2e8f0",
+                                    borderRadius: "8px",
+                                    boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
+                                    zIndex: 50,
+                                    minWidth: "160px",
+                                    padding: "4px 0",
+                                  }}
+                                >
+                                  {r.externalUrl && (
+                                    <a
+                                      href={r.externalUrl}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      style={{
+                                        display: "block",
+                                        padding: "8px 12px",
+                                        fontSize: "12px",
+                                        color: "#2563eb",
+                                        textDecoration: "none",
+                                      }}
+                                    >
+                                      🔗 View External Link
+                                    </a>
+                                  )}
+                                  <button
+                                    onClick={() => {
+                                      setActiveMenuId(null);
+                                      handleOpenEdit(r);
+                                    }}
+                                    style={{
+                                      width: "100%",
+                                      textAlign: "left",
+                                      padding: "8px 12px",
+                                      fontSize: "12px",
+                                      color: "#334155",
+                                      background: "none",
+                                      border: "none",
+                                      cursor: "pointer",
+                                    }}
+                                  >
+                                    Edit Details
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      setActiveMenuId(null);
+                                      setDeleteConfirmModal({ open: true, type: "single", id: r.id });
+                                    }}
+                                    style={{
+                                      width: "100%",
+                                      textAlign: "left",
+                                      padding: "8px 12px",
+                                      fontSize: "12px",
+                                      color: "#dc2626",
+                                      background: "none",
+                                      border: "none",
+                                      cursor: "pointer",
+                                    }}
+                                  >
+                                    Delete Review
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* PAGINATION FOOTER MATCHING REFERENCE DESIGN */}
+          {totalReviewsCount > 0 && (
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: "12px",
+                padding: "16px 20px",
+                borderTop: "1px solid #f1f5f9",
+                fontSize: "13px",
+                color: "#64748b",
+              }}
+            >
+              <div>
+                Showing <strong style={{ color: "#0f172a" }}>{startRecord}</strong> to{" "}
+                <strong style={{ color: "#0f172a" }}>{endRecord}</strong> of{" "}
+                <strong style={{ color: "#0f172a" }}>{totalReviewsCount}</strong>
               </div>
 
-              <InlineStack gap="200">
-                {someSelected && (
-                  <Button
-                    variant="primary"
-                    tone="critical"
-                    icon={DeleteIcon}
-                    loading={isSubmitting}
-                    onClick={handleBulkDelete}
-                  >
-                    {`Delete Selected (${selectedIds.size})`}
-                  </Button>
-                )}
-                <Button
-                  tone="critical"
-                  icon={DeleteIcon}
-                  loading={isSubmitting}
-                  onClick={handleDeleteAll}
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <button
+                  onClick={() => updateFilters({ page: String(Math.max(1, page - 1)) })}
+                  disabled={page <= 1}
+                  style={{
+                    width: "32px",
+                    height: "32px",
+                    borderRadius: "6px",
+                    border: "1px solid #cbd5e1",
+                    backgroundColor: "#ffffff",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    cursor: page <= 1 ? "not-allowed" : "pointer",
+                    opacity: page <= 1 ? 0.4 : 1,
+                  }}
+                  title="Previous page"
                 >
-                  Delete All Reviews
-                </Button>
-                <Button
-                  variant="primary"
-                  icon={CheckIcon}
-                  onClick={handleApproveAllPending}
+                  <Icon source={ChevronLeftIcon} />
+                </button>
+
+                <span style={{ fontSize: "13px", fontWeight: "500", color: "#334155", padding: "0 4px" }}>
+                  Page {page} of {totalPages}
+                </span>
+
+                <button
+                  onClick={() => updateFilters({ page: String(Math.min(totalPages, page + 1)) })}
+                  disabled={page >= totalPages}
+                  style={{
+                    width: "32px",
+                    height: "32px",
+                    borderRadius: "6px",
+                    border: "1px solid #cbd5e1",
+                    backgroundColor: "#ffffff",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    cursor: page >= totalPages ? "not-allowed" : "pointer",
+                    opacity: page >= totalPages ? 0.4 : 1,
+                  }}
+                  title="Next page"
                 >
-                  Approve All Pending Drafts
-                </Button>
-              </InlineStack>
-            </InlineStack>
+                  <Icon source={ChevronRightIcon} />
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
 
-            {/* FILTERS */}
-            <InlineGrid columns={3} gap="400">
-              <Select
-                label="Filter by Product Title"
-                options={[
-                  { label: `All Products (${totalShopReviewsCount} Total Reviews)`, value: "ALL" },
-                  ...productOptionsList.map((p: any) => ({
-                    label: `${p.title} (${p.count} review${p.count > 1 ? "s" : ""})`,
-                    value: p.title,
-                  })),
-                ]}
-                value={productFilter}
-                onChange={handleProductChange}
-              />
-
-              <Select
-                label="Filter by Source"
-                options={[
-                  { label: "All Sources", value: "ALL" },
-                  { label: "Manual Submissions", value: "MANUAL" },
-                  { label: "AI Generated", value: "AI_GENERATED" },
-                  { label: "Amazon Imported", value: "IMPORTED_AMAZON" },
-                  { label: "Flipkart Imported", value: "IMPORTED_FLIPKART" },
-                  { label: "Alibaba Imported", value: "IMPORTED_ALIBABA" },
-                ]}
-                value={sourceFilter}
-                onChange={handleSourceChange}
-              />
-
-              <Select
-                label="Filter by Status"
-                options={[
-                  { label: "All Statuses", value: "ALL" },
-                  { label: "Published Only", value: "PUBLISHED" },
-                  { label: "Pending Moderation", value: "PENDING" },
-                ]}
-                value={statusFilter}
-                onChange={handleStatusChange}
-              />
-            </InlineGrid>
-
-            {/* COUNT HEADER & PAGINATION */}
-            <InlineStack align="space-between" blockAlign="center">
-              <BlockStack gap="100">
-                <Text as="span" tone="subdued">
-                  {totalReviewsCount > 0
-                    ? `Showing ${startRecord}–${endRecord} of ${totalReviewsCount} reviews`
-                    : "0 reviews found"}
-                </Text>
-                {someSelected && (
-                  <Text as="span" tone="caution" fontWeight="semibold">
-                    {selectedIds.size} review{selectedIds.size > 1 ? "s" : ""} selected
-                  </Text>
-                )}
-              </BlockStack>
-
-              {totalPages > 1 && (
-                <Pagination
-                  hasPrevious={page > 1}
-                  onPrevious={() => updateFilters({ page: String(page - 1) })}
-                  hasNext={page < totalPages}
-                  onNext={() => updateFilters({ page: String(page + 1) })}
-                  label={`Page ${page} of ${totalPages}`}
-                />
+        {/* CONFIRMATION POPUP MODAL FOR DELETION */}
+        <Modal
+          open={deleteConfirmModal.open}
+          onClose={() => setDeleteConfirmModal({ open: false, type: "single" })}
+          title="Confirm Review Deletion"
+          primaryAction={{
+            content:
+              deleteConfirmModal.type === "all"
+                ? "Yes, Delete All Reviews"
+                : deleteConfirmModal.type === "selected"
+                ? `Yes, Delete ${deleteConfirmModal.count || selectedIds.size} Reviews`
+                : "Yes, Delete Review",
+            destructive: true,
+            onAction: executeConfirmDelete,
+          }}
+          secondaryActions={[
+            {
+              content: "Cancel",
+              onAction: () => setDeleteConfirmModal({ open: false, type: "single" }),
+            },
+          ]}
+        >
+          <Modal.Section>
+            <div style={{ padding: "8px 0" }}>
+              {deleteConfirmModal.type === "all" ? (
+                <p style={{ color: "#b91c1c", fontWeight: 600, fontSize: "14px" }}>
+                  ⚠️ Warning: This will permanently delete ALL {totalReviewsCount} reviews from your store. This action cannot be undone. Are you sure you wish to proceed?
+                </p>
+              ) : deleteConfirmModal.type === "selected" ? (
+                <p style={{ color: "#334155", fontSize: "14px" }}>
+                  Are you sure you want to delete the {deleteConfirmModal.count || selectedIds.size} selected reviews? They will be permanently removed.
+                </p>
+              ) : (
+                <p style={{ color: "#334155", fontSize: "14px" }}>
+                  Are you sure you want to delete this review? This action cannot be undone.
+                </p>
               )}
-            </InlineStack>
-
-            {/* TABLE */}
-            {reviews.length === 0 ? (
-              <Text as="p" tone="subdued">
-                No reviews match your selected filters.
-              </Text>
-            ) : (
-              <DataTable
-                columnContentTypes={["text", "text", "text", "text", "text", "text", "text", "text"]}
-                headings={[
-                  selectAllCell,
-                  "Reviewer",
-                  "Product Title",
-                  "Rating",
-                  "Snippet & Review Text",
-                  "Source",
-                  "Status",
-                  "Actions",
-                ]}
-                rows={rows}
-              />
-            )}
-
-            {/* BOTTOM PAGINATION */}
-            {totalPages > 1 && (
-              <InlineStack align="center">
-                <Pagination
-                  hasPrevious={page > 1}
-                  onPrevious={() => updateFilters({ page: String(page - 1) })}
-                  hasNext={page < totalPages}
-                  onNext={() => updateFilters({ page: String(page + 1) })}
-                  label={`Page ${page} of ${totalPages}`}
-                />
-              </InlineStack>
-            )}
-          </BlockStack>
-        </Card>
-      </BlockStack>
+            </div>
+          </Modal.Section>
+        </Modal>
+      </div>
 
       {/* DEDICATED UPLOAD REVIEW MEDIA MODAL */}
       <Modal

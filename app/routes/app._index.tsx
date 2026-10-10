@@ -21,14 +21,6 @@ import {
   ViewIcon,
   HideIcon,
   DeleteIcon,
-  SearchIcon,
-  EditIcon,
-  ImageIcon,
-  MenuHorizontalIcon,
-  CheckIcon,
-  ChevronLeftIcon,
-  ChevronRightIcon,
-  ChevronDownIcon,
 } from "@shopify/polaris-icons";
 import { authenticate } from "../shopify.server";
 import db, { ensureTablesExist } from "../db.server";
@@ -240,46 +232,16 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const completedChecklistCount = checklistItems.filter((c) => c.completed).length;
 
   // 10. Reviews for moderation table (full list for client pagination & bulk management)
-  const mediaCount = reviews.filter((r) => Boolean(r.imageUrl || r.videoUrl)).length;
-
-  const productOptions = Array.from(
-    new Set(
-      reviews
-        .map((r) =>
-          r.productHandle
-            ? r.productHandle
-                .split("-")
-                .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1))
-                .join(" ")
-            : "6 Piece Cotton Towel Set"
-        )
-        .filter(Boolean)
-    )
-  );
-
-  const recentReviews = reviews.map((r) => {
-    const formattedProduct = r.productHandle
-      ? r.productHandle
-          .split("-")
-          .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1))
-          .join(" ")
-      : "6 Piece Cotton Towel Set";
-
-    return {
-      id: r.id,
-      reviewerName: r.reviewerName || "Verified Buyer",
-      productTitle: formattedProduct,
-      rating: r.rating || 5,
-      bodyShort: r.bodyShort || "",
-      source: r.source || "STORE_ORDER",
-      imageUrl: r.imageUrl || null,
-      videoUrl: r.videoUrl || null,
-      isPublished: r.isPublished,
-      isAiGenerated: r.isAiGenerated,
-      isVerifiedPurchase: Boolean(r.isVerifiedPurchase || r.source === "STORE_ORDER" || r.orderId),
-      createdAt: r.createdAt ? new Date(r.createdAt).toISOString() : new Date().toISOString(),
-    };
-  });
+  const recentReviews = reviews.map((r) => ({
+    id: r.id,
+    reviewerName: r.reviewerName || "Verified Buyer",
+    rating: r.rating || 5,
+    bodyShort: r.bodyShort || "",
+    source: r.source || "STORE_ORDER",
+    isPublished: r.isPublished,
+    isAiGenerated: r.isAiGenerated,
+    createdAt: r.createdAt ? new Date(r.createdAt).toISOString() : new Date().toISOString(),
+  }));
 
   // Sparkline data samples
   const sparklineTotal = [18, 22, 20, 26, 31, 35, 42];
@@ -292,8 +254,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
     pendingReviews,
     aiGeneratedCount,
     importedCount,
-    mediaCount,
-    productOptions,
     averageRating,
     weeklyGrowth,
     totalQrScans,
@@ -360,32 +320,6 @@ export async function action({ request }: ActionFunctionArgs) {
       });
       await syncReviewsToShopify(admin, shop);
       return json({ success: true, message: `${ids.length} review(s) deleted.` });
-    }
-    return json({ success: true });
-  }
-
-  if (intent === "approveSelected") {
-    const ids = formData.getAll("ids") as string[];
-    if (ids.length > 0) {
-      await db.review.updateMany({
-        where: { AND: [shopWhere, { id: { in: ids } }] },
-        data: { isPublished: true },
-      });
-      await syncReviewsToShopify(admin, shop);
-      return json({ success: true, message: `${ids.length} review(s) approved.` });
-    }
-    return json({ success: true });
-  }
-
-  if (intent === "unpublishSelected") {
-    const ids = formData.getAll("ids") as string[];
-    if (ids.length > 0) {
-      await db.review.updateMany({
-        where: { AND: [shopWhere, { id: { in: ids } }] },
-        data: { isPublished: false },
-      });
-      await syncReviewsToShopify(admin, shop);
-      return json({ success: true, message: `${ids.length} review(s) unpublished.` });
     }
     return json({ success: true });
   }
@@ -634,13 +568,6 @@ function ReviewsBySourceDonut({ sources }: { sources: { label: string; count: nu
   );
 }
 
-function getInitials(name: string): string {
-  if (!name) return "VC";
-  const parts = name.trim().split(/\s+/);
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-}
-
 // ==========================================
 // 4. MAIN DASHBOARD PAGE
 // ==========================================
@@ -652,15 +579,8 @@ export default function DynamicReviewDashboard() {
   // Timeframe filter state for Area Chart: 30d, 90d, 1y
   const [timeframe, setTimeframe] = useState<"30d" | "90d" | "1y">("30d");
 
-  // Active moderation tab: "all" | "published" | "pending" | "imported" | "media" | "ai_drafts"
-  const [activeTab, setActiveTab] = useState<string>("all");
-
-  // Search & filter state matching reference design
-  const [searchQuery, setSearchQuery] = useState<string>("");
-  const [selectedProduct, setSelectedProduct] = useState<string>("all");
-  const [selectedSource, setSelectedSource] = useState<string>("all");
-  const [selectedRating, setSelectedRating] = useState<string>("all");
-  const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
+  // Table filter tabs: published, pending, ai_drafts
+  const [tableFilter, setTableFilter] = useState<"published" | "pending" | "ai_drafts">("published");
 
   // Table pagination state
   const [currentPage, setCurrentPage] = useState<number>(1);
@@ -678,86 +598,26 @@ export default function DynamicReviewDashboard() {
     count?: number;
   }>({ open: false, type: "single" });
 
-  const handleTabChange = (tab: string) => {
-    setActiveTab(tab);
+  const handleTabChange = (filter: "published" | "pending" | "ai_drafts") => {
+    setTableFilter(filter);
     setCurrentPage(1);
-    setSelectedIds(new Set());
-  };
-
-  const handleBulkApprove = () => {
-    if (selectedIds.size === 0) return;
-    const fd = new FormData();
-    fd.append("intent", "approveSelected");
-    selectedIds.forEach((id) => fd.append("ids", id));
-    fetcher.submit(fd, { method: "post" });
-    setSelectedIds(new Set());
-  };
-
-  const handleBulkUnpublish = () => {
-    if (selectedIds.size === 0) return;
-    const fd = new FormData();
-    fd.append("intent", "unpublishSelected");
-    selectedIds.forEach((id) => fd.append("ids", id));
-    fetcher.submit(fd, { method: "post" });
     setSelectedIds(new Set());
   };
 
   // Filtered reviews
   const filteredReviews = useMemo(() => {
-    let list = (data?.recentReviews as any[]) || [];
-
-    // Tab filter
-    if (activeTab === "published") {
-      list = list.filter((r) => r.isPublished);
-    } else if (activeTab === "pending") {
-      list = list.filter((r) => !r.isPublished);
-    } else if (activeTab === "imported") {
-      list = list.filter((r) => {
-        const s = (r.source || "").toUpperCase();
-        return s.includes("AMAZON") || s.includes("FLIPKART") || s.includes("ALIBABA") || s.includes("IMPORT");
-      });
-    } else if (activeTab === "media") {
-      list = list.filter((r) => Boolean(r.imageUrl || r.videoUrl));
-    } else if (activeTab === "ai_drafts") {
-      list = list.filter((r) => r.isAiGenerated);
+    if (!data?.recentReviews) return [];
+    if (tableFilter === "published") {
+      return data.recentReviews.filter((r: any) => r.isPublished);
     }
-
-    // Search query filter
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase().trim();
-      list = list.filter((r) =>
-        (r.reviewerName || "").toLowerCase().includes(q) ||
-        (r.productTitle || "").toLowerCase().includes(q) ||
-        (r.bodyShort || "").toLowerCase().includes(q)
-      );
+    if (tableFilter === "pending") {
+      return data.recentReviews.filter((r: any) => !r.isPublished);
     }
-
-    // Product filter
-    if (selectedProduct !== "all") {
-      list = list.filter((r) => r.productTitle === selectedProduct);
+    if (tableFilter === "ai_drafts") {
+      return data.recentReviews.filter((r: any) => r.isAiGenerated);
     }
-
-    // Source filter
-    if (selectedSource !== "all") {
-      list = list.filter((r) => {
-        const s = (r.source || "").toUpperCase();
-        if (selectedSource === "AMAZON") return s.includes("AMAZON");
-        if (selectedSource === "FLIPKART") return s.includes("FLIPKART");
-        if (selectedSource === "ALIBABA") return s.includes("ALIBABA");
-        if (selectedSource === "STORE_ORDER") return !r.isAiGenerated && !s.includes("AMAZON") && !s.includes("FLIPKART") && !s.includes("ALIBABA");
-        if (selectedSource === "AI") return r.isAiGenerated || s.includes("AI");
-        return true;
-      });
-    }
-
-    // Rating filter
-    if (selectedRating !== "all") {
-      const targetRating = Number(selectedRating);
-      list = list.filter((r) => Math.round(r.rating || 5) === targetRating);
-    }
-
-    return list;
-  }, [data?.recentReviews, activeTab, searchQuery, selectedProduct, selectedSource, selectedRating]);
+    return data.recentReviews;
+  }, [data?.recentReviews, tableFilter]);
 
   // Pagination calculations
   const totalReviewsCount = filteredReviews.length;
@@ -1252,992 +1112,511 @@ export default function DynamicReviewDashboard() {
         </div>
 
         {/* ======================================================== */}
-        {/* ROW 4: REVIEWS MODERATION & MANAGEMENT                   */}
+        {/* ROW 4: RECENT REVIEWS & MODERATION TABLE                 */}
         {/* ======================================================== */}
-        <div>
-          {/* Top 4 KPI Summary Cards Matching Reference Design */}
+        <div
+          id="reviews-table-card"
+          style={{
+            background: "#ffffff",
+            border: "1px solid #e2e8f0",
+            borderRadius: "14px",
+            padding: "24px",
+            boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
+          }}
+        >
+          {/* Header & Tabs Matching Screenshot */}
           <div
             style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-              gap: "16px",
-              marginBottom: "16px",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: "12px",
+              marginBottom: "18px",
             }}
           >
-            {/* Card 1: Total */}
-            <div
-              style={{
-                background: "#ffffff",
-                border: "1px solid #e2e8f0",
-                borderRadius: "14px",
-                padding: "16px 20px",
-                boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
-              }}
-            >
-              <div style={{ fontSize: "13px", fontWeight: "600", color: "#64748b", marginBottom: "4px" }}>
-                Total
-              </div>
-              <div style={{ fontSize: "32px", fontWeight: "800", color: "#0f172a", lineHeight: 1.1 }}>
-                {data.totalReviews}
-              </div>
-            </div>
-
-            {/* Card 2: Published */}
-            <div
-              style={{
-                background: "#ffffff",
-                border: "1px solid #e2e8f0",
-                borderRadius: "14px",
-                padding: "16px 20px",
-                boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
-              }}
-            >
-              <div style={{ fontSize: "13px", fontWeight: "600", color: "#64748b", marginBottom: "4px" }}>
-                Published
-              </div>
-              <div style={{ fontSize: "32px", fontWeight: "800", color: "#16a34a", lineHeight: 1.1 }}>
-                {data.publishedReviews}
-              </div>
-            </div>
-
-            {/* Card 3: Needs approval (Highlighted with Yellow/Amber Border) */}
-            <div
-              style={{
-                background: "#ffffff",
-                border: "2px solid #f59e0b",
-                borderRadius: "14px",
-                padding: "16px 20px",
-                boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
-              }}
-            >
-              <div style={{ fontSize: "13px", fontWeight: "600", color: "#64748b", marginBottom: "4px" }}>
-                Needs approval
-              </div>
-              <div style={{ fontSize: "32px", fontWeight: "800", color: "#d97706", lineHeight: 1.1 }}>
-                {data.pendingReviews}
-              </div>
-            </div>
-
-            {/* Card 4: AI drafts (private) */}
-            <div
-              style={{
-                background: "#ffffff",
-                border: "1px solid #e2e8f0",
-                borderRadius: "14px",
-                padding: "16px 20px",
-                boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
-              }}
-            >
-              <div style={{ fontSize: "13px", fontWeight: "600", color: "#64748b", marginBottom: "4px" }}>
-                AI drafts (private)
-              </div>
-              <div style={{ fontSize: "32px", fontWeight: "800", color: "#0f172a", lineHeight: 1.1 }}>
-                {data.aiGeneratedCount}
-              </div>
-            </div>
-          </div>
-
-          {/* Main Moderation & Management Card Container */}
-          <div
-            id="reviews-table-card"
-            style={{
-              background: "#ffffff",
-              border: "1px solid #e2e8f0",
-              borderRadius: "16px",
-              boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
-              overflow: "hidden",
-            }}
-          >
-            {/* Tabs Header */}
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                borderBottom: "1px solid #e2e8f0",
-                padding: "0 20px",
-                overflowX: "auto",
-                whiteSpace: "nowrap",
-                gap: "8px",
-              }}
-            >
-              {[
-                { id: "all", label: `All ${data.totalReviews}` },
-                { id: "published", label: `Published ${data.publishedReviews}` },
-                { id: "pending", label: `Pending ${data.pendingReviews}` },
-                { id: "imported", label: `Imported ${data.importedCount}` },
-                { id: "media", label: `With media ${(data as any).mediaCount || 0}` },
-                { id: "ai_drafts", label: `AI drafts ${data.aiGeneratedCount}` },
-              ].map((tab) => {
-                const isActive = activeTab === tab.id;
-                return (
-                  <button
-                    key={tab.id}
-                    onClick={() => handleTabChange(tab.id)}
-                    style={{
-                      background: "none",
-                      border: "none",
-                      borderBottom: isActive ? "2px solid #2563eb" : "2px solid transparent",
-                      color: isActive ? "#2563eb" : "#64748b",
-                      fontWeight: isActive ? 700 : 500,
-                      fontSize: "14px",
-                      padding: "16px 14px",
-                      cursor: "pointer",
-                      marginBottom: "-1px",
-                      transition: "all 0.15s ease",
-                    }}
-                  >
-                    {tab.label}
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Search and Filters Toolbar */}
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "12px",
-                flexWrap: "wrap",
-                padding: "18px 20px 14px 20px",
-              }}
-            >
-              {/* Search Box */}
-              <div style={{ position: "relative", flex: "1 1 280px", minWidth: "220px" }}>
-                <span
-                  style={{
-                    position: "absolute",
-                    left: "12px",
-                    top: "50%",
-                    transform: "translateY(-50%)",
-                    display: "flex",
-                    alignItems: "center",
-                    pointerEvents: "none",
-                    color: "#94a3b8",
-                  }}
-                >
-                  <Icon source={SearchIcon} tone="subdued" />
-                </span>
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => {
-                    setSearchQuery(e.target.value);
-                    setCurrentPage(1);
-                  }}
-                  placeholder="Search reviewer, product or text"
-                  style={{
-                    width: "100%",
-                    padding: "8px 14px 8px 36px",
-                    borderRadius: "8px",
-                    border: "1px solid #cbd5e1",
-                    backgroundColor: "#ffffff",
-                    fontSize: "13px",
-                    color: "#0f172a",
-                    outline: "none",
-                    boxSizing: "border-box",
-                  }}
-                />
-              </div>
-
-              {/* Product: All Dropdown */}
-              <select
-                value={selectedProduct}
-                onChange={(e) => {
-                  setSelectedProduct(e.target.value);
-                  setCurrentPage(1);
-                }}
+            {/* Filter Tabs */}
+            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+              <button
+                onClick={() => handleTabChange("published")}
                 style={{
-                  padding: "8px 12px",
+                  padding: "6px 14px",
                   borderRadius: "8px",
-                  border: "1px solid #cbd5e1",
-                  backgroundColor: "#ffffff",
+                  border: "none",
+                  backgroundColor: tableFilter === "published" ? "#dbeafe" : "#f1f5f9",
+                  color: tableFilter === "published" ? "#1e40af" : "#475569",
                   fontSize: "13px",
-                  color: "#334155",
-                  fontWeight: 500,
+                  fontWeight: "700",
                   cursor: "pointer",
-                  outline: "none",
-                  maxWidth: "180px",
+                  transition: "all 0.15s ease",
                 }}
               >
-                <option value="all">Product: All</option>
-                {((data as any).productOptions || []).map((p: string) => (
-                  <option key={p} value={p}>
-                    {p}
-                  </option>
-                ))}
-              </select>
+                Published {data.publishedReviews}
+              </button>
 
-              {/* Source: All Dropdown */}
-              <select
-                value={selectedSource}
-                onChange={(e) => {
-                  setSelectedSource(e.target.value);
-                  setCurrentPage(1);
-                }}
+              <button
+                onClick={() => handleTabChange("pending")}
                 style={{
-                  padding: "8px 12px",
+                  padding: "6px 14px",
                   borderRadius: "8px",
-                  border: "1px solid #cbd5e1",
-                  backgroundColor: "#ffffff",
+                  border: "none",
+                  backgroundColor: tableFilter === "pending" ? "#fef3c7" : "#f1f5f9",
+                  color: tableFilter === "pending" ? "#b45309" : "#475569",
                   fontSize: "13px",
-                  color: "#334155",
-                  fontWeight: 500,
+                  fontWeight: "700",
                   cursor: "pointer",
-                  outline: "none",
+                  transition: "all 0.15s ease",
                 }}
               >
-                <option value="all">Source: All</option>
-                <option value="STORE_ORDER">Store</option>
-                <option value="AMAZON">Amazon</option>
-                <option value="FLIPKART">Flipkart</option>
-                <option value="ALIBABA">Alibaba</option>
-                <option value="AI">AI generated</option>
-              </select>
+                Pending {data.pendingReviews}
+              </button>
 
-              {/* Rating: All Dropdown */}
-              <select
-                value={selectedRating}
-                onChange={(e) => {
-                  setSelectedRating(e.target.value);
-                  setCurrentPage(1);
-                }}
+              <button
+                onClick={() => handleTabChange("ai_drafts")}
                 style={{
-                  padding: "8px 12px",
+                  padding: "6px 14px",
                   borderRadius: "8px",
-                  border: "1px solid #cbd5e1",
-                  backgroundColor: "#ffffff",
+                  border: "none",
+                  backgroundColor: tableFilter === "ai_drafts" ? "#f3e8ff" : "#f1f5f9",
+                  color: tableFilter === "ai_drafts" ? "#7e22ce" : "#475569",
                   fontSize: "13px",
-                  color: "#334155",
-                  fontWeight: 500,
+                  fontWeight: "700",
                   cursor: "pointer",
-                  outline: "none",
+                  transition: "all 0.15s ease",
                 }}
               >
-                <option value="all">Rating: All</option>
-                <option value="5">5 ★</option>
-                <option value="4">4 ★</option>
-                <option value="3">3 ★</option>
-                <option value="2">2 ★</option>
-                <option value="1">1 ★</option>
-              </select>
+                AI drafts (private) {data.aiGeneratedCount}
+              </button>
+            </div>
 
-              {/* Delete all reviews option when no rows selected */}
-              {data.totalReviews > 0 && selectedIds.size === 0 && (
+            {/* Right Action Buttons */}
+            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              {data.totalReviews > 0 && (
                 <button
                   onClick={handlePromptDeleteAll}
                   style={{
                     display: "inline-flex",
                     alignItems: "center",
                     gap: "6px",
-                    padding: "7px 12px",
+                    padding: "6px 12px",
                     borderRadius: "8px",
-                    border: "1px solid #fee2e2",
+                    border: "1px solid #fecaca",
                     backgroundColor: "#fff1f2",
                     color: "#b91c1c",
-                    fontSize: "12px",
-                    fontWeight: "600",
+                    fontSize: "13px",
+                    fontWeight: "700",
                     cursor: "pointer",
-                    marginLeft: "auto",
+                    transition: "all 0.15s ease",
                   }}
-                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#fee2e2")}
-                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#fff1f2")}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = "#fee2e2";
+                    e.currentTarget.style.borderColor = "#f87171";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = "#fff1f2";
+                    e.currentTarget.style.borderColor = "#fecaca";
+                  }}
                 >
                   <Icon source={DeleteIcon} tone="critical" />
-                  Delete all reviews
+                  Delete All Reviews
                 </button>
               )}
-            </div>
 
-            {/* Bulk Selection Action Bar Matching Reference Screenshot */}
-            {selectedIds.size > 0 && (
-              <div
+              <button
+                onClick={() => navigate("/app/reviews")}
                 style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  flexWrap: "wrap",
-                  gap: "10px",
-                  padding: "8px 16px",
-                  margin: "0 20px 14px 20px",
-                  backgroundColor: "#dbeafe",
-                  border: "1px solid #bfdbfe",
-                  borderRadius: "8px",
+                  background: "transparent",
+                  border: "none",
+                  color: "#2563eb",
+                  fontSize: "13px",
+                  fontWeight: "700",
+                  cursor: "pointer",
+                  padding: "6px 8px",
                 }}
               >
-                <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                  <span style={{ color: "#1d4ed8", fontSize: "14px", fontWeight: "700" }}>
-                    {selectedIds.size} selected
+                View all
+              </button>
+            </div>
+          </div>
+
+          {/* Bulk Selection Action Bar */}
+          {selectedIds.size > 0 && (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                flexWrap: "wrap",
+                gap: "10px",
+                padding: "10px 16px",
+                marginBottom: "14px",
+                backgroundColor: "#eff6ff",
+                border: "1px solid #bfdbfe",
+                borderRadius: "10px",
+                color: "#1e40af",
+                fontSize: "13px",
+                fontWeight: 600,
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+                  <span
+                    style={{
+                      width: "18px",
+                      height: "18px",
+                      borderRadius: "4px",
+                      backgroundColor: "#2563eb",
+                      color: "#ffffff",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: "11px",
+                      fontWeight: "bold",
+                    }}
+                  >
+                    ✓
                   </span>
-                  {selectedIds.size < totalReviewsCount && (
-                    <button
-                      onClick={handleSelectAllFiltered}
-                      style={{
-                        background: "none",
-                        border: "none",
-                        color: "#2563eb",
-                        fontSize: "12px",
-                        fontWeight: "600",
-                        cursor: "pointer",
-                        textDecoration: "underline",
-                        padding: 0,
-                      }}
-                    >
-                      Select all {totalReviewsCount}
-                    </button>
-                  )}
-                </div>
+                  <strong>{selectedIds.size}</strong> review{selectedIds.size > 1 ? "s" : ""} selected
+                </span>
 
-                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                  {/* Approve */}
+                {selectedIds.size < totalReviewsCount && (
                   <button
-                    onClick={handleBulkApprove}
+                    onClick={handleSelectAllFiltered}
                     style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: "5px",
-                      background: "#ffffff",
-                      border: "1px solid #cbd5e1",
-                      borderRadius: "6px",
-                      padding: "5px 14px",
-                      fontSize: "13px",
-                      fontWeight: "600",
-                      color: "#0f172a",
-                      cursor: "pointer",
-                      boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
-                    }}
-                  >
-                    <Icon source={CheckIcon} tone="success" />
-                    Approve
-                  </button>
-
-                  {/* Unpublish */}
-                  <button
-                    onClick={handleBulkUnpublish}
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: "5px",
-                      background: "#ffffff",
-                      border: "1px solid #cbd5e1",
-                      borderRadius: "6px",
-                      padding: "5px 14px",
-                      fontSize: "13px",
-                      fontWeight: "600",
-                      color: "#0f172a",
-                      cursor: "pointer",
-                      boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
-                    }}
-                  >
-                    <Icon source={HideIcon} />
-                    Unpublish
-                  </button>
-
-                  {/* Delete */}
-                  <button
-                    onClick={handlePromptDeleteSelected}
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: "5px",
-                      background: "#ffffff",
-                      border: "1px solid #fecaca",
-                      borderRadius: "6px",
-                      padding: "5px 14px",
-                      fontSize: "13px",
-                      fontWeight: "600",
-                      color: "#b91c1c",
-                      cursor: "pointer",
-                      boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
-                    }}
-                  >
-                    <Icon source={DeleteIcon} tone="critical" />
-                    Delete
-                  </button>
-
-                  {/* Deselect */}
-                  <button
-                    onClick={handleClearSelection}
-                    style={{
-                      background: "transparent",
+                      background: "none",
                       border: "none",
-                      padding: "5px 8px",
+                      color: "#1d4ed8",
+                      fontSize: "13px",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      textDecoration: "underline",
+                      padding: 0,
+                    }}
+                  >
+                    Select all {totalReviewsCount} {tableFilter === "ai_drafts" ? "AI draft" : tableFilter} reviews
+                  </button>
+                )}
+              </div>
+
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <button
+                  onClick={handleClearSelection}
+                  style={{
+                    background: "#ffffff",
+                    border: "1px solid #cbd5e1",
+                    borderRadius: "6px",
+                    padding: "5px 12px",
+                    fontSize: "12px",
+                    fontWeight: 600,
+                    color: "#475569",
+                    cursor: "pointer",
+                  }}
+                >
+                  Deselect
+                </button>
+
+                <button
+                  onClick={handlePromptDeleteSelected}
+                  style={{
+                    background: "#ef4444",
+                    border: "none",
+                    borderRadius: "6px",
+                    padding: "5px 14px",
+                    fontSize: "12px",
+                    fontWeight: 700,
+                    color: "#ffffff",
+                    cursor: "pointer",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "4px",
+                    boxShadow: "0 1px 2px rgba(239, 68, 68, 0.2)",
+                  }}
+                >
+                  <Icon source={DeleteIcon} />
+                  Delete Selected ({selectedIds.size})
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Table Container */}
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: "13px" }}>
+              <thead>
+                <tr style={{ borderBottom: "1px solid #e2e8f0", color: "#64748b", fontWeight: 600 }}>
+                  <th style={{ padding: "12px 14px", width: "40px" }}>
+                    <input
+                      type="checkbox"
+                      checked={isAllCurrentPageSelected}
+                      ref={(el) => {
+                        if (el) el.indeterminate = isSomeCurrentPageSelected;
+                      }}
+                      onChange={handleToggleSelectAll}
+                      style={{ width: "16px", height: "16px", cursor: "pointer", accentColor: "#2563eb" }}
+                      title="Select all on this page"
+                    />
+                  </th>
+                  <th style={{ padding: "12px 14px" }}>Reviewer</th>
+                  <th style={{ padding: "12px 14px" }}>Rating</th>
+                  <th style={{ padding: "12px 14px" }}>Review</th>
+                  <th style={{ padding: "12px 14px" }}>Source</th>
+                  <th style={{ padding: "12px 14px" }}>Status</th>
+                  <th style={{ padding: "12px 14px", textAlign: "right" }}>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {paginatedReviews.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} style={{ padding: "28px", textAlign: "center", color: "#94a3b8" }}>
+                      No reviews found in this view.
+                    </td>
+                  </tr>
+                ) : (
+                  paginatedReviews.map((r: any) => {
+                    const starsStr = "★".repeat(r.rating || 5) + "☆".repeat(Math.max(0, 5 - (r.rating || 5)));
+                    const isAmazon = (r.source || "").includes("AMAZON");
+                    const isFlipkart = (r.source || "").includes("FLIPKART");
+                    const isAlibaba = (r.source || "").includes("ALIBABA");
+                    const isAi = r.isAiGenerated;
+
+                    const sourceLabel = isAmazon
+                      ? "Amazon"
+                      : isFlipkart
+                      ? "Flipkart"
+                      : isAlibaba
+                      ? "Alibaba"
+                      : isAi
+                      ? "AI draft"
+                      : "Store order";
+
+                    const sourceBadgeStyle = isAmazon
+                      ? { bg: "#fef3c7", color: "#b45309" }
+                      : isFlipkart
+                      ? { bg: "#e0f2fe", color: "#0369a1" }
+                      : isAlibaba
+                      ? { bg: "#f1f5f9", color: "#475569" }
+                      : isAi
+                      ? { bg: "#f3e8ff", color: "#7e22ce" }
+                      : { bg: "#dcfce7", color: "#166534" };
+
+                    const isChecked = selectedIds.has(r.id);
+
+                    return (
+                      <tr
+                        key={r.id}
+                        style={{
+                          borderBottom: "1px solid #f1f5f9",
+                          backgroundColor: isChecked ? "#f0f9ff" : "transparent",
+                          transition: "background 0.15s ease",
+                        }}
+                        onMouseEnter={(e) => {
+                          if (!isChecked) e.currentTarget.style.backgroundColor = "#f8fafc";
+                        }}
+                        onMouseLeave={(e) => {
+                          if (!isChecked) e.currentTarget.style.backgroundColor = "transparent";
+                        }}
+                      >
+                        <td style={{ padding: "12px 14px", width: "40px" }}>
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => handleToggleSelectOne(r.id)}
+                            style={{ width: "16px", height: "16px", cursor: "pointer", accentColor: "#2563eb" }}
+                          />
+                        </td>
+                        <td style={{ padding: "12px 14px", fontWeight: 700, color: "#0f172a" }}>
+                          {r.reviewerName}
+                        </td>
+                        <td style={{ padding: "12px 14px", color: "#f59e0b", letterSpacing: "1px", fontSize: "14px" }}>
+                          {starsStr}
+                        </td>
+                        <td style={{ padding: "12px 14px", color: "#334155", maxWidth: "340px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {r.bodyShort}
+                        </td>
+                        <td style={{ padding: "12px 14px" }}>
+                          <span
+                            style={{
+                              backgroundColor: sourceBadgeStyle.bg,
+                              color: sourceBadgeStyle.color,
+                              padding: "3px 8px",
+                              borderRadius: "6px",
+                              fontSize: "12px",
+                              fontWeight: "600",
+                            }}
+                          >
+                            {sourceLabel}
+                          </span>
+                        </td>
+                        <td style={{ padding: "12px 14px" }}>
+                          <span
+                            style={{
+                              backgroundColor: r.isPublished ? "#dcfce7" : "#fef3c7",
+                              color: r.isPublished ? "#166534" : "#b45309",
+                              padding: "3px 8px",
+                              borderRadius: "6px",
+                              fontSize: "12px",
+                              fontWeight: "600",
+                            }}
+                          >
+                            {r.isPublished ? "Published" : "Pending"}
+                          </span>
+                        </td>
+                        <td style={{ padding: "12px 14px", textAlign: "right" }}>
+                          <div style={{ display: "inline-flex", gap: "6px" }}>
+                            <button
+                              title={r.isPublished ? "Hide / Unpublish" : "Publish"}
+                              onClick={() => handleTogglePublish(r.id)}
+                              style={{
+                                background: "none",
+                                border: "none",
+                                cursor: "pointer",
+                                padding: "4px",
+                                borderRadius: "4px",
+                                color: "#475569",
+                              }}
+                            >
+                              <Icon source={r.isPublished ? HideIcon : ViewIcon} />
+                            </button>
+                            <button
+                              title="Delete Review"
+                              onClick={() => handlePromptDeleteOne(r.id, r.reviewerName)}
+                              style={{
+                                background: "none",
+                                border: "none",
+                                cursor: "pointer",
+                                padding: "4px",
+                                borderRadius: "4px",
+                                color: "#ef4444",
+                              }}
+                            >
+                              <Icon source={DeleteIcon} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Pagination Toolbar */}
+          {totalReviewsCount > 0 && (
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: "12px",
+                marginTop: "18px",
+                paddingTop: "14px",
+                borderTop: "1px solid #f1f5f9",
+                fontSize: "13px",
+                color: "#64748b",
+              }}
+            >
+              {/* Left: Showing X-Y of Z & rows per page */}
+              <div style={{ display: "flex", alignItems: "center", gap: "14px", flexWrap: "wrap" }}>
+                <span>
+                  Showing <strong style={{ color: "#0f172a" }}>{startIndex + 1}</strong>–<strong style={{ color: "#0f172a" }}>{endIndex}</strong> of <strong style={{ color: "#0f172a" }}>{totalReviewsCount}</strong> reviews
+                </span>
+
+                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <span>Per page:</span>
+                  <select
+                    value={pageSize}
+                    onChange={(e) => {
+                      setPageSize(Number(e.target.value));
+                      setCurrentPage(1);
+                    }}
+                    style={{
+                      padding: "3px 8px",
+                      borderRadius: "6px",
+                      border: "1px solid #cbd5e1",
+                      backgroundColor: "#ffffff",
                       fontSize: "12px",
-                      fontWeight: "600",
-                      color: "#64748b",
+                      fontWeight: 600,
+                      color: "#334155",
                       cursor: "pointer",
                     }}
                   >
-                    Cancel
-                  </button>
+                    <option value={10}>10</option>
+                    <option value={20}>20</option>
+                    <option value={50}>50</option>
+                  </select>
                 </div>
               </div>
-            )}
 
-            {/* Table Container */}
-            <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: "13px" }}>
-                <thead>
-                  <tr style={{ borderBottom: "1px solid #e2e8f0", color: "#64748b", fontWeight: 600 }}>
-                    <th style={{ padding: "12px 14px 12px 20px", width: "40px" }}>
-                      <input
-                        type="checkbox"
-                        checked={isAllCurrentPageSelected}
-                        ref={(el) => {
-                          if (el) el.indeterminate = isSomeCurrentPageSelected;
-                        }}
-                        onChange={handleToggleSelectAll}
-                        style={{ width: "16px", height: "16px", cursor: "pointer", accentColor: "#2563eb" }}
-                        title="Select all on this page"
-                      />
-                    </th>
-                    <th style={{ padding: "12px 14px" }}>Reviewer</th>
-                    <th style={{ padding: "12px 14px" }}>Product</th>
-                    <th style={{ padding: "12px 14px" }}>Rating</th>
-                    <th style={{ padding: "12px 14px" }}>Review</th>
-                    <th style={{ padding: "12px 14px" }}>Source</th>
-                    <th style={{ padding: "12px 14px" }}>Status</th>
-                    <th style={{ padding: "12px 20px 12px 14px", textAlign: "right" }}>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {paginatedReviews.length === 0 ? (
-                    <tr>
-                      <td colSpan={8} style={{ padding: "36px", textAlign: "center", color: "#94a3b8" }}>
-                        No reviews found matching the selected filter.
-                      </td>
-                    </tr>
-                  ) : (
-                    paginatedReviews.map((r: any) => {
-                      const isChecked = selectedIds.has(r.id);
-                      const isAiDraft = r.isAiGenerated;
-                      const s = (r.source || "").toUpperCase();
-                      const isImported = s.includes("AMAZON") || s.includes("FLIPKART") || s.includes("ALIBABA") || s.includes("IMPORT");
+              {/* Right: Previous / Next & Page Numbers */}
+              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <button
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  disabled={safeCurrentPage <= 1}
+                  style={{
+                    padding: "5px 12px",
+                    borderRadius: "6px",
+                    border: "1px solid #e2e8f0",
+                    backgroundColor: safeCurrentPage <= 1 ? "#f8fafc" : "#ffffff",
+                    color: safeCurrentPage <= 1 ? "#94a3b8" : "#334155",
+                    fontSize: "12px",
+                    fontWeight: 600,
+                    cursor: safeCurrentPage <= 1 ? "not-allowed" : "pointer",
+                  }}
+                >
+                  Previous
+                </button>
 
-                      // Row background: AI draft highlighted yellow, or selected blue
-                      const rowBg = isChecked
-                        ? "#f0f9ff"
-                        : isAiDraft
-                        ? "#fef3c7"
-                        : "transparent";
-
-                      // Source badge styling
-                      let sourceBg = "#dcfce7";
-                      let sourceColor = "#166534";
-                      let sourceText = "Store";
-                      if (s.includes("ALIBABA")) {
-                        sourceBg = "#fed7aa";
-                        sourceColor = "#9a3412";
-                        sourceText = "Alibaba";
-                      } else if (s.includes("FLIPKART")) {
-                        sourceBg = "#bfdbfe";
-                        sourceColor = "#1d4ed8";
-                        sourceText = "Flipkart";
-                      } else if (s.includes("AMAZON")) {
-                        sourceBg = "#fef08a";
-                        sourceColor = "#854d0e";
-                        sourceText = "Amazon";
-                      } else if (isAiDraft || s.includes("AI")) {
-                        sourceBg = "#f1f5f9";
-                        sourceColor = "#475569";
-                        sourceText = "AI generated";
-                      }
-
-                      // Status badge styling
-                      let statusBg = "#dcfce7";
-                      let statusColor = "#15803d";
-                      let statusText = "Published";
-                      if (!r.isPublished && isAiDraft) {
-                        statusBg = "#ffe4e6";
-                        statusColor = "#be123c";
-                        statusText = "Hidden";
-                      } else if (!r.isPublished) {
-                        statusBg = "#fef3c7";
-                        statusColor = "#b45309";
-                        statusText = "Pending";
-                      }
-
-                      const hasMedia = Boolean(r.imageUrl || r.videoUrl);
-
-                      return (
-                        <tr
-                          key={r.id}
+                {Array.from({ length: totalPages }, (_, i) => i + 1)
+                  .filter((p) => {
+                    return p === 1 || p === totalPages || Math.abs(p - safeCurrentPage) <= 1;
+                  })
+                  .map((p, idx, arr) => {
+                    const prev = arr[idx - 1];
+                    const showEllipsis = prev && p - prev > 1;
+                    return (
+                      <span key={p} style={{ display: "inline-flex", alignItems: "center" }}>
+                        {showEllipsis && <span style={{ padding: "0 4px", color: "#94a3b8" }}>...</span>}
+                        <button
+                          onClick={() => setCurrentPage(p)}
                           style={{
-                            borderBottom: "1px solid #f1f5f9",
-                            backgroundColor: rowBg,
-                            transition: "background 0.15s ease",
-                          }}
-                          onMouseEnter={(e) => {
-                            if (!isChecked && !isAiDraft) e.currentTarget.style.backgroundColor = "#f8fafc";
-                          }}
-                          onMouseLeave={(e) => {
-                            if (!isChecked && !isAiDraft) e.currentTarget.style.backgroundColor = "transparent";
+                            minWidth: "30px",
+                            height: "30px",
+                            borderRadius: "6px",
+                            border: safeCurrentPage === p ? "none" : "1px solid #e2e8f0",
+                            backgroundColor: safeCurrentPage === p ? "#2563eb" : "#ffffff",
+                            color: safeCurrentPage === p ? "#ffffff" : "#475569",
+                            fontSize: "12px",
+                            fontWeight: 700,
+                            cursor: "pointer",
                           }}
                         >
-                          {/* Checkbox */}
-                          <td style={{ padding: "14px 14px 14px 20px", width: "40px" }}>
-                            <input
-                              type="checkbox"
-                              checked={isChecked}
-                              onChange={() => handleToggleSelectOne(r.id)}
-                              style={{ width: "16px", height: "16px", cursor: "pointer", accentColor: "#2563eb" }}
-                            />
-                          </td>
+                          {p}
+                        </button>
+                      </span>
+                    );
+                  })}
 
-                          {/* Reviewer */}
-                          <td style={{ padding: "14px 14px" }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                              {/* Initials Avatar */}
-                              <div
-                                style={{
-                                  width: "32px",
-                                  height: "32px",
-                                  borderRadius: "50%",
-                                  backgroundColor: isAiDraft ? "#fde68a" : "#bfdbfe",
-                                  color: isAiDraft ? "#92400e" : "#1d4ed8",
-                                  display: "flex",
-                                  alignItems: "center",
-                                  justifyContent: "center",
-                                  fontSize: "11px",
-                                  fontWeight: "700",
-                                  flexShrink: 0,
-                                }}
-                              >
-                                {getInitials(r.reviewerName)}
-                              </div>
-
-                              {/* Name & Sub-badge */}
-                              <div style={{ display: "flex", flexDirection: "column", gap: "2px", minWidth: 0 }}>
-                                <span
-                                  style={{
-                                    fontWeight: "700",
-                                    color: "#0f172a",
-                                    fontSize: "13px",
-                                    whiteSpace: "nowrap",
-                                    overflow: "hidden",
-                                    textOverflow: "ellipsis",
-                                    maxWidth: "140px",
-                                  }}
-                                  title={r.reviewerName}
-                                >
-                                  {r.reviewerName}
-                                </span>
-                                {isAiDraft ? (
-                                  <span style={{ fontSize: "11px", fontWeight: "700", color: "#b45309" }}>
-                                    AI draft
-                                  </span>
-                                ) : isImported ? (
-                                  <span
-                                    style={{
-                                      display: "inline-block",
-                                      backgroundColor: "#f1f5f9",
-                                      color: "#475569",
-                                      padding: "1px 6px",
-                                      borderRadius: "4px",
-                                      fontSize: "11px",
-                                      fontWeight: "600",
-                                      width: "fit-content",
-                                    }}
-                                  >
-                                    Imported
-                                  </span>
-                                ) : (
-                                  <span
-                                    style={{
-                                      display: "inline-block",
-                                      backgroundColor: "#dcfce7",
-                                      color: "#15803d",
-                                      padding: "1px 6px",
-                                      borderRadius: "4px",
-                                      fontSize: "11px",
-                                      fontWeight: "700",
-                                      width: "fit-content",
-                                    }}
-                                  >
-                                    Verified order
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          </td>
-
-                          {/* Product */}
-                          <td style={{ padding: "14px 14px" }}>
-                            <span
-                              style={{
-                                color: "#334155",
-                                fontSize: "13px",
-                                fontWeight: "500",
-                                display: "inline-block",
-                                maxWidth: "140px",
-                                whiteSpace: "nowrap",
-                                overflow: "hidden",
-                                textOverflow: "ellipsis",
-                              }}
-                              title={r.productTitle}
-                            >
-                              {r.productTitle}
-                            </span>
-                          </td>
-
-                          {/* Rating */}
-                          <td style={{ padding: "14px 14px", color: "#b45309", letterSpacing: "1px", fontSize: "14px", whiteSpace: "nowrap" }}>
-                            {"★".repeat(Math.min(5, Math.max(1, r.rating || 5)))}
-                          </td>
-
-                          {/* Review */}
-                          <td style={{ padding: "14px 14px" }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: "8px", maxWidth: "260px" }}>
-                              {hasMedia && (
-                                <div
-                                  style={{
-                                    width: "22px",
-                                    height: "22px",
-                                    borderRadius: "4px",
-                                    backgroundColor: "#fed7aa",
-                                    flexShrink: 0,
-                                    overflow: "hidden",
-                                    display: "flex",
-                                    alignItems: "center",
-                                    justifyContent: "center",
-                                  }}
-                                >
-                                  {r.imageUrl ? (
-                                    <img
-                                      src={r.imageUrl}
-                                      alt="review thumbnail"
-                                      style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                                    />
-                                  ) : (
-                                    <span style={{ fontSize: "10px" }}>🖼</span>
-                                  )}
-                                </div>
-                              )}
-                              <span
-                                style={{
-                                  color: "#334155",
-                                  fontSize: "13px",
-                                  whiteSpace: "nowrap",
-                                  overflow: "hidden",
-                                  textOverflow: "ellipsis",
-                                  flex: 1,
-                                }}
-                                title={r.bodyShort}
-                              >
-                                {r.bodyShort}
-                              </span>
-                              {hasMedia && (
-                                <span
-                                  style={{
-                                    backgroundColor: "#e0f2fe",
-                                    color: "#0284c7",
-                                    padding: "1px 6px",
-                                    borderRadius: "4px",
-                                    fontSize: "11px",
-                                    fontWeight: "700",
-                                    flexShrink: 0,
-                                  }}
-                                >
-                                  Photo
-                                </span>
-                              )}
-                            </div>
-                          </td>
-
-                          {/* Source */}
-                          <td style={{ padding: "14px 14px", whiteSpace: "nowrap" }}>
-                            <span
-                              style={{
-                                backgroundColor: sourceBg,
-                                color: sourceColor,
-                                padding: "3px 10px",
-                                borderRadius: "12px",
-                                fontSize: "12px",
-                                fontWeight: "600",
-                              }}
-                            >
-                              {sourceText}
-                            </span>
-                          </td>
-
-                          {/* Status */}
-                          <td style={{ padding: "14px 14px", whiteSpace: "nowrap" }}>
-                            <span
-                              style={{
-                                backgroundColor: statusBg,
-                                color: statusColor,
-                                padding: "3px 10px",
-                                borderRadius: "12px",
-                                fontSize: "12px",
-                                fontWeight: "600",
-                              }}
-                            >
-                              {statusText}
-                            </span>
-                          </td>
-
-                          {/* Actions */}
-                          <td style={{ padding: "14px 20px 14px 14px", textAlign: "right" }}>
-                            <div style={{ display: "inline-flex", alignItems: "center", gap: "6px", position: "relative" }}>
-                              {/* Pending Review: Quick Approve Checkmark Button */}
-                              {!r.isPublished && !isAiDraft && (
-                                <button
-                                  title="Approve & Publish"
-                                  onClick={() => handleTogglePublish(r.id)}
-                                  style={{
-                                    width: "28px",
-                                    height: "28px",
-                                    borderRadius: "6px",
-                                    border: "1px solid #cbd5e1",
-                                    backgroundColor: "#ffffff",
-                                    display: "inline-flex",
-                                    alignItems: "center",
-                                    justifyContent: "center",
-                                    cursor: "pointer",
-                                    padding: 0,
-                                  }}
-                                >
-                                  <Icon source={CheckIcon} tone="success" />
-                                </button>
-                              )}
-
-                              {/* Edit Button */}
-                              <button
-                                title="Edit Review"
-                                onClick={() => navigate("/app/reviews")}
-                                style={{
-                                  width: "28px",
-                                  height: "28px",
-                                  borderRadius: "6px",
-                                  border: "1px solid #cbd5e1",
-                                  backgroundColor: "#ffffff",
-                                  display: "inline-flex",
-                                  alignItems: "center",
-                                  justifyContent: "center",
-                                  cursor: "pointer",
-                                  padding: 0,
-                                }}
-                              >
-                                <Icon source={EditIcon} />
-                              </button>
-
-                              {/* Media / Photo Button (if published or has media) */}
-                              {hasMedia && (
-                                <button
-                                  title="View Media"
-                                  onClick={() => {
-                                    if (r.imageUrl) window.open(r.imageUrl, "_blank");
-                                  }}
-                                  style={{
-                                    width: "28px",
-                                    height: "28px",
-                                    borderRadius: "6px",
-                                    border: "1px solid #cbd5e1",
-                                    backgroundColor: "#ffffff",
-                                    display: "inline-flex",
-                                    alignItems: "center",
-                                    justifyContent: "center",
-                                    cursor: "pointer",
-                                    padding: 0,
-                                  }}
-                                >
-                                  <Icon source={ImageIcon} />
-                                </button>
-                              )}
-
-                              {/* AI Draft Trash Delete Button */}
-                              {isAiDraft && (
-                                <button
-                                  title="Delete Draft"
-                                  onClick={() => handlePromptDeleteOne(r.id, r.reviewerName)}
-                                  style={{
-                                    width: "28px",
-                                    height: "28px",
-                                    borderRadius: "6px",
-                                    border: "1px solid #fecaca",
-                                    backgroundColor: "#fff1f2",
-                                    display: "inline-flex",
-                                    alignItems: "center",
-                                    justifyContent: "center",
-                                    cursor: "pointer",
-                                    padding: 0,
-                                  }}
-                                >
-                                  <Icon source={DeleteIcon} tone="critical" />
-                                </button>
-                              )}
-
-                              {/* Three-dots More Actions Menu */}
-                              <button
-                                title="More Actions"
-                                onClick={() => setActiveMenuId(activeMenuId === r.id ? null : r.id)}
-                                style={{
-                                  width: "28px",
-                                  height: "28px",
-                                  borderRadius: "6px",
-                                  border: "1px solid #cbd5e1",
-                                  backgroundColor: "#ffffff",
-                                  display: "inline-flex",
-                                  alignItems: "center",
-                                  justifyContent: "center",
-                                  cursor: "pointer",
-                                  padding: 0,
-                                }}
-                              >
-                                <Icon source={MenuHorizontalIcon} />
-                              </button>
-
-                              {/* Dropdown Menu Popup */}
-                              {activeMenuId === r.id && (
-                                <div
-                                  style={{
-                                    position: "absolute",
-                                    right: 0,
-                                    top: "34px",
-                                    backgroundColor: "#ffffff",
-                                    border: "1px solid #e2e8f0",
-                                    borderRadius: "8px",
-                                    boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)",
-                                    zIndex: 50,
-                                    minWidth: "150px",
-                                    padding: "4px",
-                                    textAlign: "left",
-                                  }}
-                                >
-                                  <button
-                                    onClick={() => {
-                                      handleTogglePublish(r.id);
-                                      setActiveMenuId(null);
-                                    }}
-                                    style={{
-                                      width: "100%",
-                                      display: "flex",
-                                      alignItems: "center",
-                                      gap: "8px",
-                                      padding: "8px 10px",
-                                      border: "none",
-                                      background: "none",
-                                      fontSize: "12px",
-                                      fontWeight: "600",
-                                      color: "#334155",
-                                      cursor: "pointer",
-                                      borderRadius: "6px",
-                                      textAlign: "left",
-                                    }}
-                                    onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#f1f5f9")}
-                                    onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
-                                  >
-                                    <Icon source={r.isPublished ? HideIcon : ViewIcon} />
-                                    {r.isPublished ? "Unpublish" : "Publish"}
-                                  </button>
-
-                                  <button
-                                    onClick={() => {
-                                      setActiveMenuId(null);
-                                      handlePromptDeleteOne(r.id, r.reviewerName);
-                                    }}
-                                    style={{
-                                      width: "100%",
-                                      display: "flex",
-                                      alignItems: "center",
-                                      gap: "8px",
-                                      padding: "8px 10px",
-                                      border: "none",
-                                      background: "none",
-                                      fontSize: "12px",
-                                      fontWeight: "600",
-                                      color: "#dc2626",
-                                      cursor: "pointer",
-                                      borderRadius: "6px",
-                                      textAlign: "left",
-                                    }}
-                                    onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#fee2e2")}
-                                    onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
-                                  >
-                                    <Icon source={DeleteIcon} tone="critical" />
-                                    Delete review
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Pagination Footer Matching Reference Screenshot */}
-            {totalReviewsCount > 0 && (
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  flexWrap: "wrap",
-                  gap: "12px",
-                  padding: "16px 20px",
-                  borderTop: "1px solid #f1f5f9",
-                  fontSize: "13px",
-                  color: "#64748b",
-                }}
-              >
-                <div>
-                  Showing <strong style={{ color: "#0f172a" }}>{startIndex + 1}</strong> to{" "}
-                  <strong style={{ color: "#0f172a" }}>{endIndex}</strong> of{" "}
-                  <strong style={{ color: "#0f172a" }}>{totalReviewsCount}</strong>
-                </div>
-
-                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                  <button
-                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                    disabled={safeCurrentPage <= 1}
-                    style={{
-                      width: "32px",
-                      height: "32px",
-                      borderRadius: "6px",
-                      border: "1px solid #cbd5e1",
-                      backgroundColor: "#ffffff",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      cursor: safeCurrentPage <= 1 ? "not-allowed" : "pointer",
-                      opacity: safeCurrentPage <= 1 ? 0.4 : 1,
-                    }}
-                    title="Previous page"
-                  >
-                    <Icon source={ChevronLeftIcon} />
-                  </button>
-
-                  <span style={{ fontSize: "13px", fontWeight: "500", color: "#334155", padding: "0 4px" }}>
-                    Page {safeCurrentPage} of {totalPages}
-                  </span>
-
-                  <button
-                    onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                    disabled={safeCurrentPage >= totalPages}
-                    style={{
-                      width: "32px",
-                      height: "32px",
-                      borderRadius: "6px",
-                      border: "1px solid #cbd5e1",
-                      backgroundColor: "#ffffff",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      cursor: safeCurrentPage >= totalPages ? "not-allowed" : "pointer",
-                      opacity: safeCurrentPage >= totalPages ? 0.4 : 1,
-                    }}
-                    title="Next page"
-                  >
-                    <Icon source={ChevronRightIcon} />
-                  </button>
-                </div>
+                <button
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={safeCurrentPage >= totalPages}
+                  style={{
+                    padding: "5px 12px",
+                    borderRadius: "6px",
+                    border: "1px solid #e2e8f0",
+                    backgroundColor: safeCurrentPage >= totalPages ? "#f8fafc" : "#ffffff",
+                    color: safeCurrentPage >= totalPages ? "#94a3b8" : "#334155",
+                    fontSize: "12px",
+                    fontWeight: 600,
+                    cursor: safeCurrentPage >= totalPages ? "not-allowed" : "pointer",
+                  }}
+                >
+                  Next
+                </button>
               </div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
 
         {/* Confirmation Modal Popup for Deletion */}
