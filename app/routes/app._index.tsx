@@ -227,7 +227,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     { id: "widget", title: "Enable popup widget", completed: isWidgetEnabled, href: "/app/widget-settings" },
     { id: "import", title: "Import marketplace reviews", completed: hasMarketplaceReviews, href: "/app/import-reviews" },
     { id: "ai", title: "Connect AI provider", completed: hasAiKey, href: "/app/ai-settings" },
-    { id: "requests", title: "Turn on review request emails", completed: hasReviewRequests, href: "/app/qr-codes" },
+    { id: "generate", title: "Generate AI reviews", completed: aiGeneratedCount > 0, href: "/app/ai-generator" },
   ];
   const completedChecklistCount = checklistItems.filter((c) => c.completed).length;
 
@@ -669,7 +669,7 @@ export default function DynamicReviewDashboard() {
             </div>
           </div>
 
-          {/* Card 3: Review request rate */}
+          {/* Card 3: Published reviews rate */}
           <div
             style={{
               background: "#ffffff",
@@ -684,17 +684,17 @@ export default function DynamicReviewDashboard() {
           >
             <div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
-                <span style={{ fontSize: "14px", fontWeight: "600", color: "#64748b" }}>Review request rate</span>
+                <span style={{ fontSize: "14px", fontWeight: "600", color: "#64748b" }}>Published reviews</span>
                 <div style={{ width: 34, height: 34, borderRadius: 8, background: "#dcfce7", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <Icon source={EmailIcon} tone="success" />
+                  <Icon source={CheckCircleIcon} tone="success" />
                 </div>
               </div>
               <div style={{ fontSize: "32px", fontWeight: "800", color: "#0f172a", lineHeight: 1.2 }}>
-                {requestRate}%
+                {data.totalReviews > 0 ? Math.round((data.publishedReviews / data.totalReviews) * 100) : 100}%
               </div>
               <div style={{ marginTop: "6px" }}>
                 <span style={{ display: "inline-block", background: "#e0f2fe", color: "#0369a1", padding: "2px 8px", borderRadius: "12px", fontSize: "12px", fontWeight: "600" }}>
-                  {data.totalQrScans + 92} sent - {data.totalReviews} replied
+                  {data.publishedReviews} published of {data.totalReviews} total
                 </span>
               </div>
             </div>
