@@ -913,7 +913,6 @@ export default function DynamicReviewDashboard() {
               borderRadius: "14px",
               padding: "24px",
               boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
-              gridColumn: "span 2",
             }}
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
