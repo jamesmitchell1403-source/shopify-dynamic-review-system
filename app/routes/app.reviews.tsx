@@ -808,7 +808,7 @@ export default function ReviewsPage() {
 
   return (
     <Page fullWidth title="Reviews Moderation & Management">
-      <div style={{ maxWidth: "1280px", margin: "0 auto", padding: "8px 0 32px 0" }}>
+      <div style={{ width: "100%", padding: "8px 0 32px 0" }}>
         {/* TOP 4 SUMMARY STAT CARDS MATCHING REFERENCE DESIGN */}
         <div
           style={{
