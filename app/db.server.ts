@@ -151,6 +151,20 @@ export async function ensureTablesExist() {
             createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
           );
         `);
+
+        await prisma.$executeRawUnsafe(`
+          CREATE TABLE IF NOT EXISTS ProductImportHistory (
+            id TEXT PRIMARY KEY,
+            shop TEXT NOT NULL,
+            productId TEXT NOT NULL,
+            productTitle TEXT NOT NULL,
+            sourceType TEXT NOT NULL,
+            fileName TEXT,
+            reviewCount INTEGER DEFAULT 0,
+            status TEXT DEFAULT 'successful',
+            createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
+          );
+        `);
       } catch (err) {
         console.error("Auto table init warning:", err);
       }

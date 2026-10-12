@@ -1039,3 +1039,131 @@ export async function syncAiJobsToShopify(
     );
   }
 }
+
+const LOCAL_IMPORT_HISTORY_PATH = path.join(process.cwd(), "import_history_backup_data.json");
+
+export function readLocalImportHistoryBackup(): any[] {
+  try {
+    if (fs.existsSync(LOCAL_IMPORT_HISTORY_PATH)) {
+      const data = fs.readFileSync(LOCAL_IMPORT_HISTORY_PATH, "utf-8");
+      const parsed = JSON.parse(data);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch (e) {
+    console.error("[Persistence] Error reading local import history backup:", e);
+  }
+  return [];
+}
+
+export function writeLocalImportHistoryBackup(history: any[], shop: string): void {
+  try {
+    const shopCanonical = canonicalizeShopDomain(shop);
+    const existing = readLocalImportHistoryBackup();
+    const otherShopHistory = existing.filter((item: any) => {
+      const itemCanonical = canonicalizeShopDomain(item.shop || "");
+      return itemCanonical !== shopCanonical;
+    });
+    const merged = [...otherShopHistory, ...history];
+    fs.writeFileSync(LOCAL_IMPORT_HISTORY_PATH, JSON.stringify(merged, null, 2), "utf-8");
+  } catch (e) {
+    console.error("[Persistence] Error writing local import history backup:", e);
+  }
+}
+
+export async function ensureImportHistoryRestored(admin: any, shop: string): Promise<void> {
+  try {
+    const shopWhere = getShopWhereClause(shop);
+    const currentCount = await db.productImportHistory.count({ where: shopWhere }).catch(() => 0);
+    const backupMetafieldsMap = await fetchAllBackupMetafields(admin, shop);
+    let itemsToRestore: any[] = [];
+
+    if (backupMetafieldsMap["product_import_history_backup"]) {
+      try {
+        const parsed = JSON.parse(backupMetafieldsMap["product_import_history_backup"]);
+        if (Array.isArray(parsed)) itemsToRestore = parsed;
+      } catch (e) {
+        console.warn("[Persistence] Error parsing product_import_history_backup metafield:", e);
+      }
+    }
+
+    if (itemsToRestore.length === 0) {
+      const local = readLocalImportHistoryBackup();
+      const shopCanonical = canonicalizeShopDomain(shop);
+      itemsToRestore = local.filter((item: any) => canonicalizeShopDomain(item.shop || "") === shopCanonical);
+    }
+
+    if (itemsToRestore.length > 0 && currentCount < itemsToRestore.length) {
+      for (const item of itemsToRestore) {
+        if (!item || !item.id) continue;
+        await db.productImportHistory.upsert({
+          where: { id: item.id },
+          update: {
+            shop: item.shop || shop,
+            productId: item.productId || "",
+            productTitle: item.productTitle || "Store Product",
+            sourceType: item.sourceType || "Amazon",
+            fileName: item.fileName || null,
+            reviewCount: Number(item.reviewCount) || 0,
+            status: item.status || "successful",
+          },
+          create: {
+            id: item.id,
+            shop: item.shop || shop,
+            productId: item.productId || "",
+            productTitle: item.productTitle || "Store Product",
+            sourceType: item.sourceType || "Amazon",
+            fileName: item.fileName || null,
+            reviewCount: Number(item.reviewCount) || 0,
+            status: item.status || "successful",
+            createdAt: item.createdAt ? new Date(item.createdAt) : new Date(),
+          },
+        }).catch(() => null);
+      }
+    }
+  } catch (e) {
+    console.warn("[Persistence] ensureImportHistoryRestored error:", e);
+  }
+}
+
+export async function syncImportHistoryToShopify(admin: any, shop: string): Promise<void> {
+  try {
+    const shopWhere = getShopWhereClause(shop);
+    const allHistory = await db.productImportHistory.findMany({
+      where: shopWhere,
+      orderBy: { createdAt: "desc" },
+    });
+    writeLocalImportHistoryBackup(allHistory, shop);
+
+    if (admin) {
+      const shopRes = await admin.graphql(`#graphql query getShopId { shop { id } }`);
+      const shopJson = await shopRes.json();
+      const shopId = shopJson.data?.shop?.id;
+      if (shopId) {
+        await admin.graphql(
+          `#graphql
+          mutation saveImportHistoryBackup($metafields: [MetafieldsSetInput!]!) {
+            metafieldsSet(metafields: $metafields) {
+              userErrors { field message }
+            }
+          }`,
+          {
+            variables: {
+              metafields: [
+                {
+                  namespace: "ai_review_system",
+                  key: "product_import_history_backup",
+                  type: "json",
+                  value: JSON.stringify(allHistory),
+                  ownerId: shopId,
+                },
+              ],
+            },
+          }
+        );
+      }
+    }
+  } catch (err) {
+    console.warn("[Persistence] syncImportHistoryToShopify error:", err);
+  }
+}
+

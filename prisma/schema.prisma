@@ -121,3 +121,15 @@ model CustomerPreference {
   createdAt   DateTime @default(now())
 }
 
+model ProductImportHistory {
+  id           String   @id @default(cuid())
+  shop         String
+  productId    String
+  productTitle String
+  sourceType   String
+  fileName     String?
+  reviewCount  Int      @default(0)
+  status       String   @default("successful")
+  createdAt    DateTime @default(now())
+}
+

@@ -2,7 +2,7 @@ import { json, ActionFunctionArgs } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
 import Papa from "papaparse";
 import db from "../db.server";
-import { syncReviewsToShopify } from "../services/reviewPersistence.server";
+import { syncReviewsToShopify, syncImportHistoryToShopify } from "../services/reviewPersistence.server";
 
 import { canonicalizeShopDomain } from "../services/shopDomain.server";
 
@@ -23,67 +23,9 @@ export async function action({ request }: ActionFunctionArgs) {
   const sourceType = (formData.get("sourceType") as string) || "IMPORTED_AMAZON"; // IMPORTED_AMAZON | IMPORTED_FLIPKART | IMPORTED_ALIBABA
   const manualMappingsJson = formData.get("manualMappings") as string;
 
-  if (manualMappingsJson) {
-    // Process manual mappings submission
-    try {
-      const mappings: Array<{ reviewData: any; targetProductId: string }> = JSON.parse(manualMappingsJson);
-      let createdCount = 0;
-
-      for (const mapItem of mappings) {
-        const { reviewData, targetProductId } = mapItem;
-        if (!targetProductId) continue;
-
-        const bodyShort = reviewData.ReviewText.length > 130
-          ? reviewData.ReviewText.substring(0, 130) + "..."
-          : reviewData.ReviewText;
-
-        const externalUrl = reviewData.ExternalUrl || reviewData.external_url || reviewData.URL || reviewData.url || reviewData.Link || reviewData.link || "";
-
-        const matchedProd = shopifyProducts.find((p) => p.id === targetProductId);
-        const productHandle = matchedProd ? matchedProd.handle : null;
-
-        await db.review.create({
-          data: {
-            shop,
-            productId: targetProductId,
-            productHandle,
-            reviewerName: reviewData.ReviewerName || "Marketplace Customer",
-            rating: parseInt(reviewData.Rating || "5", 10),
-            bodyShort,
-            bodyFull: reviewData.ReviewText,
-            source: sourceType,
-            externalUrl: externalUrl || null,
-            isAiGenerated: false,
-            isPublished: true,
-            isVerifiedPurchase: true,
-            tags: JSON.stringify(["imported", sourceType.toLowerCase().replace("imported_", "")]),
-          },
-        });
-        createdCount++;
-      }
-      await syncReviewsToShopify(admin, shop);
-      return json({ success: true, createdCount });
-    } catch (e: any) {
-      return json({ success: false, error: e.message }, { status: 400 });
-    }
-  }
-
-  if (!file) {
-    return json({ success: false, error: "No CSV file provided." }, { status: 400 });
-  }
-
-  const csvText = await file.text();
-  const parsed = Papa.parse(csvText, { header: true, skipEmptyLines: true });
-
-  if (parsed.errors.length > 0 && parsed.data.length === 0) {
-    return json({ success: false, error: "Failed to parse CSV file." }, { status: 400 });
-  }
-
-  const rows = parsed.data as Array<Record<string, string>>;
-
   const adminToken = process.env.SHOPIFY_ADMIN_ACCESS_TOKEN || ("shpat_" + "619247c484119ab17aa96895bc8d90ef");
 
-  // Fetch shop products to match SKUs / Handles
+  // Fetch shop products to match SKUs / Handles / Product IDs
   let shopifyProducts: Array<{ id: string; handle: string; title: string; skus: string[] }> = [];
   try {
     const gqlResponse = await admin.graphql(`
@@ -140,11 +82,107 @@ export async function action({ request }: ActionFunctionArgs) {
     }
   }
 
+  const marketplaceName = sourceType.includes("FLIPKART")
+    ? "Flipkart"
+    : sourceType.includes("ALIBABA")
+    ? "Alibaba"
+    : "Amazon";
+
+  if (manualMappingsJson) {
+    // Process manual mappings submission
+    try {
+      const mappings: Array<{ reviewData: any; targetProductId: string }> = JSON.parse(manualMappingsJson);
+      let createdCount = 0;
+      const productImportMap: Record<string, { title: string; count: number }> = {};
+
+      for (const mapItem of mappings) {
+        const { reviewData, targetProductId } = mapItem;
+        if (!targetProductId) continue;
+
+        const bodyShort = reviewData.ReviewText.length > 130
+          ? reviewData.ReviewText.substring(0, 130) + "..."
+          : reviewData.ReviewText;
+
+        const externalUrl = reviewData.ExternalUrl || reviewData.external_url || reviewData.URL || reviewData.url || reviewData.Link || reviewData.link || "";
+
+        const matchedProd = shopifyProducts.find((p) => p.id === targetProductId);
+        const productHandle = matchedProd ? matchedProd.handle : null;
+        const productTitle = matchedProd ? matchedProd.title : "Store Product";
+
+        await db.review.create({
+          data: {
+            shop,
+            productId: targetProductId,
+            productHandle,
+            reviewerName: reviewData.ReviewerName || "Marketplace Customer",
+            rating: parseInt(reviewData.Rating || "5", 10),
+            bodyShort,
+            bodyFull: reviewData.ReviewText,
+            source: sourceType,
+            externalUrl: externalUrl || null,
+            isAiGenerated: false,
+            isPublished: true,
+            isVerifiedPurchase: true,
+            tags: JSON.stringify(["imported", sourceType.toLowerCase().replace("imported_", "")]),
+          },
+        });
+        createdCount++;
+
+        if (!productImportMap[targetProductId]) {
+          productImportMap[targetProductId] = { title: productTitle, count: 0 };
+        }
+        productImportMap[targetProductId].count++;
+      }
+
+      // Record history for manually mapped reviews
+      for (const [prodId, pInfo] of Object.entries(productImportMap)) {
+        if (pInfo.count > 0) {
+          await db.productImportHistory.create({
+            data: {
+              shop,
+              productId: prodId,
+              productTitle: pInfo.title,
+              sourceType: marketplaceName,
+              fileName: "manual_mapping.csv",
+              reviewCount: pInfo.count,
+              status: "successful",
+            },
+          });
+        }
+      }
+
+      await syncReviewsToShopify(admin, shop);
+      await syncImportHistoryToShopify(admin, shop);
+      return json({ success: true, createdCount });
+    } catch (e: any) {
+      return json({ success: false, error: e.message }, { status: 400 });
+    }
+  }
+
+  if (!file) {
+    return json({ success: false, error: "No CSV file provided." }, { status: 400 });
+  }
+
+  const csvText = await file.text();
+  const parsed = Papa.parse(csvText, { header: true, skipEmptyLines: true });
+
+  if (parsed.errors.length > 0 && parsed.data.length === 0) {
+    return json({ success: false, error: "Failed to parse CSV file." }, { status: 400 });
+  }
+
+  const rows = parsed.data as Array<Record<string, string>>;
+
   let successRows = 0;
   let failedRows = 0;
   const unmatchedRows: any[] = [];
 
   const overrideProductId = (formData.get("overrideProductId") as string) || "";
+  const duplicatesOption = (formData.get("duplicates") as string) || "skip";
+  const afterImportOption = (formData.get("afterImport") as string) || "pending";
+  const shouldPublish = afterImportOption === "publish";
+
+  // Track product-specific import counts
+  const productImportMap: Record<string, { title: string; count: number }> = {};
 
   for (const row of rows) {
     // Dynamic SKU header lookup supporting SKU/ASIN, SKU / ASIN, Product SKU, Item SKU, etc.
@@ -165,7 +203,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
     // Attempt to auto-map SKU/ASIN to a Shopify product or use overrideProductId
     let matchedProduct = overrideProductId
-      ? shopifyProducts.find((p) => p.id === overrideProductId) || { id: overrideProductId, handle: "" }
+      ? shopifyProducts.find((p) => p.id === overrideProductId) || { id: overrideProductId, handle: "", title: "Store Product" }
       : shopifyProducts.find((p) =>
           p.skus.some((s) => s.toLowerCase() === sku.toLowerCase()) ||
           p.handle.toLowerCase() === sku.toLowerCase() ||
@@ -173,14 +211,12 @@ export async function action({ request }: ActionFunctionArgs) {
         );
 
     if (!matchedProduct && shopifyProducts.length === 1) {
-      // Single product store fallback
       matchedProduct = shopifyProducts[0];
     }
 
     if (matchedProduct) {
       const bodyShort = reviewText.length > 130 ? reviewText.substring(0, 130) + "..." : reviewText;
 
-      // Deduplication check: verify if review already exists for this shop, product, reviewer, and text
       const existing = await db.review.findFirst({
         where: {
           shop,
@@ -203,15 +239,41 @@ export async function action({ request }: ActionFunctionArgs) {
             source: sourceType,
             externalUrl: externalUrl || null,
             isAiGenerated: false,
-            isPublished: true,
+            isPublished: shouldPublish,
             isVerifiedPurchase: true,
             tags: JSON.stringify(["imported", sourceType.toLowerCase().replace("imported_", "")]),
           },
         });
         successRows++;
+
+        if (!productImportMap[matchedProduct.id]) {
+          productImportMap[matchedProduct.id] = {
+            title: matchedProduct.title || "Store Product",
+            count: 0,
+          };
+        }
+        productImportMap[matchedProduct.id].count++;
+      } else if (duplicatesOption === "overwrite") {
+        await db.review.update({
+          where: { id: existing.id },
+          data: {
+            rating: isNaN(rating) ? 5 : rating,
+            bodyShort,
+            bodyFull: reviewText,
+            isPublished: shouldPublish,
+          },
+        });
+        successRows++;
+
+        if (!productImportMap[matchedProduct.id]) {
+          productImportMap[matchedProduct.id] = {
+            title: matchedProduct.title || "Store Product",
+            count: 0,
+          };
+        }
+        productImportMap[matchedProduct.id].count++;
       }
     } else {
-      // Row needs manual mapping
       unmatchedRows.push({
         SKU: sku,
         ReviewerName: reviewerName,
@@ -235,7 +297,25 @@ export async function action({ request }: ActionFunctionArgs) {
     },
   });
 
+  // Record persistent product-specific marketplace import history
+  for (const [prodId, pInfo] of Object.entries(productImportMap)) {
+    if (pInfo.count > 0) {
+      await db.productImportHistory.create({
+        data: {
+          shop,
+          productId: prodId,
+          productTitle: pInfo.title,
+          sourceType: marketplaceName,
+          fileName: file.name || "imported_reviews.csv",
+          reviewCount: pInfo.count,
+          status: "successful",
+        },
+      });
+    }
+  }
+
   await syncReviewsToShopify(admin, shop);
+  await syncImportHistoryToShopify(admin, shop);
 
   return json({
     success: true,
