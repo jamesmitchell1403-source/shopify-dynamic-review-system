@@ -808,6 +808,52 @@ export default function ReviewsPage() {
 
   return (
     <Page fullWidth title="Reviews Moderation & Management">
+      <style>{`
+        .action-dropdown-item {
+          display: flex !important;
+          align-items: center !important;
+          gap: 10px !important;
+          width: 100% !important;
+          padding: 9px 12px !important;
+          border-radius: 7px !important;
+          font-size: 13px !important;
+          font-weight: 500 !important;
+          cursor: pointer !important;
+          border: none !important;
+          background: transparent !important;
+          text-align: left !important;
+          transition: background-color 0.15s ease, color 0.15s ease !important;
+          text-decoration: none !important;
+          box-sizing: border-box !important;
+          white-space: nowrap !important;
+        }
+        .action-dropdown-item.edit {
+          color: #1e293b !important;
+        }
+        .action-dropdown-item.edit:hover {
+          background-color: #f1f5f9 !important;
+          color: #0f172a !important;
+        }
+        .action-dropdown-item.link {
+          color: #2563eb !important;
+        }
+        .action-dropdown-item.link:hover {
+          background-color: #eff6ff !important;
+          color: #1d4ed8 !important;
+        }
+        .action-dropdown-item.delete {
+          color: #dc2626 !important;
+        }
+        .action-dropdown-item.delete:hover {
+          background-color: #fef2f2 !important;
+          color: #b91c1c !important;
+        }
+        .action-dropdown-divider {
+          height: 1px !important;
+          background-color: #f1f5f9 !important;
+          margin: 4px 0 !important;
+        }
+      `}</style>
       <div style={{ width: "100%", padding: "8px 0 32px 0" }}>
         {/* TOP 4 SUMMARY STAT CARDS MATCHING REFERENCE DESIGN */}
         <div
@@ -1574,86 +1620,110 @@ export default function ReviewsPage() {
                                   width: "30px",
                                   height: "30px",
                                   borderRadius: "6px",
-                                  border: "1px solid #cbd5e1",
-                                  backgroundColor: "#ffffff",
-                                  color: "#475569",
+                                  border: activeMenuId === r.id ? "1px solid #2563eb" : "1px solid #cbd5e1",
+                                  backgroundColor: activeMenuId === r.id ? "#eff6ff" : "#ffffff",
+                                  color: activeMenuId === r.id ? "#2563eb" : "#475569",
                                   display: "inline-flex",
                                   alignItems: "center",
                                   justifyContent: "center",
                                   cursor: "pointer",
+                                  transition: "all 0.15s ease",
                                 }}
                               >
                                 <Icon source={MenuHorizontalIcon} />
                               </button>
 
                               {activeMenuId === r.id && (
-                                <div
-                                  style={{
-                                    position: "absolute",
-                                    right: 0,
-                                    top: "34px",
-                                    backgroundColor: "#ffffff",
-                                    border: "1px solid #e2e8f0",
-                                    borderRadius: "8px",
-                                    boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
-                                    zIndex: 50,
-                                    minWidth: "160px",
-                                    padding: "4px 0",
-                                  }}
-                                >
-                                  {r.externalUrl && (
-                                    <a
-                                      href={r.externalUrl}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      style={{
-                                        display: "block",
-                                        padding: "8px 12px",
-                                        fontSize: "12px",
-                                        color: "#2563eb",
-                                        textDecoration: "none",
+                                <>
+                                  {/* Transparent click-outside backdrop */}
+                                  <div
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setActiveMenuId(null);
+                                    }}
+                                    style={{
+                                      position: "fixed",
+                                      top: 0,
+                                      left: 0,
+                                      right: 0,
+                                      bottom: 0,
+                                      zIndex: 9998,
+                                      backgroundColor: "transparent",
+                                    }}
+                                  />
+
+                                  {/* Dropdown Menu Popover */}
+                                  <div
+                                    onClick={(e) => e.stopPropagation()}
+                                    style={{
+                                      position: "absolute",
+                                      right: 0,
+                                      top: "calc(100% + 6px)",
+                                      backgroundColor: "#ffffff",
+                                      border: "1px solid #e2e8f0",
+                                      borderRadius: "10px",
+                                      boxShadow: "0 10px 25px -5px rgba(0,0,0,0.12), 0 8px 10px -6px rgba(0,0,0,0.08)",
+                                      zIndex: 9999,
+                                      minWidth: "175px",
+                                      padding: "6px",
+                                      display: "flex",
+                                      flexDirection: "column",
+                                      gap: "2px",
+                                      boxSizing: "border-box",
+                                    }}
+                                  >
+                                    {r.externalUrl && (
+                                      <a
+                                        href={r.externalUrl}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="action-dropdown-item link"
+                                        onClick={() => setActiveMenuId(null)}
+                                      >
+                                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                                          <polyline points="15 3 21 3 21 9" />
+                                          <line x1="10" y1="14" x2="21" y2="3" />
+                                        </svg>
+                                        <span>View External Link</span>
+                                      </a>
+                                    )}
+
+                                    <button
+                                      type="button"
+                                      className="action-dropdown-item edit"
+                                      onClick={() => {
+                                        setActiveMenuId(null);
+                                        handleOpenEdit(r);
                                       }}
                                     >
-                                      🔗 View External Link
-                                    </a>
-                                  )}
-                                  <button
-                                    onClick={() => {
-                                      setActiveMenuId(null);
-                                      handleOpenEdit(r);
-                                    }}
-                                    style={{
-                                      width: "100%",
-                                      textAlign: "left",
-                                      padding: "8px 12px",
-                                      fontSize: "12px",
-                                      color: "#334155",
-                                      background: "none",
-                                      border: "none",
-                                      cursor: "pointer",
-                                    }}
-                                  >
-                                    Edit Details
-                                  </button>
-                                  <button
-                                    onClick={() => {
-                                      setActiveMenuId(null);
-                                      setDeleteConfirmModal({ open: true, type: "single", id: r.id });
-                                    }}
-                                    style={{
-                                      width: "100%",
-                                      textAlign: "left",
-                                      padding: "8px 12px",
-                                      fontSize: "12px",
-                                      color: "#dc2626",
-                                      background: "none",
-                                      border: "none",
-                                      cursor: "pointer",
-                                    }}
-                                  >
-                                    Delete Review
-                                  </button>
-                                </div>
+                                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                                      </svg>
+                                      <span>Edit Details</span>
+                                    </button>
+
+                                    <div className="action-dropdown-divider" />
+
+                                    <button
+                                      type="button"
+                                      className="action-dropdown-item delete"
+                                      onClick={() => {
+                                        setActiveMenuId(null);
+                                        setDeleteConfirmModal({ open: true, type: "single", id: r.id });
+                                      }}
+                                    >
+                                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <polyline points="3 6 5 6 21 6" />
+                                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                                        <line x1="10" y1="11" x2="10" y2="17" />
+                                        <line x1="14" y1="11" x2="14" y2="17" />
+                                      </svg>
+                                      <span>Delete Review</span>
+                                    </button>
+                                  </div>
+                                </>
                               )}
                             </div>
                           </div>
