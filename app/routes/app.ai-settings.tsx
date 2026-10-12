@@ -281,9 +281,6 @@ export default function AiSettingsPage() {
   const [defaultProvider, setDefaultProvider] = useState<"claude" | "gemini" | "openai">(
     (settings?.defaultAiProvider as any) || "gemini"
   );
-  const [fallbackProvider, setFallbackProvider] = useState<"auto" | "claude" | "openai">(
-    (settings?.fallbackAiProvider as any) || "auto"
-  );
 
   // Key visibility toggles
   const [showKeys, setShowKeys] = useState<{ [key: string]: boolean }>({
@@ -297,9 +294,6 @@ export default function AiSettingsPage() {
   const [testingProvider, setTestingProvider] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<{ provider: string; success: boolean; message: string } | null>(null);
 
-  // Activity log filter
-  const [activeFilter, setActiveFilter] = useState<"All" | "Emails" | "Replies" | "Summaries">("All");
-
   // Handle Save
   const handleSave = () => {
     const fd = new FormData();
@@ -308,7 +302,6 @@ export default function AiSettingsPage() {
     fd.append("geminiApiKey", geminiKey);
     fd.append("openaiApiKey", openaiKey);
     fd.append("defaultAiProvider", defaultProvider);
-    fd.append("fallbackAiProvider", fallbackProvider);
 
     submit(fd, { method: "post" });
     setSavedSuccess(true);
@@ -402,22 +395,10 @@ export default function AiSettingsPage() {
     return { action, target };
   };
 
-  // Filtered jobs
-  const filteredJobs = useMemo(() => {
-    return aiJobs.filter((j) => {
-      if (activeFilter === "All") return true;
-      const { action } = parseJobDetails(j);
-      if (activeFilter === "Emails") return action.toLowerCase().includes("email");
-      if (activeFilter === "Replies") return action.toLowerCase().includes("repl");
-      if (activeFilter === "Summaries") return action.toLowerCase().includes("summar");
-      return true;
-    });
-  }, [aiJobs, activeFilter]);
-
   // Export CSV Handler
   const handleExportCSV = () => {
     const headers = ["Date and time", "Provider", "Model", "Action", "Target", "Items", "Status"];
-    const csvRows = filteredJobs.map((j) => {
+    const csvRows = aiJobs.map((j) => {
       const dt = formatDateTime(j.createdAt);
       const provLower = (j.provider || "").toLowerCase();
       const prov = provLower.includes("gemini")
@@ -452,12 +433,6 @@ export default function AiSettingsPage() {
     link.click();
     document.body.removeChild(link);
   };
-
-  // Monthly action count
-  const monthlyUsageCount = useMemo(() => {
-    const sum = aiJobs.reduce((acc, j) => acc + (j.resultCount || 1), 0);
-    return Math.max(312, sum);
-  }, [aiJobs]);
 
   const isSaving = navigation.state === "submitting";
 
@@ -680,50 +655,10 @@ export default function AiSettingsPage() {
           padding: 16px 24px;
           display: flex;
           align-items: center;
-          justify-content: space-between;
+          justify-content: flex-end;
           gap: 20px;
           margin-bottom: 24px;
-          flex-wrap: wrap;
           box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-        }
-
-        .control-section {
-          display: flex;
-          flex-direction: column;
-          gap: 6px;
-        }
-        .control-label {
-          font-size: 13px;
-          font-weight: 600;
-          color: #374151;
-        }
-
-        .fallback-pills {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-        }
-        .fallback-pill-btn {
-          padding: 6px 18px;
-          border-radius: 9999px;
-          font-size: 13px;
-          font-weight: 500;
-          cursor: pointer;
-          transition: all 0.15s ease;
-          background: #ffffff;
-          color: #374151;
-          border: 1px solid #d1d5db;
-        }
-        .fallback-pill-btn.active {
-          background: #0f172a;
-          color: #ffffff;
-          border: 1px solid #0f172a;
-          font-weight: 600;
-        }
-
-        .limit-text {
-          font-size: 13px;
-          color: #4b5563;
         }
 
         .btn-save-primary {
@@ -744,6 +679,14 @@ export default function AiSettingsPage() {
         .btn-save-primary:disabled {
           opacity: 0.6;
           cursor: not-allowed;
+        }
+        @media (max-width: 640px) {
+          .control-bar-card {
+            justify-content: stretch;
+          }
+          .btn-save-primary {
+            width: 100%;
+          }
         }
 
         /* AI Activity Log Card */
@@ -774,36 +717,6 @@ export default function AiSettingsPage() {
           font-size: 13.5px;
           color: #6b7280;
           margin: 3px 0 0 0;
-        }
-
-        .log-actions {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          flex-wrap: wrap;
-        }
-
-        .filter-pills {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-        }
-        .filter-pill-btn {
-          padding: 6px 18px;
-          border-radius: 9999px;
-          font-size: 13px;
-          font-weight: 500;
-          cursor: pointer;
-          transition: all 0.15s ease;
-          background: #ffffff;
-          color: #374151;
-          border: 1px solid #d1d5db;
-        }
-        .filter-pill-btn.active {
-          background: #0f172a;
-          color: #ffffff;
-          border: 1px solid #0f172a;
-          font-weight: 600;
         }
 
         .btn-export-csv {
@@ -1196,50 +1109,16 @@ export default function AiSettingsPage() {
           </div>
         </div>
 
-        {/* 2. MIDDLE CONTROL BAR CARD */}
+        {/* 2. MIDDLE SAVE ACTION BAR */}
         <div className="control-bar-card">
-          <div className="control-section">
-            <span className="control-label">Fallback if default fails</span>
-            <div className="fallback-pills">
-              <button
-                type="button"
-                className={`fallback-pill-btn ${fallbackProvider === "auto" ? "active" : ""}`}
-                onClick={() => setFallbackProvider("auto")}
-              >
-                Auto
-              </button>
-              <button
-                type="button"
-                className={`fallback-pill-btn ${fallbackProvider === "claude" ? "active" : ""}`}
-                onClick={() => setFallbackProvider("claude")}
-              >
-                Claude
-              </button>
-              <button
-                type="button"
-                className={`fallback-pill-btn ${fallbackProvider === "openai" ? "active" : ""}`}
-                onClick={() => setFallbackProvider("openai")}
-              >
-                ChatGPT
-              </button>
-            </div>
-          </div>
-
-          <div className="control-section">
-            <span className="control-label">Monthly limit</span>
-            <span className="limit-text">{monthlyUsageCount} of 1,000 actions</span>
-          </div>
-
-          <div>
-            <button
-              type="button"
-              className="btn-save-primary"
-              disabled={isSaving}
-              onClick={handleSave}
-            >
-              {isSaving ? "Saving..." : "Save API keys and preferences"}
-            </button>
-          </div>
+          <button
+            type="button"
+            className="btn-save-primary"
+            disabled={isSaving}
+            onClick={handleSave}
+          >
+            {isSaving ? "Saving..." : "Save API keys and preferences"}
+          </button>
         </div>
 
         {/* 3. BOTTOM SECTION - AI ACTIVITY LOG CARD */}
@@ -1250,38 +1129,7 @@ export default function AiSettingsPage() {
               <p>Every AI action with provider, model and result</p>
             </div>
 
-            <div className="log-actions">
-              <div className="filter-pills">
-                <button
-                  type="button"
-                  className={`filter-pill-btn ${activeFilter === "All" ? "active" : ""}`}
-                  onClick={() => setActiveFilter("All")}
-                >
-                  All
-                </button>
-                <button
-                  type="button"
-                  className={`filter-pill-btn ${activeFilter === "Emails" ? "active" : ""}`}
-                  onClick={() => setActiveFilter("Emails")}
-                >
-                  Emails
-                </button>
-                <button
-                  type="button"
-                  className={`filter-pill-btn ${activeFilter === "Replies" ? "active" : ""}`}
-                  onClick={() => setActiveFilter("Replies")}
-                >
-                  Replies
-                </button>
-                <button
-                  type="button"
-                  className={`filter-pill-btn ${activeFilter === "Summaries" ? "active" : ""}`}
-                  onClick={() => setActiveFilter("Summaries")}
-                >
-                  Summaries
-                </button>
-              </div>
-
+            <div>
               <button
                 type="button"
                 className="btn-export-csv"
@@ -1313,14 +1161,14 @@ export default function AiSettingsPage() {
                 </tr>
               </thead>
               <tbody>
-                {filteredJobs.length === 0 ? (
+                {aiJobs.length === 0 ? (
                   <tr>
                     <td colSpan={7} style={{ textAlign: "center", padding: "30px 14px", color: "#6b7280" }}>
-                      No AI actions recorded for the "{activeFilter}" filter yet.
+                      No AI actions recorded yet.
                     </td>
                   </tr>
                 ) : (
-                  filteredJobs.map((job) => {
+                  aiJobs.map((job) => {
                     const dt = formatDateTime(job.createdAt);
                     const provLower = (job.provider || "").toLowerCase();
                     const prov = provLower.includes("gemini")
