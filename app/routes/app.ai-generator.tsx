@@ -1,12 +1,10 @@
 import { json, LoaderFunctionArgs } from "@remix-run/node";
-import { useLoaderData } from "@remix-run/react";
+import { useLoaderData, Link } from "@remix-run/react";
 import { useState, useMemo } from "react";
 import {
   Page,
-  Card,
   Banner,
-  Text,
-  Badge,
+  ProgressBar,
 } from "@shopify/polaris";
 import { authenticate } from "../shopify.server";
 import db, { ensureTablesExist } from "../db.server";
@@ -134,7 +132,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     isScopeForbidden = false;
   }
 
-  // Fetch review statistics per product
+  // Fetch real review statistics
   let productStatsMap: Record<string, { count: number; avgRating: number }> = {};
   let totalReviewsCount = 0;
   let publishedReviewsCount = 0;
@@ -162,7 +160,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     console.warn("Error grouping reviews:", err);
   }
 
-  // Try fetching recent real orders for order matching in Tab 3
+  // Fetch recent orders for matching in Tab 3
   let recentOrders: Array<{ orderNumber: string; customerName: string; productId?: string }> = [];
   try {
     const ordersRes = await admin.graphql(`
@@ -223,42 +221,60 @@ export default function AiGeneratorPage() {
     aiConfig,
   } = useLoaderData<typeof loader>();
 
-  // Tabs: 0: Bulk requests, 1: Product assistant, 2: Add real review
+  // Tabs: 0 = Bulk requests, 1 = Product assistant, 2 = Add real review
   const [selectedTab, setSelectedTab] = useState<number>(0);
 
-  // Default active provider based on configured API keys
+  // Available AI engines with valid saved key check
+  const availableEngines = useMemo(() => [
+    {
+      id: "gemini",
+      name: "Google Gemini",
+      model: "gemini-2.0-flash",
+      hasKey: aiConfig.hasGeminiKey,
+      description: "Fast, multimodal vision analysis & high-speed review generation.",
+    },
+    {
+      id: "claude",
+      name: "Anthropic Claude",
+      model: "claude-3-5-sonnet",
+      hasKey: aiConfig.hasClaudeKey,
+      description: "Nuanced, high-fidelity customer feedback with authentic human phrasing.",
+    },
+    {
+      id: "openai",
+      name: "ChatGPT OpenAI",
+      model: "gpt-4o-mini",
+      hasKey: aiConfig.hasOpenaiKey,
+      description: "Reliable, well-structured product ratings and review headlines.",
+    },
+  ], [aiConfig]);
+
+  // Determine initial selected engine (first available engine with a saved key)
   const getInitialActiveProvider = () => {
-    if (aiConfig.defaultProvider === "claude" && aiConfig.hasClaudeKey) return "claude";
-    if (aiConfig.defaultProvider === "gemini" && aiConfig.hasGeminiKey) return "gemini";
-    if (aiConfig.defaultProvider === "openai" && aiConfig.hasOpenaiKey) return "openai";
     if (aiConfig.hasGeminiKey) return "gemini";
     if (aiConfig.hasClaudeKey) return "claude";
     if (aiConfig.hasOpenaiKey) return "openai";
-    return "gemini";
+    return "";
   };
 
-  const initialProvider = getInitialActiveProvider();
-
   // ==============================================================
-  // TAB 1 (Bulk requests) STATE
+  // TAB 0 (Bulk requests) STATE - SIMPLIFIED 4-STEP WORKFLOW
   // ==============================================================
-  const [bulkTone, setBulkTone] = useState<"Friendly" | "Professional" | "Short">("Friendly");
-  const [bulkSendDelay, setBulkSendDelay] = useState<"3 days" | "7 days" | "14 days">("7 days");
-  const [bulkProvider, setBulkProvider] = useState<string>(initialProvider);
-  const [bulkRewardEnabled, setBulkRewardEnabled] = useState<boolean>(true);
+  const [bulkTone, setBulkTone] = useState<string>("Friendly & Relatable");
+  const [reviewsPerProduct, setReviewsPerProduct] = useState<number>(3);
+  const [bulkProvider, setBulkProvider] = useState<string>(getInitialActiveProvider());
   const [bulkLoading, setBulkLoading] = useState<boolean>(false);
-  const [bulkProgress, setBulkProgress] = useState<number>(40);
+  const [bulkProgress, setBulkProgress] = useState<number>(0);
   const [bulkSuccessResult, setBulkSuccessResult] = useState<any>(null);
   const [bulkErrorMessage, setBulkErrorMessage] = useState<string | null>(null);
 
-  // Store metrics for Tab 1
-  const deliveredCount = 142;
-  const reviewedCount = totalReviewsCount > 0 ? totalReviewsCount : 38;
-  const pendingCount = Math.max(104, deliveredCount - reviewedCount);
-  const expectedReviewsCount = Math.max(12, Math.round(pendingCount * 0.18));
+  // Calculated review count for Step 3
+  const totalReviewsToGenerate = useMemo(() => {
+    return products.length * reviewsPerProduct;
+  }, [products.length, reviewsPerProduct]);
 
   // ==============================================================
-  // TAB 2 (Product assistant) STATE
+  // TAB 1 (Product assistant) STATE
   // ==============================================================
   const [selectedProductId, setSelectedProductId] = useState<string>(
     products[0]?.value || "gid://shopify/Product/sample-1",
@@ -273,7 +289,7 @@ export default function AiGeneratorPage() {
   const [singleNotes, setSingleNotes] = useState<string>("");
   const [singleCount, setSingleCount] = useState<string>("5");
   const [singleLanguage, setSingleLanguage] = useState<string>("en");
-  const [singleProvider, setSingleProvider] = useState<string>(initialProvider);
+  const [singleProvider, setSingleProvider] = useState<string>(getInitialActiveProvider());
   const [singleLoading, setSingleLoading] = useState<boolean>(false);
   const [generatedReviews, setGeneratedReviews] = useState<Array<any>>([]);
   const [savedStatus, setSavedStatus] = useState<Record<number, boolean>>({});
@@ -300,7 +316,7 @@ export default function AiGeneratorPage() {
   }, [productStats, selectedProductId]);
 
   // ==============================================================
-  // TAB 3 (Add real review) STATE
+  // TAB 2 (Add real review) STATE
   // ==============================================================
   const [manualProdId, setManualProdId] = useState<string>(products[0]?.value || "");
   const [manualOrderNumber, setManualOrderNumber] = useState<string>("#1042");
@@ -330,7 +346,6 @@ export default function AiGeneratorPage() {
     }
   };
 
-  // Switch product in Product Assistant
   const handleProductSelect = (prodId: string) => {
     setSelectedProductId(prodId);
     const prod = products.find((p) => p.value === prodId);
@@ -341,17 +356,22 @@ export default function AiGeneratorPage() {
 
   // Trigger Bulk AI Generation
   const handleBulkGenerateAll = async () => {
+    if (!bulkProvider) {
+      setBulkErrorMessage("Please select an available AI engine before generating reviews.");
+      return;
+    }
+
     setBulkLoading(true);
     setBulkErrorMessage(null);
     setBulkSuccessResult(null);
+    setBulkProgress(15);
 
-    // Simulate animated progress update for smooth merchant feedback
     const interval = setInterval(() => {
       setBulkProgress((prev) => {
-        if (prev >= pendingCount - 5) return prev;
-        return prev + 8;
+        if (prev >= 90) return prev;
+        return prev + 15;
       });
-    }, 400);
+    }, 500);
 
     try {
       const res = await fetch("/api/ai/generate", {
@@ -361,17 +381,15 @@ export default function AiGeneratorPage() {
           actionType: "bulk_generate_all",
           provider: bulkProvider,
           language: "en",
-          reviewsPerProduct: 3,
+          reviewsPerProduct: reviewsPerProduct,
           mediaOption: "image",
           tone: bulkTone,
-          sendDelay: bulkSendDelay,
-          rewardEnabled: bulkRewardEnabled,
         }),
       });
 
       const data = await res.json();
       clearInterval(interval);
-      setBulkProgress(pendingCount);
+      setBulkProgress(100);
 
       if (!data.success) {
         setBulkErrorMessage(data.error || "Bulk generation failed");
@@ -388,6 +406,11 @@ export default function AiGeneratorPage() {
 
   // Trigger Single Product AI Generation
   const handleSingleGenerate = async (isMore = false) => {
+    if (!singleProvider) {
+      setSingleErrorMessage("Please select an available AI engine with a valid API key.");
+      return;
+    }
+
     setSingleLoading(true);
     setSingleErrorMessage(null);
 
@@ -531,18 +554,20 @@ export default function AiGeneratorPage() {
     }
   };
 
+  const selectedEngine = availableEngines.find((e) => e.id === bulkProvider) || availableEngines[0];
+
   return (
     <Page fullWidth title="AI & Custom Review Generator (Module B)">
       <style>{`
         /* ========================================================== */
-        /* RESET & CONTAINER STYLES                                  */
+        /* 100% FULL WIDTH CONTAINER STYLES                           */
         /* ========================================================== */
         .rg-root {
           font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
           color: #111827;
-          max-width: 1040px;
-          margin: 0 auto;
-          padding-bottom: 40px;
+          width: 100%;
+          box-sizing: border-box;
+          padding: 8px 0 40px 0;
         }
 
         /* TABS NAVIGATION */
@@ -552,6 +577,7 @@ export default function AiGeneratorPage() {
           gap: 12px;
           margin-bottom: 24px;
           flex-wrap: wrap;
+          width: 100%;
         }
 
         .rg-tab-item {
@@ -559,7 +585,7 @@ export default function AiGeneratorPage() {
           align-items: center;
           justify-content: center;
           gap: 8px;
-          padding: 11px 24px;
+          padding: 12px 24px;
           font-size: 15px;
           font-weight: 500;
           color: #111827;
@@ -578,192 +604,68 @@ export default function AiGeneratorPage() {
 
         .rg-tab-item.active {
           border: 2.5px solid #111827;
-          padding: 10px 23px;
+          padding: 11px 23px;
           font-weight: 600;
           box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
         }
 
-        /* BLUE BANNER CARD */
-        .rg-blue-banner {
-          background-color: #dbeafe;
+        /* WORKFLOW STEP CARD */
+        .rg-step-card {
+          background: #ffffff;
+          border: 1px solid #e5e7eb;
           border-radius: 16px;
           padding: 24px 28px;
+          margin-bottom: 20px;
+          width: 100%;
+          box-sizing: border-box;
+          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+        }
+
+        .rg-step-header {
           display: flex;
           align-items: center;
-          justify-content: space-between;
-          gap: 20px;
-          flex-wrap: wrap;
-          margin-bottom: 18px;
+          gap: 12px;
+          margin-bottom: 16px;
         }
 
-        .rg-blue-banner-title {
-          font-size: 21px;
-          font-weight: 700;
-          color: #1d4ed8;
-          line-height: 1.25;
-          margin: 0 0 6px 0;
-        }
-
-        .rg-blue-banner-sub {
-          font-size: 14px;
-          font-weight: 500;
-          color: #2563eb;
-          margin: 0;
-        }
-
-        .rg-black-btn {
-          background-color: #111827;
-          color: #ffffff;
-          border: none;
-          border-radius: 10px;
-          padding: 13px 22px;
-          font-size: 14px;
-          font-weight: 600;
-          cursor: pointer;
+        .rg-step-badge {
           display: inline-flex;
           align-items: center;
-          gap: 8px;
-          transition: background-color 0.15s ease, transform 0.1s ease;
-          text-decoration: none;
-          box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-
-        .rg-black-btn:hover {
-          background-color: #1f2937;
-          transform: translateY(-1px);
-        }
-
-        .rg-black-btn:disabled {
-          background-color: #6b7280;
-          cursor: not-allowed;
-          transform: none;
-        }
-
-        .rg-outline-btn {
-          background-color: #ffffff;
-          color: #374151;
-          border: 1px solid #d1d5db;
-          border-radius: 8px;
-          padding: 10px 20px;
-          font-size: 14px;
-          font-weight: 500;
-          cursor: pointer;
-          transition: all 0.15s ease;
-        }
-
-        .rg-outline-btn:hover {
-          background-color: #f9fafb;
-          border-color: #9ca3af;
-        }
-
-        /* METRICS ROW */
-        .rg-metrics-grid {
-          display: grid;
-          grid-template-columns: repeat(3, 1fr);
-          gap: 16px;
-          margin-bottom: 20px;
-        }
-
-        @media (max-width: 768px) {
-          .rg-metrics-grid {
-            grid-template-columns: 1fr;
-          }
-        }
-
-        .rg-metric-box {
-          background: #ffffff;
-          border: 1px solid #e5e7eb;
-          border-radius: 16px;
-          padding: 20px 24px;
-          display: flex;
-          align-items: center;
-          gap: 18px;
-          box-shadow: 0 1px 2px rgba(0,0,0,0.02);
-        }
-
-        .rg-metric-icon {
-          width: 48px;
-          height: 48px;
-          border-radius: 12px;
-          display: flex;
-          align-items: center;
           justify-content: center;
-          font-size: 22px;
-          flex-shrink: 0;
+          background: #111827;
+          color: #ffffff;
+          font-size: 11px;
+          font-weight: 700;
+          letter-spacing: 0.5px;
+          padding: 4px 10px;
+          border-radius: 6px;
+          text-transform: uppercase;
         }
 
-        .rg-metric-icon.blue {
-          background-color: #dbeafe;
-          color: #2563eb;
-        }
-
-        .rg-metric-icon.green {
-          background-color: #dcfce7;
-          color: #16a34a;
-        }
-
-        .rg-metric-icon.amber {
-          background-color: #fef3c7;
-          color: #d97706;
-        }
-
-        .rg-metric-label {
-          font-size: 13px;
-          color: #6b7280;
-          font-weight: 500;
-          margin: 0 0 2px 0;
-        }
-
-        .rg-metric-val {
-          font-size: 26px;
+        .rg-step-title {
+          font-size: 17px;
           font-weight: 700;
           color: #111827;
-          line-height: 1.1;
           margin: 0;
         }
 
-        /* 2-COLUMN SPLIT LAYOUT */
-        .rg-split-grid {
-          display: grid;
-          grid-template-columns: 1fr 1.1fr;
-          gap: 20px;
-          align-items: stretch;
+        .rg-step-desc {
+          font-size: 13.5px;
+          color: #4b5563;
+          margin: 4px 0 0 0;
+          line-height: 1.45;
         }
 
-        @media (max-width: 860px) {
-          .rg-split-grid {
-            grid-template-columns: 1fr;
-          }
-        }
-
-        /* WHITE CARD CONTAINER */
-        .rg-card {
-          background: #ffffff;
-          border: 1px solid #e5e7eb;
-          border-radius: 16px;
-          padding: 24px;
-          box-shadow: 0 1px 2px rgba(0,0,0,0.02);
-        }
-
-        /* PILL BUTTON GROUPS */
-        .rg-label {
-          font-size: 13px;
-          font-weight: 600;
-          color: #374151;
-          margin: 0 0 8px 0;
-          display: block;
-        }
-
+        /* PILLS & BUTTONS */
         .rg-pills {
           display: flex;
-          gap: 8px;
+          gap: 10px;
           flex-wrap: wrap;
-          margin-bottom: 20px;
         }
 
         .rg-pill {
-          padding: 7px 18px;
-          font-size: 13.5px;
+          padding: 9px 20px;
+          font-size: 14px;
           font-weight: 500;
           border-radius: 9999px;
           cursor: pointer;
@@ -776,6 +678,7 @@ export default function AiGeneratorPage() {
 
         .rg-pill:hover {
           background: #f9fafb;
+          border-color: #9ca3af;
         }
 
         .rg-pill.active {
@@ -785,7 +688,170 @@ export default function AiGeneratorPage() {
           font-weight: 600;
         }
 
-        /* SELECT & INPUTS */
+        /* AI MODEL CARDS */
+        .rg-engine-grid {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 16px;
+          width: 100%;
+          box-sizing: border-box;
+        }
+
+        @media (max-width: 860px) {
+          .rg-engine-grid {
+            grid-template-columns: 1fr;
+          }
+        }
+
+        .rg-engine-card {
+          border: 1.5px solid #e5e7eb;
+          border-radius: 14px;
+          padding: 20px;
+          background: #ffffff;
+          cursor: pointer;
+          transition: all 0.15s ease;
+          position: relative;
+          display: flex;
+          flex-direction: column;
+          justify-content: space-between;
+        }
+
+        .rg-engine-card:hover:not(.disabled) {
+          border-color: #9ca3af;
+          background: #fcfcfd;
+        }
+
+        .rg-engine-card.active {
+          border: 2px solid #111827;
+          background: #f8fafc;
+          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04);
+        }
+
+        .rg-engine-card.disabled {
+          background: #f9fafb;
+          border-color: #e5e7eb;
+          cursor: not-allowed;
+          opacity: 0.65;
+        }
+
+        /* SUMMARY TILES */
+        .rg-summary-grid {
+          display: grid;
+          grid-template-columns: repeat(4, 1fr);
+          gap: 16px;
+          width: 100%;
+          box-sizing: border-box;
+        }
+
+        @media (max-width: 900px) {
+          .rg-summary-grid {
+            grid-template-columns: 1fr 1fr;
+          }
+        }
+
+        @media (max-width: 500px) {
+          .rg-summary-grid {
+            grid-template-columns: 1fr;
+          }
+        }
+
+        .rg-summary-tile {
+          background: #f8fafc;
+          border: 1px solid #e2e8f0;
+          border-radius: 12px;
+          padding: 16px 18px;
+        }
+
+        .rg-summary-label {
+          font-size: 12px;
+          font-weight: 600;
+          color: #64748b;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+          margin: 0 0 4px 0;
+        }
+
+        .rg-summary-val {
+          font-size: 16px;
+          font-weight: 700;
+          color: #0f172a;
+          margin: 0;
+          line-height: 1.3;
+        }
+
+        .rg-summary-sub {
+          font-size: 12px;
+          color: #64748b;
+          margin: 4px 0 0 0;
+        }
+
+        /* PRIMARY ACTION BUTTON */
+        .rg-generate-btn {
+          background-color: #111827;
+          color: #ffffff;
+          border: none;
+          border-radius: 10px;
+          padding: 15px 32px;
+          font-size: 15px;
+          font-weight: 600;
+          cursor: pointer;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 10px;
+          transition: background-color 0.15s ease, transform 0.1s ease;
+          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .rg-generate-btn:hover:not(:disabled) {
+          background-color: #1f2937;
+          transform: translateY(-1px);
+        }
+
+        .rg-generate-btn:disabled {
+          background-color: #9ca3af;
+          cursor: not-allowed;
+          transform: none;
+        }
+
+        /* BADGES */
+        .rg-green-badge {
+          background: #dcfce7;
+          color: #15803d;
+          font-size: 12px;
+          font-weight: 600;
+          padding: 3px 10px;
+          border-radius: 9999px;
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+        }
+
+        .rg-amber-badge {
+          background: #fef3c7;
+          color: #b45309;
+          font-size: 12px;
+          font-weight: 600;
+          padding: 3px 10px;
+          border-radius: 9999px;
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+        }
+
+        .rg-blue-badge {
+          background: #dbeafe;
+          color: #1d4ed8;
+          font-size: 12px;
+          font-weight: 600;
+          padding: 3px 10px;
+          border-radius: 9999px;
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+        }
+
+        /* INPUTS & CONTROLS */
         .rg-select, .rg-input {
           width: 100%;
           padding: 11px 14px;
@@ -803,18 +869,119 @@ export default function AiGeneratorPage() {
           border-color: #111827;
         }
 
-        /* TOGGLE SWITCH ROW */
-        .rg-toggle-row {
-          background: #f9fafb;
-          border-radius: 12px;
-          padding: 13px 18px;
+        /* 2-COLUMN SPLIT LAYOUT FOR TAB 1 */
+        .rg-split-grid {
+          display: grid;
+          grid-template-columns: 360px 1fr;
+          gap: 20px;
+          align-items: stretch;
+          width: 100%;
+          box-sizing: border-box;
+        }
+
+        @media (max-width: 900px) {
+          .rg-split-grid {
+            grid-template-columns: 1fr;
+          }
+        }
+
+        .rg-card {
+          background: #ffffff;
+          border: 1px solid #e5e7eb;
+          border-radius: 16px;
+          padding: 24px;
+          box-shadow: 0 1px 2px rgba(0,0,0,0.02);
+          width: 100%;
+          box-sizing: border-box;
+        }
+
+        .rg-assistant-item {
           display: flex;
           align-items: center;
           justify-content: space-between;
+          padding: 13px 16px;
+          background: #f9fafb;
           border: 1px solid #f3f4f6;
-          margin-top: 10px;
+          border-radius: 12px;
+          cursor: pointer;
+          margin-bottom: 8px;
+          transition: all 0.15s ease;
+          user-select: none;
         }
 
+        .rg-assistant-item:hover {
+          background: #f3f4f6;
+          border-color: #e5e7eb;
+        }
+
+        .rg-assistant-item.active {
+          background: #f0f7ff;
+          border-color: #bfdbfe;
+          font-weight: 600;
+        }
+
+        /* OUTLINE BUTTON */
+        .rg-outline-btn {
+          background-color: #ffffff;
+          color: #374151;
+          border: 1px solid #d1d5db;
+          border-radius: 8px;
+          padding: 8px 16px;
+          font-size: 13px;
+          font-weight: 500;
+          cursor: pointer;
+          transition: all 0.15s ease;
+        }
+
+        .rg-outline-btn:hover {
+          background-color: #f9fafb;
+          border-color: #9ca3af;
+        }
+
+        /* UPLOAD BOX */
+        .rg-upload-box {
+          border: 1.5px dashed #cbd5e1;
+          border-radius: 12px;
+          padding: 24px 20px;
+          text-align: center;
+          background: #fafafa;
+          cursor: pointer;
+          transition: all 0.15s ease;
+          width: 100%;
+          box-sizing: border-box;
+        }
+
+        .rg-upload-box:hover {
+          border-color: #94a3b8;
+          background: #f8fafc;
+        }
+
+        /* STAR RATING PICKER */
+        .rg-star-picker {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          padding: 9px 14px;
+          background: #ffffff;
+          border: 1px solid #d1d5db;
+          border-radius: 10px;
+          height: 42px;
+          box-sizing: border-box;
+        }
+
+        .rg-star-btn {
+          cursor: pointer;
+          font-size: 20px;
+          color: #d1d5db;
+          line-height: 1;
+          transition: color 0.15s ease;
+        }
+
+        .rg-star-btn.gold {
+          color: #b45309;
+        }
+
+        /* TOGGLE SWITCH */
         .rg-toggle-switch {
           width: 44px;
           height: 24px;
@@ -845,139 +1012,10 @@ export default function AiGeneratorPage() {
         .rg-toggle-switch.on .rg-toggle-handle {
           transform: translateX(20px);
         }
-
-        /* EMAIL PREVIEW CARD */
-        .rg-email-preview-box {
-          border: 1px solid #e5e7eb;
-          border-radius: 14px;
-          padding: 22px;
-          background: #ffffff;
-          margin: 12px 0 24px 0;
-        }
-
-        .rg-stars-gold {
-          color: #b45309;
-          font-size: 20px;
-          letter-spacing: 3px;
-        }
-
-        /* PROGRESS BAR */
-        .rg-progress-track {
-          width: 100%;
-          height: 8px;
-          border-radius: 9999px;
-          background: #e5e7eb;
-          overflow: hidden;
-          margin-top: 8px;
-        }
-
-        .rg-progress-bar {
-          height: 100%;
-          background: #16a34a;
-          border-radius: 9999px;
-          transition: width 0.3s ease;
-        }
-
-        .rg-green-badge {
-          background: #dcfce7;
-          color: #15803d;
-          font-size: 12px;
-          font-weight: 600;
-          padding: 3px 10px;
-          border-radius: 9999px;
-          display: inline-block;
-        }
-
-        .rg-amber-badge {
-          background: #fef3c7;
-          color: #b45309;
-          font-size: 12px;
-          font-weight: 600;
-          padding: 3px 10px;
-          border-radius: 9999px;
-          display: inline-block;
-        }
-
-        .rg-blue-badge {
-          background: #dbeafe;
-          color: #1d4ed8;
-          font-size: 12px;
-          font-weight: 600;
-          padding: 3px 10px;
-          border-radius: 9999px;
-          display: inline-block;
-        }
-
-        /* PRODUCT ASSISTANT MENU LIST */
-        .rg-assistant-item {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          padding: 13px 16px;
-          background: #f9fafb;
-          border: 1px solid #f3f4f6;
-          border-radius: 12px;
-          cursor: pointer;
-          margin-bottom: 8px;
-          transition: all 0.15s ease;
-          user-select: none;
-        }
-
-        .rg-assistant-item:hover {
-          background: #f3f4f6;
-          border-color: #e5e7eb;
-        }
-
-        .rg-assistant-item.active {
-          background: #f0f7ff;
-          border-color: #bfdbfe;
-          font-weight: 600;
-        }
-
-        /* DASHED UPLOAD BOX */
-        .rg-upload-box {
-          border: 1.5px dashed #cbd5e1;
-          border-radius: 12px;
-          padding: 24px 20px;
-          text-align: center;
-          background: #fafafa;
-          cursor: pointer;
-          transition: all 0.15s ease;
-        }
-
-        .rg-upload-box:hover {
-          border-color: #94a3b8;
-          background: #f8fafc;
-        }
-
-        /* INTERACTIVE STAR RATING PICKER */
-        .rg-star-picker {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          padding: 9px 14px;
-          background: #ffffff;
-          border: 1px solid #d1d5db;
-          border-radius: 10px;
-          height: 42px;
-          box-sizing: border-box;
-        }
-
-        .rg-star-btn {
-          cursor: pointer;
-          font-size: 20px;
-          color: #d1d5db;
-          line-height: 1;
-          transition: color 0.15s ease;
-        }
-
-        .rg-star-btn.gold {
-          color: #b45309;
-        }
       `}</style>
 
       <div className="rg-root">
-        {/* Permission & API Key Alerts */}
+        {/* Permission Alerts */}
         {isScopeForbidden && (
           <div style={{ marginBottom: "16px" }}>
             <Banner
@@ -1007,14 +1045,14 @@ export default function AiGeneratorPage() {
               }}
             >
               <p>
-                No AI API key has been configured in <strong>AI Settings</strong>. Please configure an API key for Anthropic Claude, Google Gemini, or ChatGPT OpenAI.
+                No AI API key has been configured in <strong>AI Settings</strong>. Please configure an API key for Google Gemini, Anthropic Claude, or ChatGPT OpenAI.
               </p>
             </Banner>
           </div>
         )}
 
         {/* ============================================================== */}
-        {/* TOP TAB NAVIGATION BAR (MATCHING SCREENSHOTS)                   */}
+        {/* TOP TAB NAVIGATION BAR                                          */}
         {/* ============================================================== */}
         <div className="rg-tabs-header">
           <button
@@ -1023,7 +1061,7 @@ export default function AiGeneratorPage() {
             onClick={() => setSelectedTab(0)}
           >
             <span>✉</span>
-            <span>Bulk requests</span>
+            <span>Bulk requests (All Products)</span>
           </button>
 
           <button
@@ -1032,7 +1070,7 @@ export default function AiGeneratorPage() {
             onClick={() => setSelectedTab(1)}
           >
             <span>🪄</span>
-            <span>Product assistant</span>
+            <span>Product assistant (Single Product)</span>
           </button>
 
           <button
@@ -1041,45 +1079,19 @@ export default function AiGeneratorPage() {
             onClick={() => setSelectedTab(2)}
           >
             <span>✏</span>
-            <span>Add real review</span>
+            <span>Add real review (Manual)</span>
           </button>
         </div>
 
         {/* ============================================================== */}
-        {/* TAB 0: BULK REQUESTS (AUTO-GENERATE FOR ALL PRODUCTS)           */}
+        {/* TAB 0: REDESIGNED STEP-BY-STEP BULK WORKFLOW                     */}
         {/* ============================================================== */}
         {selectedTab === 0 && (
           <div>
-            {/* Top Sky-Blue Banner */}
-            <div className="rg-blue-banner">
-              <div>
-                <h2 className="rg-blue-banner-title">
-                  {`${pendingCount} happy customers are waiting to be asked`}
-                </h2>
-                <p className="rg-blue-banner-sub">
-                  {`Expected: about ${expectedReviewsCount} new real reviews`}
-                </p>
-              </div>
-
-              <button
-                type="button"
-                className="rg-black-btn"
-                disabled={bulkLoading}
-                onClick={handleBulkGenerateAll}
-              >
-                <span>✈</span>
-                <span>
-                  {bulkLoading
-                    ? `Generating reviews for ${products.length} products...`
-                    : `Send to ${pendingCount} customers`}
-                </span>
-              </button>
-            </div>
-
             {/* Error or Success notification */}
             {bulkErrorMessage && (
               <div style={{ marginBottom: "16px" }}>
-                <Banner tone="critical" title="Bulk Generation Error">
+                <Banner tone="critical" title="Generation Error">
                   <p>{bulkErrorMessage}</p>
                 </Banner>
               </div>
@@ -1087,151 +1099,301 @@ export default function AiGeneratorPage() {
 
             {bulkSuccessResult && (
               <div style={{ marginBottom: "16px" }}>
-                <Banner tone="success" title="Bulk Review Generation Completed!">
+                <Banner tone="success" title="Review Generation Completed Cleanly!">
                   <p style={{ fontWeight: 600 }}>
-                    Successfully generated {bulkSuccessResult.totalGenerated} unique authentic reviews across {bulkSuccessResult.productsProcessed} catalog products!
+                    Successfully generated {bulkSuccessResult.totalGenerated} authentic reviews across {bulkSuccessResult.productsProcessed} catalog products!
+                  </p>
+                  <p style={{ marginTop: "4px", fontSize: "13px" }}>
+                    The reviews are now stored and will automatically display in your product page review widgets.
                   </p>
                 </Banner>
               </div>
             )}
 
-            {/* 3 Metric Cards */}
-            <div className="rg-metrics-grid">
-              <div className="rg-metric-box">
-                <div className="rg-metric-icon blue">📦</div>
+            {/* STEP 1: SELECT THE REVIEW GENERATION OPTION */}
+            <div className="rg-step-card">
+              <div className="rg-step-header">
+                <span className="rg-step-badge">Step 1</span>
                 <div>
-                  <div className="rg-metric-label">Delivered</div>
-                  <div className="rg-metric-val">{deliveredCount}</div>
-                </div>
-              </div>
-
-              <div className="rg-metric-box">
-                <div className="rg-metric-icon green">⭐</div>
-                <div>
-                  <div className="rg-metric-label">Reviewed</div>
-                  <div className="rg-metric-val">{reviewedCount}</div>
-                </div>
-              </div>
-
-              <div className="rg-metric-box">
-                <div className="rg-metric-icon amber">⏱</div>
-                <div>
-                  <div className="rg-metric-label">Pending</div>
-                  <div className="rg-metric-val">{pendingCount}</div>
-                </div>
-              </div>
-            </div>
-
-            {/* Two Column Configuration & Preview */}
-            <div className="rg-split-grid">
-              {/* Left Column: Settings */}
-              <div className="rg-card">
-                <div>
-                  <span className="rg-label">Tone</span>
-                  <div className="rg-pills">
-                    {(["Friendly", "Professional", "Short"] as const).map((t) => (
-                      <button
-                        key={t}
-                        type="button"
-                        className={`rg-pill ${bulkTone === t ? "active" : ""}`}
-                        onClick={() => setBulkTone(t)}
-                      >
-                        {t}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <span className="rg-label">Send after delivery</span>
-                  <div className="rg-pills">
-                    {(["3 days", "7 days", "14 days"] as const).map((d) => (
-                      <button
-                        key={d}
-                        type="button"
-                        className={`rg-pill ${bulkSendDelay === d ? "active" : ""}`}
-                        onClick={() => setBulkSendDelay(d)}
-                      >
-                        {d}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div style={{ marginBottom: "20px" }}>
-                  <span className="rg-label">AI engine</span>
-                  <select
-                    className="rg-select"
-                    value={bulkProvider}
-                    onChange={(e) => setBulkProvider(e.target.value)}
-                  >
-                    <option value="gemini">Google Gemini (gemini-2.0-flash)</option>
-                    <option value="claude">Anthropic Claude (claude-3-5-sonnet)</option>
-                    <option value="openai">ChatGPT OpenAI (gpt-4o-mini)</option>
-                  </select>
-                </div>
-
-                <div className="rg-toggle-row">
-                  <span style={{ fontSize: "14px", fontWeight: 500, color: "#111827" }}>
-                    Thank-you reward for any honest review
-                  </span>
-                  <div
-                    className={`rg-toggle-switch ${bulkRewardEnabled ? "on" : ""}`}
-                    onClick={() => setBulkRewardEnabled(!bulkRewardEnabled)}
-                  >
-                    <div className="rg-toggle-handle" />
-                  </div>
-                </div>
-
-                {/* Helpful instructions for non-technical users */}
-                <div style={{ marginTop: "24px", padding: "14px", background: "#f8fafc", borderRadius: "10px", border: "1px solid #e2e8f0" }}>
-                  <div style={{ display: "flex", gap: "8px", alignItems: "center", marginBottom: "4px" }}>
-                    <span style={{ fontSize: "16px" }}>💡</span>
-                    <strong style={{ fontSize: "13px", color: "#1e293b" }}>How Auto-Generation Works</strong>
-                  </div>
-                  <p style={{ margin: 0, fontSize: "12.5px", color: "#64748b", lineHeight: 1.45 }}>
-                    Automatically scans all {products.length} catalog products in your store. The AI writes authentic customer reviews with high-converting phrasing tailored to your product titles and features.
+                  <h3 className="rg-step-title">Review Generation Scope</h3>
+                  <p className="rg-step-desc">
+                    Auto-generate customer reviews across your active product catalog without needing to write them manually.
                   </p>
                 </div>
               </div>
 
-              {/* Right Column: Live Email Preview & Sending Status */}
-              <div className="rg-card" style={{ display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
-                <div>
-                  <span className="rg-label" style={{ marginBottom: "12px" }}>Live email preview</span>
-
-                  <div className="rg-email-preview-box">
-                    <h3 style={{ margin: "0 0 10px 0", fontSize: "16px", fontWeight: 700, color: "#111827" }}>
-                      {`How are your new towels, Priya?`}
-                    </h3>
-                    <p style={{ margin: "0 0 16px 0", fontSize: "14px", color: "#374151", lineHeight: 1.5 }}>
-                      {`Your 6 Piece Cotton Towel Set arrived a week ago. We would love to hear what you think.`}
+              <div
+                style={{
+                  background: "#f0fdf4",
+                  border: "1.5px solid #bbf7d0",
+                  borderRadius: "12px",
+                  padding: "16px 20px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  flexWrap: "wrap",
+                  gap: "12px",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+                  <div
+                    style={{
+                      width: "44px",
+                      height: "44px",
+                      borderRadius: "10px",
+                      background: "#dcfce7",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: "20px",
+                    }}
+                  >
+                    🛍️
+                  </div>
+                  <div>
+                    <strong style={{ fontSize: "15px", color: "#166534" }}>
+                      Target Scope: All Active Store Products
+                    </strong>
+                    <p style={{ margin: "2px 0 0 0", fontSize: "13px", color: "#15803d" }}>
+                      {products.length > 0
+                        ? `${products.length} eligible active products found in your live Shopify catalog.`
+                        : "No active products found. Add products in your Shopify Admin to generate reviews."}
                     </p>
-                    <div className="rg-stars-gold">
-                      ★★★★★
-                    </div>
                   </div>
                 </div>
 
+                <span className="rg-green-badge">
+                  ✓ Catalog Active
+                </span>
+              </div>
+            </div>
+
+            {/* STEP 2: CONFIGURE REVIEW SETTINGS */}
+            <div className="rg-step-card">
+              <div className="rg-step-header">
+                <span className="rg-step-badge">Step 2</span>
                 <div>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <span style={{ fontSize: "14px", fontWeight: 500, color: "#374151" }}>
-                      {bulkLoading ? "Generating & Sending..." : "Sending"}
-                    </span>
-                    <span className="rg-green-badge">
-                      {`${bulkLoading ? bulkProgress : 40} of ${pendingCount}`}
-                    </span>
-                  </div>
+                  <h3 className="rg-step-title">Configure Review Settings</h3>
+                  <p className="rg-step-desc">
+                    Choose the tone, review volume per product, and select an available AI engine with a valid API key.
+                  </p>
+                </div>
+              </div>
 
-                  <div className="rg-progress-track">
-                    <div
-                      className="rg-progress-bar"
-                      style={{
-                        width: `${Math.min(100, Math.round(((bulkLoading ? bulkProgress : 40) / pendingCount) * 100))}%`,
-                      }}
-                    />
+              {/* Tone Selection */}
+              <div style={{ marginBottom: "22px" }}>
+                <label style={{ fontSize: "13.5px", fontWeight: 600, color: "#374151", display: "block", marginBottom: "8px" }}>
+                  Review Tone
+                </label>
+                <div className="rg-pills">
+                  {[
+                    "Friendly & Relatable",
+                    "Enthusiastic & Excited",
+                    "Professional & Detailed",
+                    "Short & Punchy",
+                  ].map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      className={`rg-pill ${bulkTone === t ? "active" : ""}`}
+                      onClick={() => setBulkTone(t)}
+                    >
+                      {t}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Reviews Per Product Selection */}
+              <div style={{ marginBottom: "24px" }}>
+                <label style={{ fontSize: "13.5px", fontWeight: 600, color: "#374151", display: "block", marginBottom: "8px" }}>
+                  Reviews to Generate per Product
+                </label>
+                <div className="rg-pills">
+                  {[
+                    { label: "1 Review per product", count: 1 },
+                    { label: "3 Reviews per product (Recommended)", count: 3 },
+                    { label: "5 Reviews per product", count: 5 },
+                  ].map((opt) => (
+                    <button
+                      key={opt.count}
+                      type="button"
+                      className={`rg-pill ${reviewsPerProduct === opt.count ? "active" : ""}`}
+                      onClick={() => setReviewsPerProduct(opt.count)}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* AI Engine Selection with API Key Validation */}
+              <div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px", flexWrap: "wrap", gap: "8px" }}>
+                  <label style={{ fontSize: "13.5px", fontWeight: 600, color: "#374151", margin: 0 }}>
+                    Select Available AI Engine
+                  </label>
+                  <Link
+                    to="/app/ai-settings"
+                    style={{ fontSize: "13px", color: "#2563eb", textDecoration: "none", fontWeight: 500 }}
+                  >
+                    Manage API Keys in AI Settings →
+                  </Link>
+                </div>
+
+                <div className="rg-engine-grid">
+                  {availableEngines.map((engine) => {
+                    const isSelected = bulkProvider === engine.id;
+                    const isDisabled = !engine.hasKey;
+
+                    return (
+                      <div
+                        key={engine.id}
+                        className={`rg-engine-card ${isSelected ? "active" : ""} ${isDisabled ? "disabled" : ""}`}
+                        onClick={() => {
+                          if (!isDisabled) {
+                            setBulkProvider(engine.id);
+                          }
+                        }}
+                      >
+                        <div>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "6px" }}>
+                            <strong style={{ fontSize: "15px", color: isDisabled ? "#6b7280" : "#111827" }}>
+                              {engine.name}
+                            </strong>
+                            {engine.hasKey ? (
+                              <span className="rg-green-badge">✓ Ready</span>
+                            ) : (
+                              <span className="rg-amber-badge">⚠️ Key Missing</span>
+                            )}
+                          </div>
+
+                          <div style={{ fontSize: "12.5px", color: "#6b7280", fontFamily: "monospace", marginBottom: "8px" }}>
+                            {engine.model}
+                          </div>
+
+                          <p style={{ margin: 0, fontSize: "12.5px", color: isDisabled ? "#9ca3af" : "#4b5563", lineHeight: 1.4 }}>
+                            {engine.description}
+                          </p>
+                        </div>
+
+                        <div style={{ marginTop: "14px", paddingTop: "10px", borderTop: "1px solid #f1f5f9" }}>
+                          {engine.hasKey ? (
+                            <span style={{ fontSize: "12px", color: isSelected ? "#0f172a" : "#16a34a", fontWeight: 600 }}>
+                              {isSelected ? "● Selected Model" : "Click to select"}
+                            </span>
+                          ) : (
+                            <Link
+                              to="/app/ai-settings"
+                              style={{ fontSize: "12px", color: "#d97706", fontWeight: 600, textDecoration: "none" }}
+                            >
+                              Add Key in AI Settings →
+                            </Link>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {/* STEP 3: REVIEW THE GENERATION DETAILS */}
+            <div className="rg-step-card">
+              <div className="rg-step-header">
+                <span className="rg-step-badge">Step 3</span>
+                <div>
+                  <h3 className="rg-step-title">Review Generation Summary</h3>
+                  <p className="rg-step-desc">
+                    Verify the product scope and generation settings before starting the review generator.
+                  </p>
+                </div>
+              </div>
+
+              <div className="rg-summary-grid">
+                <div className="rg-summary-tile">
+                  <div className="rg-summary-label">Target Scope</div>
+                  <div className="rg-summary-val">{products.length} Products</div>
+                  <div className="rg-summary-sub">All active catalog products</div>
+                </div>
+
+                <div className="rg-summary-tile">
+                  <div className="rg-summary-label">Total to Generate</div>
+                  <div className="rg-summary-val" style={{ color: "#2563eb" }}>
+                    {totalReviewsToGenerate} Reviews
+                  </div>
+                  <div className="rg-summary-sub">
+                    {reviewsPerProduct} reviews × {products.length} items
                   </div>
                 </div>
+
+                <div className="rg-summary-tile">
+                  <div className="rg-summary-label">Selected Tone</div>
+                  <div className="rg-summary-val">{bulkTone.split(" ")[0]}</div>
+                  <div className="rg-summary-sub">{bulkTone}</div>
+                </div>
+
+                <div className="rg-summary-tile">
+                  <div className="rg-summary-label">AI Engine</div>
+                  <div className="rg-summary-val">
+                    {selectedEngine ? selectedEngine.name : "None Selected"}
+                  </div>
+                  <div className="rg-summary-sub">
+                    {selectedEngine?.hasKey ? "✓ Valid API Key" : "⚠️ Key Missing"}
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ marginTop: "16px", padding: "12px 16px", background: "#f8fafc", borderRadius: "10px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px" }}>
+                <div style={{ fontSize: "13px", color: "#475569" }}>
+                  <strong>Current Store Status:</strong> {totalReviewsCount} reviews currently published in store widget.
+                </div>
+                <div style={{ fontSize: "12.5px", color: "#64748b" }}>
+                  Generated reviews are saved with authentic verified buyer tags and 4-5 star ratings.
+                </div>
+              </div>
+            </div>
+
+            {/* STEP 4: GENERATE REVIEWS BUTTON */}
+            <div className="rg-step-card" style={{ textAlign: "center", padding: "32px 24px" }}>
+              <div style={{ maxWidth: "600px", margin: "0 auto" }}>
+                <span className="rg-step-badge" style={{ marginBottom: "12px" }}>Step 4</span>
+                <h3 style={{ fontSize: "20px", fontWeight: 700, color: "#111827", margin: "8px 0" }}>
+                  Ready to Generate Authentic Reviews?
+                </h3>
+                <p style={{ fontSize: "14px", color: "#4b5563", margin: "0 0 24px 0" }}>
+                  Click below to generate {totalReviewsToGenerate} authentic reviews across your {products.length} products using {selectedEngine?.name}.
+                </p>
+
+                {bulkLoading && (
+                  <div style={{ marginBottom: "20px", textAlign: "left" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "6px", fontSize: "13px", color: "#374151" }}>
+                      <span>Generating reviews across {products.length} catalog items...</span>
+                      <strong>{bulkProgress}%</strong>
+                    </div>
+                    <ProgressBar progress={bulkProgress} animated />
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  className="rg-generate-btn"
+                  disabled={bulkLoading || !selectedEngine?.hasKey || products.length === 0}
+                  onClick={handleBulkGenerateAll}
+                >
+                  <span>🪄</span>
+                  <span>
+                    {bulkLoading
+                      ? "Generating Reviews Across All Products..."
+                      : `Generate ${totalReviewsToGenerate} Reviews for All Products`}
+                  </span>
+                </button>
+
+                {!selectedEngine?.hasKey && (
+                  <div style={{ marginTop: "12px", fontSize: "13px", color: "#dc2626" }}>
+                    ⚠️ Please select an AI Engine with a valid saved API key above, or configure one in AI Settings.
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -1244,7 +1406,9 @@ export default function AiGeneratorPage() {
           <div className="rg-split-grid">
             {/* Left Column: Product Selector & Action Menu */}
             <div className="rg-card">
-              <span className="rg-label">Product</span>
+              <label style={{ fontSize: "13px", fontWeight: 600, color: "#374151", display: "block", marginBottom: "8px" }}>
+                Product
+              </label>
               <select
                 className="rg-select"
                 value={selectedProductId}
@@ -1308,7 +1472,9 @@ export default function AiGeneratorPage() {
               </div>
 
               {/* Action List */}
-              <span className="rg-label" style={{ marginBottom: "10px" }}>What do you need?</span>
+              <label style={{ fontSize: "13px", fontWeight: 600, color: "#374151", display: "block", marginBottom: "10px" }}>
+                What do you need?
+              </label>
 
               <div
                 className={`rg-assistant-item ${activeAssistantAction === "summary" ? "active" : ""}`}
@@ -1401,8 +1567,10 @@ export default function AiGeneratorPage() {
 
               {/* Single Product AI Review Generation Engine */}
               <div style={{ borderTop: "1px solid #e5e7eb", paddingTop: "20px" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
-                  <span className="rg-label" style={{ margin: 0 }}>Generate AI Reviews for this Product</span>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px", flexWrap: "wrap", gap: "8px" }}>
+                  <label style={{ fontSize: "13px", fontWeight: 600, color: "#111827", margin: 0 }}>
+                    Generate AI Reviews for this Product
+                  </label>
                   <span style={{ fontSize: "12px", color: "#6b7280" }}>
                     Creates high-quality draft reviews for store widget
                   </span>
@@ -1460,9 +1628,9 @@ export default function AiGeneratorPage() {
 
                 <button
                   type="button"
-                  className="rg-black-btn"
-                  style={{ width: "100%", justifyContent: "center" }}
-                  disabled={singleLoading}
+                  className="rg-generate-btn"
+                  style={{ width: "100%" }}
+                  disabled={singleLoading || !singleProvider}
                   onClick={() => handleSingleGenerate(false)}
                 >
                   <span>🪄</span>
@@ -1508,7 +1676,7 @@ export default function AiGeneratorPage() {
                             </button>
                             <button
                               type="button"
-                              className="rg-black-btn"
+                              className="rg-generate-btn"
                               style={{ padding: "4px 12px", fontSize: "12px" }}
                               disabled={savedStatus[idx] || savingIndex === idx}
                               onClick={() => handleSaveDraft(rev, idx)}
@@ -1590,7 +1758,9 @@ export default function AiGeneratorPage() {
               }}
             >
               <div>
-                <span className="rg-label">Product</span>
+                <label style={{ fontSize: "13px", fontWeight: 600, color: "#374151", display: "block", marginBottom: "8px" }}>
+                  Product
+                </label>
                 <select
                   className="rg-select"
                   value={manualProdId}
@@ -1609,7 +1779,9 @@ export default function AiGeneratorPage() {
               </div>
 
               <div>
-                <span className="rg-label">Order number</span>
+                <label style={{ fontSize: "13px", fontWeight: 600, color: "#374151", display: "block", marginBottom: "8px" }}>
+                  Order number
+                </label>
                 <input
                   type="text"
                   className="rg-input"
@@ -1620,7 +1792,9 @@ export default function AiGeneratorPage() {
               </div>
 
               <div>
-                <span className="rg-label">Rating</span>
+                <label style={{ fontSize: "13px", fontWeight: 600, color: "#374151", display: "block", marginBottom: "8px" }}>
+                  Rating
+                </label>
                 <div className="rg-star-picker">
                   {[1, 2, 3, 4, 5].map((star) => (
                     <span
@@ -1645,7 +1819,9 @@ export default function AiGeneratorPage() {
               }}
             >
               <div>
-                <span className="rg-label">Customer name (from order)</span>
+                <label style={{ fontSize: "13px", fontWeight: 600, color: "#374151", display: "block", marginBottom: "8px" }}>
+                  Customer name (from order)
+                </label>
                 <input
                   type="text"
                   className="rg-input"
@@ -1656,7 +1832,9 @@ export default function AiGeneratorPage() {
               </div>
 
               <div>
-                <span className="rg-label">Source of feedback</span>
+                <label style={{ fontSize: "13px", fontWeight: 600, color: "#374151", display: "block", marginBottom: "8px" }}>
+                  Source of feedback
+                </label>
                 <div className="rg-pills" style={{ marginBottom: 0 }}>
                   {(["WhatsApp", "Email", "Phone"] as const).map((src) => (
                     <button
@@ -1674,7 +1852,9 @@ export default function AiGeneratorPage() {
 
             {/* Row 3: Review text */}
             <div style={{ marginBottom: "20px" }}>
-              <span className="rg-label">Review text (customer's own words)</span>
+              <label style={{ fontSize: "13px", fontWeight: 600, color: "#374151", display: "block", marginBottom: "8px" }}>
+                Review text (customer's own words)
+              </label>
               <textarea
                 className="rg-input"
                 style={{ minHeight: "100px", resize: "vertical", fontFamily: "inherit" }}
@@ -1770,7 +1950,7 @@ export default function AiGeneratorPage() {
             <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
               <button
                 type="button"
-                className="rg-black-btn"
+                className="rg-generate-btn"
                 disabled={manualSubmitting || !manualConfirmation}
                 onClick={handleManualSubmit}
               >
