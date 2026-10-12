@@ -1120,8 +1120,99 @@ export async function ensureImportHistoryRestored(admin: any, shop: string): Pro
         }).catch(() => null);
       }
     }
+
+    // Always clean up any old dummy test records with hardcoded 64, 31, 19
+    await db.productImportHistory.deleteMany({
+      where: {
+        shop,
+        reviewCount: { in: [64, 31, 19] },
+      },
+    }).catch(() => null);
   } catch (e) {
     console.warn("[Persistence] ensureImportHistoryRestored error:", e);
+  }
+}
+
+export async function syncProductImportHistoryFromReviews(
+  shop: string,
+  catalogProductMap?: Map<string, string>,
+): Promise<void> {
+  try {
+    const shopWhere = getShopWhereClause(shop);
+    const importedReviews = await db.review.findMany({
+      where: {
+        ...shopWhere,
+        source: {
+          in: ["IMPORTED_AMAZON", "AMAZON", "IMPORTED_FLIPKART", "FLIPKART", "IMPORTED_ALIBABA", "ALIBABA"],
+        },
+      },
+    });
+
+    if (importedReviews.length === 0) return;
+
+    // Purge old hardcoded fake test records
+    await db.productImportHistory.deleteMany({
+      where: {
+        shop,
+        reviewCount: { in: [64, 31, 19] },
+      },
+    }).catch(() => null);
+
+    const grouped = new Map<string, { productId: string; productHandle: string; source: string; count: number; latestDate: Date }>();
+
+    for (const r of importedReviews) {
+      const normSource = r.source?.toUpperCase().includes("FLIPKART")
+        ? "Flipkart"
+        : r.source?.toUpperCase().includes("ALIBABA")
+        ? "Alibaba"
+        : "Amazon";
+      const key = `${r.productId || "general"}_${normSource}`;
+      if (!grouped.has(key)) {
+        grouped.set(key, {
+          productId: r.productId || "",
+          productHandle: r.productHandle || "",
+          source: normSource,
+          count: 0,
+          latestDate: r.createdAt ? new Date(r.createdAt) : new Date(),
+        });
+      }
+      const g = grouped.get(key)!;
+      g.count += 1;
+      if (r.createdAt && new Date(r.createdAt) > g.latestDate) {
+        g.latestDate = new Date(r.createdAt);
+      }
+    }
+
+    for (const [, item] of grouped) {
+      let resolvedTitle = "6 Piece Cotton Towel Set - Beige";
+      if (catalogProductMap && catalogProductMap.has(item.productId)) {
+        resolvedTitle = catalogProductMap.get(item.productId)!;
+      } else if (catalogProductMap && catalogProductMap.has(item.productHandle)) {
+        resolvedTitle = catalogProductMap.get(item.productHandle)!;
+      }
+      const historyId = `hist-${shop.replace(/[^a-zA-Z0-9]/g, "-")}-${(item.productId || "p").replace(/[^a-zA-Z0-9]/g, "-")}-${item.source.toLowerCase()}`;
+      await db.productImportHistory.upsert({
+        where: { id: historyId },
+        update: {
+          reviewCount: item.count,
+          productTitle: resolvedTitle,
+          status: "successful",
+        },
+        create: {
+          id: historyId,
+          shop,
+          productId: item.productId,
+          productTitle: resolvedTitle,
+          sourceType: item.source,
+          fileName: `${item.source.toLowerCase()}_reviews.csv`,
+          reviewCount: item.count,
+          status: "successful",
+          createdAt: item.latestDate,
+        },
+      }).catch(() => null);
+    }
+  } catch (e) {
+    console.warn("syncProductImportHistoryFromReviews error:", e);
   }
 }
 

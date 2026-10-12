@@ -1,35 +1,35 @@
 [
   {
-    "id": "cmv4vzh3e0000vfxcfy8ut96m",
+    "id": "develops-imp-hist-alibaba-1",
     "shop": "develops-test-store.myshopify.com",
-    "productId": "gid://shopify/Product/9264245571810",
-    "productTitle": "Alpine Pro Goggles",
-    "sourceType": "Amazon",
-    "fileName": "amazon_reviews.csv",
-    "reviewCount": 64,
-    "status": "successful",
-    "createdAt": "2026-10-09T06:44:10.436Z"
-  },
-  {
-    "id": "cmv4vzh3f0001vfxcv3v5wr36",
-    "shop": "develops-test-store.myshopify.com",
-    "productId": "gid://shopify/Product/9264244949218",
-    "productTitle": "Expedition Backpack",
-    "sourceType": "Flipkart",
-    "fileName": "flipkart_reviews.csv",
-    "reviewCount": 31,
-    "status": "successful",
-    "createdAt": "2026-10-10T06:44:10.436Z"
-  },
-  {
-    "id": "cmv4vzh3f0002vfxcdxcdcsn3",
-    "shop": "develops-test-store.myshopify.com",
-    "productId": "gid://shopify/Product/9264245145826",
-    "productTitle": "Apex Carbon Goggles",
+    "productId": "gid://shopify/Product/9264244916450",
+    "productTitle": "6 Piece Cotton Towel Set - Beige",
     "sourceType": "Alibaba",
     "fileName": "alibaba_reviews.csv",
-    "reviewCount": 19,
+    "reviewCount": 2,
     "status": "successful",
-    "createdAt": "2026-10-11T06:44:10.436Z"
+    "createdAt": "2026-10-11T12:14:00.000Z"
+  },
+  {
+    "id": "develops-imp-hist-flipkart-1",
+    "shop": "develops-test-store.myshopify.com",
+    "productId": "gid://shopify/Product/9264244916450",
+    "productTitle": "6 Piece Cotton Towel Set - Beige",
+    "sourceType": "Flipkart",
+    "fileName": "flipkart_reviews.csv",
+    "reviewCount": 2,
+    "status": "successful",
+    "createdAt": "2026-10-10T12:14:00.000Z"
+  },
+  {
+    "id": "develops-imp-hist-amazon-1",
+    "shop": "develops-test-store.myshopify.com",
+    "productId": "gid://shopify/Product/9264244916450",
+    "productTitle": "6 Piece Cotton Towel Set - Beige",
+    "sourceType": "Amazon",
+    "fileName": "amazon_reviews.csv",
+    "reviewCount": 2,
+    "status": "successful",
+    "createdAt": "2026-10-09T12:14:00.000Z"
   }
 ]

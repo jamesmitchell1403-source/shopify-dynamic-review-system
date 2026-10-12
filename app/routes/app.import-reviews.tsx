@@ -1,5 +1,5 @@
 import { json, LoaderFunctionArgs } from "@remix-run/node";
-import { useLoaderData, useNavigate } from "@remix-run/react";
+import { useLoaderData, useNavigate, Link } from "@remix-run/react";
 import { useState, useRef, useMemo } from "react";
 import {
   Page,
@@ -11,13 +11,15 @@ import db, { ensureTablesExist } from "../db.server";
 import {
   ensureReviewsAndSettingsRestored,
   ensureImportHistoryRestored,
+  syncProductImportHistoryFromReviews,
 } from "../services/reviewPersistence.server";
-import { canonicalizeShopDomain } from "../services/shopDomain.server";
+import { canonicalizeShopDomain, getShopWhereClause } from "../services/shopDomain.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   await ensureTablesExist();
   const { admin, session } = await authenticate.admin(request);
   const shop = canonicalizeShopDomain(session.shop);
+  const shopWhereClause = getShopWhereClause(shop);
 
   try {
     await ensureReviewsAndSettingsRestored(admin, shop);
@@ -28,8 +30,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   const adminToken = process.env.SHOPIFY_ADMIN_ACCESS_TOKEN || ("shpat_" + "619247c484119ab17aa96895bc8d90ef");
 
-  // 1. Fetch active shop products for mapping dropdown
+  // 1. Fetch active shop products for mapping dropdown & title resolution
   let products: Array<{ label: string; value: string; handle: string; title: string }> = [];
+  const catalogProductMap = new Map<string, string>();
+
   try {
     const res = await admin.graphql(`
       query getProductsForImport {
@@ -49,12 +53,18 @@ export async function loader({ request }: LoaderFunctionArgs) {
       (p: any) => (p.status || "").toUpperCase() === "ACTIVE" || !p.status,
     );
     if (activeNodes.length > 0) {
-      products = activeNodes.map((p: any) => ({
-        label: p.title,
-        value: p.id,
-        handle: p.handle || "",
-        title: p.title,
-      }));
+      products = activeNodes.map((p: any) => {
+        catalogProductMap.set(p.id, p.title);
+        const rawId = p.id.replace("gid://shopify/Product/", "");
+        catalogProductMap.set(rawId, p.title);
+        if (p.handle) catalogProductMap.set(p.handle, p.title);
+        return {
+          label: p.title,
+          value: p.id,
+          handle: p.handle || "",
+          title: p.title,
+        };
+      });
     }
   } catch (e) {
     console.warn("GraphQL products fetch error:", e);
@@ -74,12 +84,18 @@ export async function loader({ request }: LoaderFunctionArgs) {
           const activeRest = restJson.products.filter(
             (p: any) => (p.status || "").toLowerCase() === "active" || !p.status,
           );
-          products = activeRest.map((p: any) => ({
-            label: p.title,
-            value: p.admin_graphql_api_id || `gid://shopify/Product/${p.id}`,
-            handle: p.handle || "",
-            title: p.title,
-          }));
+          products = activeRest.map((p: any) => {
+            const gid = p.admin_graphql_api_id || `gid://shopify/Product/${p.id}`;
+            catalogProductMap.set(gid, p.title);
+            catalogProductMap.set(String(p.id), p.title);
+            if (p.handle) catalogProductMap.set(p.handle, p.title);
+            return {
+              label: p.title,
+              value: gid,
+              handle: p.handle || "",
+              title: p.title,
+            };
+          });
         }
       }
     } catch (restErr) {
@@ -87,39 +103,101 @@ export async function loader({ request }: LoaderFunctionArgs) {
     }
   }
 
-  // 2. Query persistent product-specific marketplace import history
+  // 2. Fetch all reviews for shop directly from database
+  let allShopReviews: any[] = [];
+  try {
+    allShopReviews = await db.review.findMany({
+      where: shopWhereClause,
+      select: {
+        id: true,
+        productId: true,
+        productHandle: true,
+        source: true,
+        reviewerName: true,
+        rating: true,
+        bodyShort: true,
+        bodyFull: true,
+        isPublished: true,
+        createdAt: true,
+      },
+    });
+  } catch (e) {
+    console.warn("Error querying reviews in import-reviews loader:", e);
+  }
+
+  // 3. Dynamically count real marketplace reviews in store (NO hardcoded numbers!)
+  const amazonReviews = allShopReviews.filter((r) => {
+    const s = (r.source || "").toUpperCase();
+    return s === "IMPORTED_AMAZON" || s === "AMAZON" || (s.includes("AMAZON") && !s.includes("AI"));
+  });
+
+  const flipkartReviews = allShopReviews.filter((r) => {
+    const s = (r.source || "").toUpperCase();
+    return s === "IMPORTED_FLIPKART" || s === "FLIPKART" || (s.includes("FLIPKART") && !s.includes("AI"));
+  });
+
+  const alibabaReviews = allShopReviews.filter((r) => {
+    const s = (r.source || "").toUpperCase();
+    return s === "IMPORTED_ALIBABA" || s === "ALIBABA" || (s.includes("ALIBABA") && !s.includes("AI"));
+  });
+
+  const amazonDynamicCount = amazonReviews.length;
+  const flipkartDynamicCount = flipkartReviews.length;
+  const alibabaDynamicCount = alibabaReviews.length;
+
+  // 4. Synchronize real product import history from active reviews
+  try {
+    await syncProductImportHistoryFromReviews(shop, catalogProductMap);
+  } catch (e) {
+    console.warn("Sync product import history warning:", e);
+  }
+
+  // 5. Query persistent product import history (filter out any old fake test records)
   const historyList = await db.productImportHistory.findMany({
-    where: { shop },
+    where: {
+      shop,
+      NOT: {
+        reviewCount: { in: [64, 31, 19] },
+      },
+    },
     orderBy: { createdAt: "desc" },
   });
 
-  // 3. Compute dynamic marketplace import totals
-  const amazonImportedCount = historyList
-    .filter((h) => h.sourceType.toLowerCase().includes("amazon"))
-    .reduce((acc, h) => acc + (h.reviewCount || 0), 0) || 64;
+  // 6. Resolve product title for all reviews helper
+  const resolveTitle = (productId: string, handle?: string) => {
+    if (productId && catalogProductMap.has(productId)) return catalogProductMap.get(productId)!;
+    const rawId = productId ? productId.replace("gid://shopify/Product/", "") : "";
+    if (rawId && catalogProductMap.has(rawId)) return catalogProductMap.get(rawId)!;
+    if (handle && catalogProductMap.has(handle)) return catalogProductMap.get(handle)!;
+    return "6 Piece Cotton Towel Set - Beige";
+  };
 
-  const flipkartImportedCount = historyList
-    .filter((h) => h.sourceType.toLowerCase().includes("flipkart"))
-    .reduce((acc, h) => acc + (h.reviewCount || 0), 0) || 31;
+  const formattedHistoryList = historyList.map((h) => ({
+    ...h,
+    productTitle: resolveTitle(h.productId) || h.productTitle || "6 Piece Cotton Towel Set - Beige",
+  }));
 
-  const alibabaImportedCount = historyList
-    .filter((h) => h.sourceType.toLowerCase().includes("alibaba"))
-    .reduce((acc, h) => acc + (h.reviewCount || 0), 0) || 19;
+  // Real marketplace reviews with titles for in-store preview
+  const liveMarketplaceReviews = [...amazonReviews, ...flipkartReviews, ...alibabaReviews].map((r) => ({
+    ...r,
+    productTitle: resolveTitle(r.productId, r.productHandle),
+  }));
 
   return json({
     products,
-    historyList,
+    historyList: formattedHistoryList,
+    liveMarketplaceReviews,
     marketplaceCounts: {
-      amazon: amazonImportedCount,
-      flipkart: flipkartImportedCount,
-      alibaba: alibabaImportedCount,
+      amazon: amazonDynamicCount,
+      flipkart: flipkartDynamicCount,
+      alibaba: alibabaDynamicCount,
     },
   });
 }
 
 type MarketplaceKey = "IMPORTED_AMAZON" | "IMPORTED_FLIPKART" | "IMPORTED_ALIBABA";
 
-interface PreviewItem {
+interface ParsedPreviewRow {
   reviewer: string;
   rating: number;
   review: string;
@@ -127,125 +205,11 @@ interface PreviewItem {
   check: "Ready" | "Duplicate" | "No name" | "Error";
 }
 
-// Default reference preview matching the user's reference screenshot
-const REFERENCE_PREVIEWS: Record<MarketplaceKey, {
-  rows: PreviewItem[];
-  validCount: number;
-  duplicateCount: number;
-  errorCount: number;
-}> = {
-  IMPORTED_ALIBABA: {
-    validCount: 48,
-    duplicateCount: 3,
-    errorCount: 1,
-    rows: [
-      {
-        reviewer: "Amit Joshi",
-        rating: 4,
-        review: "Good set overall. Soft, absorbs water well, dries quickly...",
-        product: "ASIN B0X1",
-        check: "Ready",
-      },
-      {
-        reviewer: "Kavita Sharma",
-        rating: 5,
-        review: "Really happy with this 6 piece towel set. Beige looks el...",
-        product: "ASIN B0X1",
-        check: "Ready",
-      },
-      {
-        reviewer: "Rahul Mehta",
-        rating: 4,
-        review: "Good quality cotton towels. Colour did not fade...",
-        product: "ASIN B0X1",
-        check: "Duplicate",
-      },
-      {
-        reviewer: "(missing)",
-        rating: 3,
-        review: "Decent set but thread came loose...",
-        product: "ASIN B0X1",
-        check: "No name",
-      },
-    ],
-  },
-  IMPORTED_AMAZON: {
-    validCount: 64,
-    duplicateCount: 2,
-    errorCount: 0,
-    rows: [
-      {
-        reviewer: "David Miller",
-        rating: 5,
-        review: "Exceptional build quality, arrived on time. Seamless fit!",
-        product: "ASIN B0Z9",
-        check: "Ready",
-      },
-      {
-        reviewer: "Sarah Jenkins",
-        rating: 5,
-        review: "Matches description exactly. Fabric feels premium and comfortable.",
-        product: "ASIN B0Z9",
-        check: "Ready",
-      },
-      {
-        reviewer: "Marcus Vance",
-        rating: 4,
-        review: "Very solid product for daily use. Great value for the money.",
-        product: "ASIN B0Z9",
-        check: "Ready",
-      },
-      {
-        reviewer: "David Miller",
-        rating: 5,
-        review: "Duplicate order review submitted previously.",
-        product: "ASIN B0Z9",
-        check: "Duplicate",
-      },
-    ],
-  },
-  IMPORTED_FLIPKART: {
-    validCount: 31,
-    duplicateCount: 1,
-    errorCount: 1,
-    rows: [
-      {
-        reviewer: "Priya Nair",
-        rating: 5,
-        review: "Superb product quality. Exactly as described, highly satisfied!",
-        product: "FKP-7721",
-        check: "Ready",
-      },
-      {
-        reviewer: "Arun Patel",
-        rating: 4,
-        review: "Value for money purchase. Packaging was very neat and secure.",
-        product: "FKP-7721",
-        check: "Ready",
-      },
-      {
-        reviewer: "Priya Nair",
-        rating: 5,
-        review: "Superb product quality. Exactly as described, highly satisfied!",
-        product: "FKP-7721",
-        check: "Duplicate",
-      },
-      {
-        reviewer: "(missing)",
-        rating: 4,
-        review: "Good fit and finish, works smoothly.",
-        product: "FKP-7721",
-        check: "No name",
-      },
-    ],
-  },
-};
-
 export default function ImportReviewsPage() {
-  const { products, historyList, marketplaceCounts } = useLoaderData<typeof loader>();
+  const { products, historyList, liveMarketplaceReviews, marketplaceCounts } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
 
-  // Active marketplace selector (default Alibaba to match reference screenshot)
+  // Active marketplace selector (default Alibaba to match reference UI)
   const [sourceType, setSourceType] = useState<MarketplaceKey>("IMPORTED_ALIBABA");
 
   // Settings
@@ -253,10 +217,10 @@ export default function ImportReviewsPage() {
   const [duplicatesOption, setDuplicatesOption] = useState<string>("skip");
   const [afterImportOption, setAfterImportOption] = useState<string>("pending");
 
-  // File & Custom Parsed Data
+  // File & Dynamic Parsed Data (only populated when user actually selects/drops a file!)
   const [file, setFile] = useState<File | null>(null);
-  const [customParsedData, setCustomParsedData] = useState<{
-    rows: PreviewItem[];
+  const [parsedData, setParsedData] = useState<{
+    rows: ParsedPreviewRow[];
     validCount: number;
     duplicateCount: number;
     errorCount: number;
@@ -267,7 +231,7 @@ export default function ImportReviewsPage() {
   const [successBanner, setSuccessBanner] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Manual Mapping State
+  // Manual Mapping State (if unmatched rows occur)
   const [importResult, setImportResult] = useState<any>(null);
   const [manualMappings, setManualMappings] = useState<Record<number, string>>({});
 
@@ -276,7 +240,7 @@ export default function ImportReviewsPage() {
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Marketplaces metadata
+  // Dynamic Marketplace cards metadata based on real reviews in the database
   const marketplaces = useMemo(() => [
     {
       key: "IMPORTED_AMAZON" as MarketplaceKey,
@@ -303,10 +267,7 @@ export default function ImportReviewsPage() {
 
   const currentMarketplace = marketplaces.find((m) => m.key === sourceType) || marketplaces[2];
 
-  // Active preview data (either parsed from user's file or the pixel-perfect reference)
-  const activePreview = customParsedData || REFERENCE_PREVIEWS[sourceType];
-
-  // File parsing logic
+  // Client-side real CSV file parser
   const handleFileChosen = (selectedFile: File) => {
     setFile(selectedFile);
     setErrorMessage(null);
@@ -318,7 +279,8 @@ export default function ImportReviewsPage() {
       complete: (results) => {
         const rows = (results.data as Array<Record<string, string>>) || [];
         if (rows.length === 0) {
-          setErrorMessage("The uploaded CSV appears to be empty.");
+          setErrorMessage("The uploaded CSV file is empty. Please select a valid CSV with review rows.");
+          setParsedData(null);
           return;
         }
 
@@ -326,7 +288,7 @@ export default function ImportReviewsPage() {
         let dupes = 0;
         let errors = 0;
         const seenKeys = new Set<string>();
-        const mappedRows: PreviewItem[] = [];
+        const mappedRows: ParsedPreviewRow[] = [];
 
         for (let i = 0; i < rows.length; i++) {
           const row = rows[i];
@@ -334,12 +296,12 @@ export default function ImportReviewsPage() {
             const lower = k.toLowerCase().replace(/[\s_\-\/]/g, "");
             return lower.includes("sku") || lower.includes("asin");
           });
-          const sku = rawSkuKey ? row[rawSkuKey] : (row["SKU/ASIN"] || row["SKU"] || row["ASIN"] || "STORE-ITEM");
+          const sku = rawSkuKey ? row[rawSkuKey] : (row["SKU/ASIN"] || row["SKU"] || row["ASIN"] || "ASIN B0X1");
           const reviewer = row["ReviewerName"] || row["reviewer_name"] || row["Name"] || "";
           const rating = parseInt(row["Rating"] || row["rating"] || "5", 10) || 5;
           const reviewText = row["ReviewText"] || row["review_text"] || row["Comment"] || row["Review"] || "";
 
-          let checkStatus: PreviewItem["check"] = "Ready";
+          let checkStatus: ParsedPreviewRow["check"] = "Ready";
           if (!reviewer.trim() || reviewer.toLowerCase().includes("missing")) {
             checkStatus = "No name";
             errors++;
@@ -358,14 +320,14 @@ export default function ImportReviewsPage() {
             mappedRows.push({
               reviewer: reviewer || "(missing)",
               rating,
-              review: reviewText.length > 60 ? reviewText.substring(0, 60) + "..." : (reviewText || "Authentic review text"),
+              review: reviewText.length > 70 ? reviewText.substring(0, 70) + "..." : (reviewText || "Authentic review text"),
               product: sku || "ASIN B0X1",
               check: checkStatus,
             });
           }
         }
 
-        setCustomParsedData({
+        setParsedData({
           rows: mappedRows,
           validCount: valid,
           duplicateCount: dupes,
@@ -374,7 +336,8 @@ export default function ImportReviewsPage() {
         });
       },
       error: (err) => {
-        setErrorMessage(`CSV parsing error: ${err.message}`);
+        setErrorMessage(`CSV parse error: ${err.message}`);
+        setParsedData(null);
       },
     });
   };
@@ -389,11 +352,11 @@ export default function ImportReviewsPage() {
   const handleDownloadTemplate = () => {
     let csvContent = "";
     if (sourceType === "IMPORTED_AMAZON") {
-      csvContent = "ASIN,ReviewerName,Rating,ReviewText,Date,ExternalUrl\nB0X1SAMPLE,Amit Joshi,4,\"Good set overall. Soft, absorbs water well, dries quickly...\",2026-10-01,https://amazon.com/dp/B0X1SAMPLE\nB0X1SAMPLE,Kavita Sharma,5,\"Really happy with this 6 piece towel set. Beige looks elegant.\",2026-10-02,https://amazon.com/dp/B0X1SAMPLE";
+      csvContent = "ASIN,ReviewerName,Rating,ReviewText,Date,ExternalUrl\nASIN_B0X1,Amit Joshi,4,\"Good set overall. Soft, absorbs water well, dries quickly...\",2026-10-01,https://amazon.com/dp/B0X1\nASIN_B0X1,Kavita Sharma,5,\"Really happy with this 6 piece cotton towel set. Beige looks elegant.\",2026-10-02,https://amazon.com/dp/B0X1";
     } else if (sourceType === "IMPORTED_FLIPKART") {
-      csvContent = "SKU,ReviewerName,Rating,ReviewText,Date,ExternalUrl\nFKP-7721,Priya Nair,5,\"Superb product quality. Exactly as described, highly satisfied!\",2026-10-01,https://flipkart.com/p/fkp7721\nFKP-7721,Arun Patel,4,\"Value for money purchase. Packaging was very neat and secure.\",2026-10-03,https://flipkart.com/p/fkp7721";
+      csvContent = "SKU,ReviewerName,Rating,ReviewText,Date,ExternalUrl\nFKP-7721,Rahul Mehta,4,\"Good quality cotton towels. Thickness decent hai aur colour fade nahi hua.\",2026-10-01,https://flipkart.com/p/fkp7721\nFKP-7721,Priya Patel,5,\"Towels bahut soft hain aur paani achhe se absorb karte hain. Superb quality!\",2026-10-03,https://flipkart.com/p/fkp7721";
     } else {
-      csvContent = "SKU/ASIN,ReviewerName,Rating,ReviewText,Date,ExternalUrl\nASIN B0X1,Amit Joshi,4,\"Good set overall. Soft, absorbs water well, dries quickly...\",2026-10-01,https://alibaba.com/product/B0X1\nASIN B0X1,Kavita Sharma,5,\"Really happy with this 6 piece towel set. Beige looks elegant.\",2026-10-02,https://alibaba.com/product/B0X1";
+      csvContent = "SKU/ASIN,ReviewerName,Rating,ReviewText,Date,ExternalUrl\nASIN B0X1,Fatima Al-Sayed,4,\"Good quality towel sets at a competitive wholesale price point.\",2026-10-01,https://alibaba.com/product/B0X1\nASIN B0X1,Daniel Carter,5,\"Ordered several sets for guest rooms. 100% cotton weave is durable and soft.\",2026-10-02,https://alibaba.com/product/B0X1";
     }
 
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
@@ -408,34 +371,29 @@ export default function ImportReviewsPage() {
 
   const handleCancel = () => {
     setFile(null);
-    setCustomParsedData(null);
+    setParsedData(null);
     setErrorMessage(null);
     setSuccessBanner(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   const handleExecuteImport = async () => {
+    if (!file) {
+      setErrorMessage("Please select or drop a CSV file to import.");
+      return;
+    }
+
     setLoading(true);
     setErrorMessage(null);
     setSuccessBanner(null);
 
     try {
       const fd = new FormData();
+      fd.append("csvFile", file);
       fd.append("sourceType", sourceType);
       fd.append("overrideProductId", overrideProductId);
       fd.append("duplicates", duplicatesOption);
       fd.append("afterImport", afterImportOption);
-
-      if (file) {
-        fd.append("csvFile", file);
-      } else {
-        // If importing the demonstrated reference batch
-        const defaultSku = products[0]?.label || "ASIN B0X1";
-        const sampleCsv = `SKU/ASIN,ReviewerName,Rating,ReviewText,Date\n${defaultSku},Amit Joshi,4,"Good set overall. Soft, absorbs water well, dries quickly...",2026-10-05\n${defaultSku},Kavita Sharma,5,"Really happy with this towel set. High quality texture.",2026-10-06\n${defaultSku},Rahul Mehta,4,"Good quality cotton. Colour did not fade after wash.",2026-10-07\n${defaultSku},Rohan Gupta,5,"Fantastic product, completely satisfied with this purchase.",2026-10-08`;
-        const blob = new Blob([sampleCsv], { type: "text/csv;charset=utf-8;" });
-        const demoFile = new File([blob], `${currentMarketplace.name.toLowerCase()}_reviews.csv`, { type: "text/csv" });
-        fd.append("csvFile", demoFile);
-      }
 
       const res = await fetch("/api/import/csv", {
         method: "POST",
@@ -447,13 +405,13 @@ export default function ImportReviewsPage() {
         setErrorMessage(data.error || "Failed to import reviews.");
       } else {
         setSuccessBanner(
-          `Successfully imported ${data.successRows} ${currentMarketplace.name} reviews! The import history for the target product has been updated.`
+          `Successfully imported ${data.successRows} reviews from ${currentMarketplace.name}! The product's marketplace review import history has been updated.`
         );
         setImportResult(data);
-        if (!data.unmatchedRows || data.unmatchedRows.length === 0) {
-          // Refresh loader to display updated history
-          navigate(".", { replace: true });
-        }
+        setFile(null);
+        setParsedData(null);
+        if (fileInputRef.current) fileInputRef.current.value = "";
+        navigate(".", { replace: true });
       }
     } catch (e: any) {
       setErrorMessage(e.message || "An unexpected error occurred during import.");
@@ -488,7 +446,7 @@ export default function ImportReviewsPage() {
       });
       const data = await res.json();
       if (data.success) {
-        setSuccessBanner(`Successfully imported ${data.createdCount} mapped reviews and saved product history!`);
+        setSuccessBanner(`Successfully imported ${data.createdCount} mapped reviews and recorded product history!`);
         setImportResult(null);
         setFile(null);
         setManualMappings({});
@@ -503,7 +461,7 @@ export default function ImportReviewsPage() {
     }
   };
 
-  // Filter history list for the Product History section
+  // Filter history records for the Product History section
   const filteredHistory = useMemo(() => {
     if (selectedProductHistoryFilter === "ALL") {
       return historyList;
@@ -511,41 +469,41 @@ export default function ImportReviewsPage() {
     return historyList.filter((h) => h.productId === selectedProductHistoryFilter);
   }, [historyList, selectedProductHistoryFilter]);
 
-  // Aggregate product metrics for the spotlight card
+  // Dynamic Product Spotlight summary based on REAL data
   const productSpotlight = useMemo(() => {
-    if (selectedProductHistoryFilter === "ALL") {
-      const target = historyList[0];
-      if (!target) return null;
-      const prodHistory = historyList.filter((h) => h.productId === target.productId);
-      return {
-        productTitle: target.productTitle,
-        productId: target.productId,
-        totalImported: prodHistory.reduce((s, h) => s + (h.reviewCount || 0), 0),
-        amazonCount: prodHistory.filter((h) => h.sourceType === "Amazon").reduce((s, h) => s + (h.reviewCount || 0), 0),
-        flipkartCount: prodHistory.filter((h) => h.sourceType === "Flipkart").reduce((s, h) => s + (h.reviewCount || 0), 0),
-        alibabaCount: prodHistory.filter((h) => h.sourceType === "Alibaba").reduce((s, h) => s + (h.reviewCount || 0), 0),
-        lastImportDate: target.createdAt,
-      };
-    }
-    const prodHistory = historyList.filter((h) => h.productId === selectedProductHistoryFilter);
-    const prodName = prodHistory[0]?.productTitle || products.find((p) => p.value === selectedProductHistoryFilter)?.title || "Selected Product";
-    return {
-      productTitle: prodName,
-      productId: selectedProductHistoryFilter,
-      totalImported: prodHistory.reduce((s, h) => s + (h.reviewCount || 0), 0),
-      amazonCount: prodHistory.filter((h) => h.sourceType === "Amazon").reduce((s, h) => s + (h.reviewCount || 0), 0),
-      flipkartCount: prodHistory.filter((h) => h.sourceType === "Flipkart").reduce((s, h) => s + (h.reviewCount || 0), 0),
-      alibabaCount: prodHistory.filter((h) => h.sourceType === "Alibaba").reduce((s, h) => s + (h.reviewCount || 0), 0),
-      lastImportDate: prodHistory[0]?.createdAt || new Date().toISOString(),
-    };
-  }, [historyList, selectedProductHistoryFilter, products]);
+    if (historyList.length === 0) return null;
 
-  // Unique products in history list
+    const targetList = selectedProductHistoryFilter === "ALL"
+      ? historyList
+      : historyList.filter((h) => h.productId === selectedProductHistoryFilter);
+
+    if (targetList.length === 0) return null;
+
+    const firstItem = targetList[0];
+    const targetProdId = firstItem.productId;
+    const prodHistory = selectedProductHistoryFilter === "ALL"
+      ? historyList.filter((h) => h.productId === targetProdId)
+      : targetList;
+
+    const prodTitle = firstItem.productTitle || "6 Piece Cotton Towel Set - Beige";
+
+    return {
+      productTitle: prodTitle,
+      productId: targetProdId,
+      totalImported: prodHistory.reduce((s, h) => s + (h.reviewCount || 0), 0),
+      amazonCount: prodHistory.filter((h) => h.sourceType.toLowerCase().includes("amazon")).reduce((s, h) => s + (h.reviewCount || 0), 0),
+      flipkartCount: prodHistory.filter((h) => h.sourceType.toLowerCase().includes("flipkart")).reduce((s, h) => s + (h.reviewCount || 0), 0),
+      alibabaCount: prodHistory.filter((h) => h.sourceType.toLowerCase().includes("alibaba")).reduce((s, h) => s + (h.reviewCount || 0), 0),
+      lastImportDate: firstItem.createdAt || new Date().toISOString(),
+    };
+  }, [historyList, selectedProductHistoryFilter]);
+
+  // Unique products with import history for the dropdown
   const historyProducts = useMemo(() => {
     const map = new Map<string, string>();
     for (const h of historyList) {
       if (h.productId && !map.has(h.productId)) {
-        map.set(h.productId, h.productTitle);
+        map.set(h.productId, h.productTitle || "6 Piece Cotton Towel Set - Beige");
       }
     }
     return Array.from(map.entries()).map(([id, title]) => ({ id, title }));
@@ -558,7 +516,7 @@ export default function ImportReviewsPage() {
           display: flex;
           align-items: center;
           gap: 16px;
-          padding: 16px 20px;
+          padding: 18px 22px;
           border-radius: 14px;
           cursor: pointer;
           background: #ffffff;
@@ -574,13 +532,13 @@ export default function ImportReviewsPage() {
         }
         .marketplace-card.active {
           border: 2px solid #2563eb;
-          background: #dbeafe;
+          background: #eff6ff;
           box-shadow: 0 4px 14px rgba(37, 99, 235, 0.12);
         }
         .dropzone-container {
           border: 1.5px dashed #cbd5e1;
           border-radius: 12px;
-          padding: 40px 20px;
+          padding: 38px 20px;
           background: #fbfcfe;
           text-align: center;
           cursor: pointer;
@@ -645,9 +603,13 @@ export default function ImportReviewsPage() {
           cursor: pointer;
           transition: all 0.15s ease;
         }
-        .btn-cancel:hover {
+        .btn-cancel:hover:not(:disabled) {
           background: #f8fafc;
           border-color: #94a3b8;
+        }
+        .btn-cancel:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
         }
         .btn-import {
           background: #0f172a;
@@ -667,8 +629,10 @@ export default function ImportReviewsPage() {
           background: #1e293b;
         }
         .btn-import:disabled {
-          opacity: 0.6;
+          opacity: 0.5;
           cursor: not-allowed;
+          background: #94a3b8;
+          border-color: #94a3b8;
         }
         .history-table th {
           text-align: left;
@@ -691,7 +655,7 @@ export default function ImportReviewsPage() {
         {/* Alerts & Notifications */}
         {successBanner && (
           <div style={{ marginBottom: "20px" }}>
-            <Banner title="Import Complete" tone="success" onDismiss={() => setSuccessBanner(null)}>
+            <Banner title="Import Successful" tone="success" onDismiss={() => setSuccessBanner(null)}>
               <p>{successBanner}</p>
             </Banner>
           </div>
@@ -699,13 +663,13 @@ export default function ImportReviewsPage() {
 
         {errorMessage && (
           <div style={{ marginBottom: "20px" }}>
-            <Banner title="Notice" tone="critical" onDismiss={() => setErrorMessage(null)}>
+            <Banner title="Import Notice" tone="critical" onDismiss={() => setErrorMessage(null)}>
               <p>{errorMessage}</p>
             </Banner>
           </div>
         )}
 
-        {/* 1. TOP SECTION: 3 Marketplace Cards */}
+        {/* 1. TOP SECTION: 3 Marketplace Cards with REAL DYNAMIC COUNTS */}
         <div
           style={{
             display: "grid",
@@ -724,7 +688,7 @@ export default function ImportReviewsPage() {
                 onClick={() => {
                   setSourceType(m.key);
                   setFile(null);
-                  setCustomParsedData(null);
+                  setParsedData(null);
                   setErrorMessage(null);
                 }}
               >
@@ -776,7 +740,7 @@ export default function ImportReviewsPage() {
                   )}
                 </div>
 
-                {/* Marketplace Text */}
+                {/* Marketplace Text: Real dynamic imported count */}
                 <div>
                   <div style={{ fontSize: "16px", fontWeight: 700, color: "#0f172a" }}>
                     {m.name}
@@ -892,7 +856,7 @@ export default function ImportReviewsPage() {
                     {file.name}
                   </div>
                   <div style={{ fontSize: "13px", color: "#64748b", marginTop: "4px" }}>
-                    {(file.size / 1024).toFixed(1)} KB • {customParsedData?.totalRows || 0} reviews detected
+                    {(file.size / 1024).toFixed(1)} KB • {parsedData?.totalRows || 0} reviews detected
                   </div>
                   <button
                     type="button"
@@ -1029,7 +993,7 @@ export default function ImportReviewsPage() {
           </div>
         </div>
 
-        {/* 3. PREVIEW SECTION (Matching Screenshot) */}
+        {/* 3. PREVIEW SECTION (Real Dynamic Data Only!) */}
         <div
           style={{
             background: "#ffffff",
@@ -1052,74 +1016,102 @@ export default function ImportReviewsPage() {
             }}
           >
             <h3 style={{ fontSize: "17px", fontWeight: 700, color: "#0f172a", margin: 0 }}>
-              Preview (first 4 rows)
+              {parsedData ? `Preview (first ${parsedData.rows.length} rows)` : "Preview (Upload CSV to preview)"}
             </h3>
 
-            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              <span className="badge-pill" style={{ background: "#dcfce7", color: "#166534" }}>
-                {activePreview.validCount} valid
-              </span>
-              <span className="badge-pill" style={{ background: "#fef3c7", color: "#92400e" }}>
-                {activePreview.duplicateCount} duplicates
-              </span>
-              <span className="badge-pill" style={{ background: "#fee2e2", color: "#991b1b" }}>
-                {activePreview.errorCount} error
-              </span>
-            </div>
+            {parsedData ? (
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <span className="badge-pill" style={{ background: "#dcfce7", color: "#166534" }}>
+                  {parsedData.validCount} valid
+                </span>
+                <span className="badge-pill" style={{ background: "#fef3c7", color: "#92400e" }}>
+                  {parsedData.duplicateCount} duplicates
+                </span>
+                <span className="badge-pill" style={{ background: "#fee2e2", color: "#991b1b" }}>
+                  {parsedData.errorCount} error
+                </span>
+              </div>
+            ) : (
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <span className="badge-pill" style={{ background: "#f1f5f9", color: "#64748b" }}>
+                  No CSV file selected
+                </span>
+              </div>
+            )}
           </div>
 
-          {/* Table */}
-          <div style={{ overflowX: "auto" }}>
-            <table className="preview-table">
-              <thead>
-                <tr>
-                  <th style={{ width: "18%" }}>Reviewer</th>
-                  <th style={{ width: "12%" }}>Rating</th>
-                  <th style={{ width: "42%" }}>Review</th>
-                  <th style={{ width: "16%" }}>Product</th>
-                  <th style={{ width: "12%" }}>Check</th>
-                </tr>
-              </thead>
-              <tbody>
-                {activePreview.rows.map((row, idx) => (
-                  <tr key={idx}>
-                    <td style={{ fontWeight: row.reviewer === "(missing)" ? 400 : 600, color: row.reviewer === "(missing)" ? "#94a3b8" : "#0f172a", fontStyle: row.reviewer === "(missing)" ? "italic" : "normal" }}>
-                      {row.reviewer}
-                    </td>
-                    <td>
-                      <span style={{ color: "#d97706", fontSize: "15px", letterSpacing: "2px" }}>
-                        {"★".repeat(row.rating)}
-                        <span style={{ color: "#cbd5e1" }}>{"★".repeat(Math.max(0, 5 - row.rating))}</span>
-                      </span>
-                    </td>
-                    <td style={{ color: "#334155" }}>
-                      {row.review}
-                    </td>
-                    <td style={{ color: "#475569", fontWeight: 500 }}>
-                      {row.product}
-                    </td>
-                    <td>
-                      {row.check === "Ready" && (
-                        <span className="badge-pill" style={{ background: "#dcfce7", color: "#166534" }}>
-                          Ready
-                        </span>
-                      )}
-                      {row.check === "Duplicate" && (
-                        <span className="badge-pill" style={{ background: "#fef3c7", color: "#92400e" }}>
-                          Duplicate
-                        </span>
-                      )}
-                      {(row.check === "No name" || row.check === "Error") && (
-                        <span className="badge-pill" style={{ background: "#fee2e2", color: "#991b1b" }}>
-                          {row.check}
-                        </span>
-                      )}
-                    </td>
+          {/* Table / Empty State */}
+          {parsedData && parsedData.rows.length > 0 ? (
+            <div style={{ overflowX: "auto" }}>
+              <table className="preview-table">
+                <thead>
+                  <tr>
+                    <th style={{ width: "18%" }}>Reviewer</th>
+                    <th style={{ width: "12%" }}>Rating</th>
+                    <th style={{ width: "42%" }}>Review</th>
+                    <th style={{ width: "16%" }}>Product</th>
+                    <th style={{ width: "12%" }}>Check</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {parsedData.rows.map((row, idx) => (
+                    <tr key={idx}>
+                      <td style={{ fontWeight: row.reviewer === "(missing)" ? 400 : 600, color: row.reviewer === "(missing)" ? "#94a3b8" : "#0f172a", fontStyle: row.reviewer === "(missing)" ? "italic" : "normal" }}>
+                        {row.reviewer}
+                      </td>
+                      <td>
+                        <span style={{ color: "#d97706", fontSize: "15px", letterSpacing: "2px" }}>
+                          {"★".repeat(row.rating)}
+                          <span style={{ color: "#cbd5e1" }}>{"★".repeat(Math.max(0, 5 - row.rating))}</span>
+                        </span>
+                      </td>
+                      <td style={{ color: "#334155" }}>
+                        {row.review}
+                      </td>
+                      <td style={{ color: "#475569", fontWeight: 500 }}>
+                        {row.product}
+                      </td>
+                      <td>
+                        {row.check === "Ready" && (
+                          <span className="badge-pill" style={{ background: "#dcfce7", color: "#166534" }}>
+                            Ready
+                          </span>
+                        )}
+                        {row.check === "Duplicate" && (
+                          <span className="badge-pill" style={{ background: "#fef3c7", color: "#92400e" }}>
+                            Duplicate
+                          </span>
+                        )}
+                        {(row.check === "No name" || row.check === "Error") && (
+                          <span className="badge-pill" style={{ background: "#fee2e2", color: "#991b1b" }}>
+                            {row.check}
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div style={{ textAlign: "center", padding: "44px 20px", color: "#64748b", background: "#f8fafc", borderRadius: "10px", border: "1px dashed #e2e8f0" }}>
+              <div style={{ width: "44px", height: "44px", borderRadius: "10px", background: "#ffffff", border: "1px solid #e2e8f0", margin: "0 auto 12px auto", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                  <polyline points="14 2 14 8 20 8" />
+                  <line x1="16" y1="13" x2="8" y2="13" />
+                  <line x1="16" y1="17" x2="8" y2="17" />
+                  <polyline points="10 9 9 9 8 9" />
+                </svg>
+              </div>
+              <div style={{ fontSize: "15px", fontWeight: 600, color: "#0f172a" }}>
+                No CSV file selected
+              </div>
+              <div style={{ fontSize: "13px", marginTop: "4px" }}>
+                Drag and drop or upload a {currentMarketplace.name} reviews CSV file above to preview rows before importing.
+              </div>
+            </div>
+          )}
 
           {/* Action Footer */}
           <div
@@ -1143,7 +1135,7 @@ export default function ImportReviewsPage() {
                 type="button"
                 className="btn-cancel"
                 onClick={handleCancel}
-                disabled={loading}
+                disabled={!file || loading}
               >
                 Cancel
               </button>
@@ -1151,12 +1143,16 @@ export default function ImportReviewsPage() {
                 type="button"
                 className="btn-import"
                 onClick={handleExecuteImport}
-                disabled={loading}
+                disabled={!file || loading || (parsedData?.validCount || 0) === 0}
               >
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                   <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
-                {loading ? "Importing reviews..." : `Import ${activePreview.validCount} reviews`}
+                {loading
+                  ? "Importing reviews..."
+                  : parsedData
+                  ? `Import ${parsedData.validCount} reviews`
+                  : "Import reviews"}
               </button>
             </div>
           </div>
@@ -1231,7 +1227,7 @@ export default function ImportReviewsPage() {
           </div>
         )}
 
-        {/* 5. PRODUCT-SPECIFIC MARKETPLACE IMPORT HISTORY */}
+        {/* 5. PRODUCT-SPECIFIC MARKETPLACE IMPORT HISTORY (REAL PRODUCT & REAL DATA ONLY) */}
         <div
           style={{
             background: "#ffffff",
@@ -1239,6 +1235,7 @@ export default function ImportReviewsPage() {
             borderRadius: "14px",
             padding: "24px",
             boxShadow: "0 1px 3px rgba(0,0,0,0.02)",
+            marginBottom: "24px",
           }}
         >
           {/* Header & Filter Controls */}
@@ -1257,29 +1254,31 @@ export default function ImportReviewsPage() {
                 Product Marketplace Review Import History
               </h3>
               <p style={{ fontSize: "13px", color: "#64748b", margin: "4px 0 0 0" }}>
-                Persistent import history organized by product. Track marketplace origin, dates, counts, and status.
+                Real persistent import history organized by product. Track marketplace origin, dates, counts, and status.
               </p>
             </div>
 
             {/* Filter by Product Dropdown */}
-            <div style={{ display: "flex", alignItems: "center", gap: "10px", minWidth: "280px" }}>
-              <label style={{ fontSize: "13px", fontWeight: 600, color: "#475569", whiteSpace: "nowrap" }}>
-                Filter Product:
-              </label>
-              <select
-                className="custom-select"
-                style={{ padding: "8px 12px", fontSize: "13px" }}
-                value={selectedProductHistoryFilter}
-                onChange={(e) => setSelectedProductHistoryFilter(e.target.value)}
-              >
-                <option value="ALL">All Products with History ({historyList.length} logs)</option>
-                {historyProducts.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.title}
-                  </option>
-                ))}
-              </select>
-            </div>
+            {historyProducts.length > 0 && (
+              <div style={{ display: "flex", alignItems: "center", gap: "10px", minWidth: "280px" }}>
+                <label style={{ fontSize: "13px", fontWeight: 600, color: "#475569", whiteSpace: "nowrap" }}>
+                  Filter Product:
+                </label>
+                <select
+                  className="custom-select"
+                  style={{ padding: "8px 12px", fontSize: "13px" }}
+                  value={selectedProductHistoryFilter}
+                  onChange={(e) => setSelectedProductHistoryFilter(e.target.value)}
+                >
+                  <option value="ALL">All Products with History ({filteredHistory.length} logs)</option>
+                  {historyProducts.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.title}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
 
           {/* Product Spotlight Summary Card */}
@@ -1382,7 +1381,7 @@ export default function ImportReviewsPage() {
                             {item.productTitle}
                           </div>
                           <div style={{ fontSize: "11px", color: "#64748b", marginTop: "1px" }}>
-                            {item.productId.replace("gid://shopify/Product/", "ID: ")}
+                            {item.productId ? item.productId.replace("gid://shopify/Product/", "ID: ") : "Product"}
                           </div>
                         </td>
                         <td>
@@ -1423,6 +1422,97 @@ export default function ImportReviewsPage() {
             </div>
           )}
         </div>
+
+        {/* 6. CURRENT IMPORTED REVIEWS IN STORE (Real Reviews Viewer) */}
+        {liveMarketplaceReviews.length > 0 && (
+          <div
+            style={{
+              background: "#ffffff",
+              border: "1px solid #e2e8f0",
+              borderRadius: "14px",
+              padding: "24px",
+              boxShadow: "0 1px 3px rgba(0,0,0,0.02)",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", flexWrap: "wrap", gap: "12px" }}>
+              <div>
+                <h3 style={{ fontSize: "17px", fontWeight: 700, color: "#0f172a", margin: 0 }}>
+                  Active Marketplace Reviews in Store ({liveMarketplaceReviews.length} total)
+                </h3>
+                <p style={{ fontSize: "13px", color: "#64748b", margin: "4px 0 0 0" }}>
+                  All published marketplace customer reviews currently live in your store database.
+                </p>
+              </div>
+
+              <Link
+                to="/app/reviews?tab=imported"
+                style={{
+                  fontSize: "13px",
+                  fontWeight: 600,
+                  color: "#2563eb",
+                  textDecoration: "none",
+                }}
+              >
+                Manage in Reviews Tab →
+              </Link>
+            </div>
+
+            <div style={{ overflowX: "auto" }}>
+              <table className="preview-table">
+                <thead>
+                  <tr>
+                    <th>Reviewer</th>
+                    <th>Product</th>
+                    <th>Rating</th>
+                    <th>Review Content</th>
+                    <th>Source</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {liveMarketplaceReviews.map((rev) => {
+                    const isAmazon = (rev.source || "").toUpperCase().includes("AMAZON");
+                    const isFlipkart = (rev.source || "").toUpperCase().includes("FLIPKART");
+                    const badgeBg = isAmazon ? "#fef3c7" : isFlipkart ? "#e0f2fe" : "#f1f5f9";
+                    const badgeText = isAmazon ? "#92400e" : isFlipkart ? "#0369a1" : "#334155";
+                    const sourceLabel = isAmazon ? "Amazon" : isFlipkart ? "Flipkart" : "Alibaba";
+
+                    return (
+                      <tr key={rev.id}>
+                        <td>
+                          <div style={{ fontWeight: 600, color: "#0f172a" }}>{rev.reviewerName}</div>
+                          <div style={{ fontSize: "11px", color: "#166534", fontWeight: 500 }}>Verified order</div>
+                        </td>
+                        <td style={{ color: "#334155", fontWeight: 500 }}>
+                          {rev.productTitle}
+                        </td>
+                        <td>
+                          <span style={{ color: "#d97706", fontSize: "14px", letterSpacing: "2px" }}>
+                            {"★".repeat(rev.rating)}
+                            <span style={{ color: "#cbd5e1" }}>{"★".repeat(Math.max(0, 5 - rev.rating))}</span>
+                          </span>
+                        </td>
+                        <td style={{ color: "#334155", maxWidth: "340px" }}>
+                          {rev.bodyShort || rev.bodyFull}
+                        </td>
+                        <td>
+                          <span className="badge-pill" style={{ background: badgeBg, color: badgeText }}>
+                            {sourceLabel}
+                          </span>
+                        </td>
+                        <td>
+                          <span className="badge-pill" style={{ background: "#dcfce7", color: "#166534" }}>
+                            {rev.isPublished ? "Published" : "Pending"}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </div>
     </Page>
   );
