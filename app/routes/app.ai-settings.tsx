@@ -437,11 +437,30 @@ export default function AiSettingsPage() {
   const isSaving = navigation.state === "submitting";
 
   return (
-    <Page fullWidth title="Multi-Provider AI Settings & Audit Logs">
+    <Page
+      fullWidth
+      title="Multi-Provider AI Settings & Audit Logs"
+      primaryAction={{
+        content: isSaving ? "Saving..." : "Save API keys and preferences",
+        onAction: handleSave,
+        loading: isSaving,
+      }}
+    >
       <style>{`
+        /* Full width overrides to eliminate side whitespace */
+        .Polaris-Page {
+          max-width: 100% !important;
+          padding-left: 24px !important;
+          padding-right: 24px !important;
+        }
+        .Polaris-Page--fullWidth {
+          max-width: 100% !important;
+        }
         .ai-settings-container {
-          max-width: 1200px;
-          margin: 0 auto;
+          width: 100% !important;
+          max-width: 100% !important;
+          margin: 0 !important;
+          padding: 0 !important;
           font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
           color: #111827;
         }
@@ -647,46 +666,20 @@ export default function AiSettingsPage() {
           cursor: not-allowed;
         }
 
-        /* Control Bar Card */
-        .control-bar-card {
-          background: #ffffff;
-          border: 1px solid #e2e8f0;
-          border-radius: 16px;
-          padding: 16px 24px;
-          display: flex;
-          align-items: center;
-          justify-content: flex-end;
-          gap: 20px;
-          margin-bottom: 24px;
-          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+        /* Page Header Primary Action Styling */
+        .Polaris-Page-Header__PrimaryAction .Polaris-Button--variantPrimary,
+        .Polaris-Page-Header .Polaris-Button--variantPrimary {
+          background: #0f172a !important;
+          color: #ffffff !important;
+          font-weight: 600 !important;
+          font-size: 13.5px !important;
+          border-radius: 9px !important;
+          padding: 8px 18px !important;
+          border: none !important;
         }
-
-        .btn-save-primary {
-          background: #0f172a;
-          color: #ffffff;
-          font-size: 14px;
-          font-weight: 600;
-          padding: 11px 24px;
-          border-radius: 10px;
-          border: none;
-          cursor: pointer;
-          transition: background 0.15s ease;
-          white-space: nowrap;
-        }
-        .btn-save-primary:hover:not(:disabled) {
-          background: #1e293b;
-        }
-        .btn-save-primary:disabled {
-          opacity: 0.6;
-          cursor: not-allowed;
-        }
-        @media (max-width: 640px) {
-          .control-bar-card {
-            justify-content: stretch;
-          }
-          .btn-save-primary {
-            width: 100%;
-          }
+        .Polaris-Page-Header__PrimaryAction .Polaris-Button--variantPrimary:hover,
+        .Polaris-Page-Header .Polaris-Button--variantPrimary:hover {
+          background: #1e293b !important;
         }
 
         /* AI Activity Log Card */
@@ -1109,19 +1102,7 @@ export default function AiSettingsPage() {
           </div>
         </div>
 
-        {/* 2. MIDDLE SAVE ACTION BAR */}
-        <div className="control-bar-card">
-          <button
-            type="button"
-            className="btn-save-primary"
-            disabled={isSaving}
-            onClick={handleSave}
-          >
-            {isSaving ? "Saving..." : "Save API keys and preferences"}
-          </button>
-        </div>
-
-        {/* 3. BOTTOM SECTION - AI ACTIVITY LOG CARD */}
+        {/* 2. BOTTOM SECTION - AI ACTIVITY LOG CARD */}
         <div className="activity-log-card">
           <div className="log-header">
             <div className="log-title-group">
