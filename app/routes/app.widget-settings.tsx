@@ -123,11 +123,6 @@ export default function WidgetSettingsPage() {
   const [rotation, setRotation] = useState<number>(settings.widgetRotationInterval ?? 5);
   const [maxPerSession, setMaxPerSession] = useState<number>(settings.widgetMaxPerSession ?? 6);
 
-  // Review source filters (Store orders, Imported, With photos only)
-  const [showStoreOrders, setShowStoreOrders] = useState<boolean>(true);
-  const [showImported, setShowImported] = useState<boolean>(true);
-  const [withPhotosOnly, setWithPhotosOnly] = useState<boolean>(false);
-
   const [savedSuccess, setSavedSuccess] = useState<boolean>(false);
 
   const handleSave = () => {
@@ -143,19 +138,6 @@ export default function WidgetSettingsPage() {
     submit(fd, { method: "post" });
     setSavedSuccess(true);
     setTimeout(() => setSavedSuccess(false), 3000);
-  };
-
-  const handleReset = () => {
-    setPosition("bottom-left");
-    setLayoutStyle("layout-1");
-    setDelay(4);
-    setDuration(8);
-    setRotation(5);
-    setMaxPerSession(6);
-    setEnabled(true);
-    setShowStoreOrders(true);
-    setShowImported(true);
-    setWithPhotosOnly(false);
   };
 
   // Layout cards options
@@ -298,28 +280,8 @@ export default function WidgetSettingsPage() {
           transform: scale(1.1);
         }
 
-        .filter-pill {
-          padding: 6px 16px;
-          border-radius: 9999px;
-          font-size: 13px;
-          font-weight: 600;
-          cursor: pointer;
-          transition: all 0.15s ease;
-          border: 1px solid #cbd5e1;
-          background: #ffffff;
-          color: #334155;
-          display: inline-flex;
-          align-items: center;
-          gap: 6px;
-        }
-        .filter-pill.active {
-          background: #0f172a;
-          color: #ffffff;
-          border-color: #0f172a;
-        }
-
         .save-btn {
-          flex: 1;
+          width: 100%;
           background: #0f172a;
           color: #ffffff;
           font-weight: 700;
@@ -332,21 +294,6 @@ export default function WidgetSettingsPage() {
         }
         .save-btn:hover {
           background: #1e293b;
-        }
-        .reset-btn {
-          background: #ffffff;
-          border: 1px solid #cbd5e1;
-          color: #334155;
-          font-weight: 600;
-          font-size: 14px;
-          padding: 12px 20px;
-          border-radius: 10px;
-          cursor: pointer;
-          transition: all 0.15s ease;
-        }
-        .reset-btn:hover {
-          background: #f8fafc;
-          border-color: #94a3b8;
         }
       `}</style>
 
@@ -635,60 +582,16 @@ export default function WidgetSettingsPage() {
               </div>
             </div>
 
-            {/* SECTION 4: Show reviews from */}
-            <div style={{ marginTop: "20px" }}>
-              <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#475569", marginBottom: "10px" }}>
-                Show reviews from
-              </label>
-
-              <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
-                <button
-                  type="button"
-                  className={`filter-pill ${showStoreOrders ? "active" : ""}`}
-                  onClick={() => setShowStoreOrders(!showStoreOrders)}
-                >
-                  Store orders
-                </button>
-
-                <button
-                  type="button"
-                  className={`filter-pill ${showImported ? "active" : ""}`}
-                  onClick={() => setShowImported(!showImported)}
-                >
-                  Imported
-                </button>
-
-                <button
-                  type="button"
-                  className={`filter-pill ${withPhotosOnly ? "active" : ""}`}
-                  onClick={() => setWithPhotosOnly(!withPhotosOnly)}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-                    <circle cx="8.5" cy="8.5" r="1.5" />
-                    <polyline points="21 15 16 10 5 21" />
-                  </svg>
-                  With photos only
-                </button>
-              </div>
-            </div>
-
-            {/* ACTION BUTTONS (Save Settings + Reset) */}
-            <div style={{ marginTop: "26px", display: "flex", gap: "10px" }}>
+            {/* ACTION BUTTON (Save Settings) */}
+            <div style={{ marginTop: "28px" }}>
               <button
                 type="button"
                 className="save-btn"
+                style={{ width: "100%" }}
                 onClick={handleSave}
                 disabled={navigation.state === "submitting"}
               >
                 {navigation.state === "submitting" ? "Saving..." : "Save settings"}
-              </button>
-              <button
-                type="button"
-                className="reset-btn"
-                onClick={handleReset}
-              >
-                Reset
               </button>
             </div>
           </div>
