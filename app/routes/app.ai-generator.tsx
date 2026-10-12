@@ -221,7 +221,7 @@ export default function AiGeneratorPage() {
     aiConfig,
   } = useLoaderData<typeof loader>();
 
-  // Tabs: 0 = Bulk requests, 1 = Product assistant, 2 = Add real review
+  // Tabs: 0 = Bulk requests, 1 = Product assistant (Single Product), 2 = Add real review
   const [selectedTab, setSelectedTab] = useState<number>(0);
 
   // Available AI engines with valid saved key check
@@ -258,7 +258,7 @@ export default function AiGeneratorPage() {
   };
 
   // ==============================================================
-  // TAB 0 (Bulk requests) STATE - SIMPLIFIED 4-STEP WORKFLOW
+  // TAB 0 (Bulk requests) STATE
   // ==============================================================
   const [bulkTone, setBulkTone] = useState<string>("Friendly & Relatable");
   const [reviewsPerProduct, setReviewsPerProduct] = useState<number>(3);
@@ -268,34 +268,30 @@ export default function AiGeneratorPage() {
   const [bulkSuccessResult, setBulkSuccessResult] = useState<any>(null);
   const [bulkErrorMessage, setBulkErrorMessage] = useState<string | null>(null);
 
-  // Calculated review count for Step 3
   const totalReviewsToGenerate = useMemo(() => {
     return products.length * reviewsPerProduct;
   }, [products.length, reviewsPerProduct]);
 
   // ==============================================================
-  // TAB 1 (Product assistant) STATE
+  // TAB 1 (Product assistant - Single Product) STATE - 4-STEP WORKFLOW
   // ==============================================================
   const [selectedProductId, setSelectedProductId] = useState<string>(
     products[0]?.value || "gid://shopify/Product/sample-1",
   );
-  const [activeAssistantAction, setActiveAssistantAction] = useState<
-    "summary" | "replies" | "translate" | "request_email"
-  >("summary");
-  const [copiedReply, setCopiedReply] = useState<boolean>(false);
-
-  // Single Product AI Generation sub-state
-  const [singleDescription, setSingleDescription] = useState<string>(products[0]?.description || "");
+  const [singleTone, setSingleTone] = useState<string>("Friendly & Relatable");
+  const [singleCount, setSingleCount] = useState<number>(5);
   const [singleNotes, setSingleNotes] = useState<string>("");
-  const [singleCount, setSingleCount] = useState<string>("5");
   const [singleLanguage, setSingleLanguage] = useState<string>("en");
   const [singleProvider, setSingleProvider] = useState<string>(getInitialActiveProvider());
   const [singleLoading, setSingleLoading] = useState<boolean>(false);
+  const [singleProgress, setSingleProgress] = useState<number>(0);
   const [generatedReviews, setGeneratedReviews] = useState<Array<any>>([]);
   const [savedStatus, setSavedStatus] = useState<Record<number, boolean>>({});
   const [savingIndex, setSavingIndex] = useState<number | null>(null);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [singleErrorMessage, setSingleErrorMessage] = useState<string | null>(null);
+  const [copiedReply, setCopiedReply] = useState<boolean>(false);
+  const [showInsights, setShowInsights] = useState<boolean>(true);
 
   // Current selected product object & stats
   const currentProduct = useMemo(() => {
@@ -312,11 +308,11 @@ export default function AiGeneratorPage() {
     if (stats && stats.count > 0) {
       return stats;
     }
-    return { count: 12, avgRating: 4.5 };
+    return { count: 8, avgRating: 4.9 };
   }, [productStats, selectedProductId]);
 
   // ==============================================================
-  // TAB 2 (Add real review) STATE
+  // TAB 2 (Add real review - Manual) STATE
   // ==============================================================
   const [manualProdId, setManualProdId] = useState<string>(products[0]?.value || "");
   const [manualOrderNumber, setManualOrderNumber] = useState<string>("#1042");
@@ -332,7 +328,6 @@ export default function AiGeneratorPage() {
   const [manualSuccessMsg, setManualSuccessMsg] = useState<string | null>(null);
   const [manualErrorMsg, setManualErrorMsg] = useState<string | null>(null);
 
-  // Auto-fill customer details when order number or product changes if matching order exists
   const handleOrderNumberChange = (orderNum: string) => {
     setManualOrderNumber(orderNum);
     const matched = recentOrders.find(
@@ -343,14 +338,6 @@ export default function AiGeneratorPage() {
       if (matched.productId) {
         setManualProdId(matched.productId);
       }
-    }
-  };
-
-  const handleProductSelect = (prodId: string) => {
-    setSelectedProductId(prodId);
-    const prod = products.find((p) => p.value === prodId);
-    if (prod) {
-      setSingleDescription(prod.description);
     }
   };
 
@@ -413,6 +400,14 @@ export default function AiGeneratorPage() {
 
     setSingleLoading(true);
     setSingleErrorMessage(null);
+    setSingleProgress(20);
+
+    const interval = setInterval(() => {
+      setSingleProgress((prev) => {
+        if (prev >= 90) return prev;
+        return prev + 20;
+      });
+    }, 400);
 
     const avoidPhrasing = isMore ? generatedReviews.map((r) => r.bodyShort) : [];
 
@@ -423,17 +418,21 @@ export default function AiGeneratorPage() {
         body: JSON.stringify({
           productId: selectedProductId,
           productImageUrl: currentProduct?.imageUrl || undefined,
-          description: singleDescription || currentProduct?.description,
+          description: currentProduct?.description,
           notes: singleNotes,
           language: singleLanguage,
           provider: singleProvider,
           count: Number(singleCount),
           avoidPhrasing,
           mediaOption: "image",
+          tone: singleTone,
         }),
       });
 
       const data = await res.json();
+      clearInterval(interval);
+      setSingleProgress(100);
+
       if (!data.success) {
         setSingleErrorMessage(data.error || "Generation failed");
       } else {
@@ -445,6 +444,7 @@ export default function AiGeneratorPage() {
         }
       }
     } catch (e: any) {
+      clearInterval(interval);
       setSingleErrorMessage(e.message || "Network error during generation.");
     } finally {
       setSingleLoading(false);
@@ -478,7 +478,6 @@ export default function AiGeneratorPage() {
     }
   };
 
-  // Copy text to clipboard
   const handleCopyText = (text: string, index?: number) => {
     navigator.clipboard.writeText(text);
     if (index !== undefined) {
@@ -490,7 +489,6 @@ export default function AiGeneratorPage() {
     }
   };
 
-  // File upload for manual review
   const handleManualFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -504,7 +502,6 @@ export default function AiGeneratorPage() {
     }
   };
 
-  // Submit Manual Custom Review
   const handleManualSubmit = async () => {
     if (!manualReviewText.trim()) {
       setManualErrorMsg("Please enter the review text provided by the customer.");
@@ -554,13 +551,14 @@ export default function AiGeneratorPage() {
     }
   };
 
-  const selectedEngine = availableEngines.find((e) => e.id === bulkProvider) || availableEngines[0];
+  const selectedBulkEngine = availableEngines.find((e) => e.id === bulkProvider) || availableEngines[0];
+  const selectedSingleEngine = availableEngines.find((e) => e.id === singleProvider) || availableEngines[0];
 
   return (
     <Page fullWidth title="AI & Custom Review Generator (Module B)">
       <style>{`
         /* ========================================================== */
-        /* 100% FULL WIDTH CONTAINER STYLES                           */
+        /* 100% FULL WIDTH RESPONSIVE CONTAINER                       */
         /* ========================================================== */
         .rg-root {
           font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -609,7 +607,7 @@ export default function AiGeneratorPage() {
           box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
         }
 
-        /* WORKFLOW STEP CARD */
+        /* FULL WIDTH WORKFLOW STEP CARDS */
         .rg-step-card {
           background: #ffffff;
           border: 1px solid #e5e7eb;
@@ -851,7 +849,7 @@ export default function AiGeneratorPage() {
           gap: 4px;
         }
 
-        /* INPUTS & CONTROLS */
+        /* INPUTS & SELECT */
         .rg-select, .rg-input {
           width: 100%;
           padding: 11px 14px;
@@ -869,58 +867,6 @@ export default function AiGeneratorPage() {
           border-color: #111827;
         }
 
-        /* 2-COLUMN SPLIT LAYOUT FOR TAB 1 */
-        .rg-split-grid {
-          display: grid;
-          grid-template-columns: 360px 1fr;
-          gap: 20px;
-          align-items: stretch;
-          width: 100%;
-          box-sizing: border-box;
-        }
-
-        @media (max-width: 900px) {
-          .rg-split-grid {
-            grid-template-columns: 1fr;
-          }
-        }
-
-        .rg-card {
-          background: #ffffff;
-          border: 1px solid #e5e7eb;
-          border-radius: 16px;
-          padding: 24px;
-          box-shadow: 0 1px 2px rgba(0,0,0,0.02);
-          width: 100%;
-          box-sizing: border-box;
-        }
-
-        .rg-assistant-item {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          padding: 13px 16px;
-          background: #f9fafb;
-          border: 1px solid #f3f4f6;
-          border-radius: 12px;
-          cursor: pointer;
-          margin-bottom: 8px;
-          transition: all 0.15s ease;
-          user-select: none;
-        }
-
-        .rg-assistant-item:hover {
-          background: #f3f4f6;
-          border-color: #e5e7eb;
-        }
-
-        .rg-assistant-item.active {
-          background: #f0f7ff;
-          border-color: #bfdbfe;
-          font-weight: 600;
-        }
-
-        /* OUTLINE BUTTON */
         .rg-outline-btn {
           background-color: #ffffff;
           color: #374151;
@@ -938,7 +884,6 @@ export default function AiGeneratorPage() {
           border-color: #9ca3af;
         }
 
-        /* UPLOAD BOX */
         .rg-upload-box {
           border: 1.5px dashed #cbd5e1;
           border-radius: 12px;
@@ -956,7 +901,6 @@ export default function AiGeneratorPage() {
           background: #f8fafc;
         }
 
-        /* STAR RATING PICKER */
         .rg-star-picker {
           display: flex;
           align-items: center;
@@ -981,7 +925,6 @@ export default function AiGeneratorPage() {
           color: #b45309;
         }
 
-        /* TOGGLE SWITCH */
         .rg-toggle-switch {
           width: 44px;
           height: 24px;
@@ -1088,7 +1031,6 @@ export default function AiGeneratorPage() {
         {/* ============================================================== */}
         {selectedTab === 0 && (
           <div>
-            {/* Error or Success notification */}
             {bulkErrorMessage && (
               <div style={{ marginBottom: "16px" }}>
                 <Banner tone="critical" title="Generation Error">
@@ -1110,7 +1052,7 @@ export default function AiGeneratorPage() {
               </div>
             )}
 
-            {/* STEP 1: SELECT THE REVIEW GENERATION OPTION */}
+            {/* STEP 1: SELECT SCOPE */}
             <div className="rg-step-card">
               <div className="rg-step-header">
                 <span className="rg-step-badge">Step 1</span>
@@ -1298,7 +1240,7 @@ export default function AiGeneratorPage() {
               </div>
             </div>
 
-            {/* STEP 3: REVIEW THE GENERATION DETAILS */}
+            {/* STEP 3: REVIEW SUMMARY */}
             <div className="rg-step-card">
               <div className="rg-step-header">
                 <span className="rg-step-badge">Step 3</span>
@@ -1336,10 +1278,10 @@ export default function AiGeneratorPage() {
                 <div className="rg-summary-tile">
                   <div className="rg-summary-label">AI Engine</div>
                   <div className="rg-summary-val">
-                    {selectedEngine ? selectedEngine.name : "None Selected"}
+                    {selectedBulkEngine ? selectedBulkEngine.name : "None Selected"}
                   </div>
                   <div className="rg-summary-sub">
-                    {selectedEngine?.hasKey ? "✓ Valid API Key" : "⚠️ Key Missing"}
+                    {selectedBulkEngine?.hasKey ? "✓ Valid API Key" : "⚠️ Key Missing"}
                   </div>
                 </div>
               </div>
@@ -1362,7 +1304,7 @@ export default function AiGeneratorPage() {
                   Ready to Generate Authentic Reviews?
                 </h3>
                 <p style={{ fontSize: "14px", color: "#4b5563", margin: "0 0 24px 0" }}>
-                  Click below to generate {totalReviewsToGenerate} authentic reviews across your {products.length} products using {selectedEngine?.name}.
+                  Click below to generate {totalReviewsToGenerate} authentic reviews across your {products.length} products using {selectedBulkEngine?.name}.
                 </p>
 
                 {bulkLoading && (
@@ -1378,7 +1320,7 @@ export default function AiGeneratorPage() {
                 <button
                   type="button"
                   className="rg-generate-btn"
-                  disabled={bulkLoading || !selectedEngine?.hasKey || products.length === 0}
+                  disabled={bulkLoading || !selectedBulkEngine?.hasKey || products.length === 0}
                   onClick={handleBulkGenerateAll}
                 >
                   <span>🪄</span>
@@ -1389,7 +1331,7 @@ export default function AiGeneratorPage() {
                   </span>
                 </button>
 
-                {!selectedEngine?.hasKey && (
+                {!selectedBulkEngine?.hasKey && (
                   <div style={{ marginTop: "12px", fontSize: "13px", color: "#dc2626" }}>
                     ⚠️ Please select an AI Engine with a valid saved API key above, or configure one in AI Settings.
                   </div>
@@ -1401,308 +1343,522 @@ export default function AiGeneratorPage() {
 
         {/* ============================================================== */}
         {/* TAB 1: PRODUCT ASSISTANT (SINGLE PRODUCT AI GENERATOR)          */}
+        {/* REDESIGNED INTO 100% FULL-WIDTH 4-STEP WORKFLOW                 */}
         {/* ============================================================== */}
         {selectedTab === 1 && (
-          <div className="rg-split-grid">
-            {/* Left Column: Product Selector & Action Menu */}
-            <div className="rg-card">
-              <label style={{ fontSize: "13px", fontWeight: 600, color: "#374151", display: "block", marginBottom: "8px" }}>
-                Product
-              </label>
-              <select
-                className="rg-select"
-                value={selectedProductId}
-                onChange={(e) => handleProductSelect(e.target.value)}
-              >
-                {products.length > 0 ? (
-                  products.map((p) => (
-                    <option key={p.value} value={p.value}>
-                      {p.label}
-                    </option>
-                  ))
-                ) : (
-                  <option value="luminous">Luminous Kit</option>
-                )}
-              </select>
+          <div>
+            {singleErrorMessage && (
+              <div style={{ marginBottom: "16px" }}>
+                <Banner tone="critical" title="Generation Error">
+                  <p>{singleErrorMessage}</p>
+                </Banner>
+              </div>
+            )}
 
-              {/* Selected Product Summary Box (Sky Blue) */}
+            {/* STEP 1: SELECT PRODUCT */}
+            <div className="rg-step-card">
+              <div className="rg-step-header">
+                <span className="rg-step-badge">Step 1</span>
+                <div>
+                  <h3 className="rg-step-title">Select Target Product</h3>
+                  <p className="rg-step-desc">
+                    Choose the specific Shopify product you want to analyze and generate AI reviews for.
+                  </p>
+                </div>
+              </div>
+
+              {/* Product Selector Dropdown */}
+              <div style={{ marginBottom: "18px" }}>
+                <label style={{ fontSize: "13.5px", fontWeight: 600, color: "#374151", display: "block", marginBottom: "8px" }}>
+                  Product
+                </label>
+                <select
+                  className="rg-select"
+                  value={selectedProductId}
+                  onChange={(e) => setSelectedProductId(e.target.value)}
+                >
+                  {products.length > 0 ? (
+                    products.map((p) => (
+                      <option key={p.value} value={p.value}>
+                        {p.label}
+                      </option>
+                    ))
+                  ) : (
+                    <option value="luminous">Luminous Kit</option>
+                  )}
+                </select>
+              </div>
+
+              {/* Selected Product Spotlight Card (Full Width) */}
               <div
                 style={{
                   background: "#dbeafe",
+                  border: "1.5px solid #bfdbfe",
                   borderRadius: "14px",
-                  padding: "16px",
+                  padding: "18px 22px",
                   display: "flex",
                   alignItems: "center",
-                  gap: "14px",
-                  margin: "16px 0 24px 0",
+                  justifyContent: "space-between",
+                  flexWrap: "wrap",
+                  gap: "16px",
+                  marginBottom: "16px",
                 }}
               >
+                <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+                  <div
+                    style={{
+                      width: "60px",
+                      height: "60px",
+                      borderRadius: "10px",
+                      background: "#c7d2fe",
+                      overflow: "hidden",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      flexShrink: 0,
+                    }}
+                  >
+                    {currentProduct.imageUrl ? (
+                      <img
+                        src={currentProduct.imageUrl}
+                        alt={currentProduct.label}
+                        style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                      />
+                    ) : (
+                      <span style={{ fontSize: "28px" }}>✨</span>
+                    )}
+                  </div>
+
+                  <div>
+                    <h4 style={{ margin: "0 0 4px 0", fontSize: "17px", fontWeight: 700, color: "#1e3a8a" }}>
+                      {currentProduct.label}
+                    </h4>
+                    <div style={{ display: "flex", alignItems: "center", gap: "10px", fontSize: "13.5px", color: "#1d4ed8" }}>
+                      <strong>{`${currentProductStats.count} real reviews`}</strong>
+                      <span>•</span>
+                      <span>{`Average ${currentProductStats.avgRating} ★`}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", gap: "8px" }}>
+                  <button
+                    type="button"
+                    className="rg-outline-btn"
+                    style={{ background: "#ffffff", borderColor: "#93c5fd", color: "#1d4ed8" }}
+                    onClick={() => setShowInsights(!showInsights)}
+                  >
+                    {showInsights ? "Hide AI Insights ▲" : "View AI Insights ▼"}
+                  </button>
+                </div>
+              </div>
+
+              {/* Collapsible / Expandable AI Review Insights */}
+              {showInsights && (
                 <div
                   style={{
-                    width: "56px",
-                    height: "56px",
-                    borderRadius: "10px",
-                    background: "#c7d2fe",
-                    overflow: "hidden",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    flexShrink: 0,
+                    background: "#f8fafc",
+                    border: "1px solid #e2e8f0",
+                    borderRadius: "14px",
+                    padding: "20px 22px",
+                    marginTop: "12px",
                   }}
                 >
-                  {currentProduct.imageUrl ? (
-                    <img
-                      src={currentProduct.imageUrl}
-                      alt={currentProduct.label}
-                      style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                    />
-                  ) : (
-                    <span style={{ fontSize: "24px" }}>✨</span>
-                  )}
-                </div>
-
-                <div>
-                  <div style={{ fontSize: "15px", fontWeight: 700, color: "#1e3a8a", marginBottom: "2px" }}>
-                    {`${currentProductStats.count} real reviews`}
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <span style={{ fontSize: "16px" }}>💡</span>
+                      <strong style={{ fontSize: "14.5px", color: "#0f172a" }}>
+                        AI Summary of Real Customer Feedback
+                      </strong>
+                    </div>
+                    <span className="rg-blue-badge">
+                      {`${currentProductStats.count} reviews analyzed`}
+                    </span>
                   </div>
-                  <div style={{ fontSize: "13px", fontWeight: 500, color: "#1d4ed8" }}>
-                    {`Average ${currentProductStats.avgRating} ★`}
+
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "18px" }}>
+                    <div style={{ background: "#ffffff", padding: "14px 16px", borderRadius: "10px", border: "1px solid #e2e8f0" }}>
+                      <span className="rg-green-badge" style={{ marginBottom: "6px" }}>Pros</span>
+                      <p style={{ margin: "6px 0 0 0", fontSize: "13.5px", fontWeight: 500, color: "#1e293b" }}>
+                        Bright glow, easy to use, good packaging
+                      </p>
+                    </div>
+
+                    <div style={{ background: "#ffffff", padding: "14px 16px", borderRadius: "10px", border: "1px solid #e2e8f0" }}>
+                      <span className="rg-amber-badge" style={{ marginBottom: "6px" }}>Cons</span>
+                      <p style={{ margin: "6px 0 0 0", fontSize: "13.5px", fontWeight: 500, color: "#1e293b" }}>
+                        Glow fades faster than expected (3 mentions)
+                      </p>
+                    </div>
+                  </div>
+
+                  <div style={{ background: "#ffffff", padding: "14px 16px", borderRadius: "10px", border: "1px solid #e2e8f0" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                      <span className="rg-blue-badge">Suggested Merchant Reply</span>
+                      <button
+                        type="button"
+                        className="rg-outline-btn"
+                        style={{ padding: "4px 10px", fontSize: "12px" }}
+                        onClick={() =>
+                          handleCopyText(
+                            "Thanks for the feedback! Charging the glow under bright light for 10 minutes helps it last longer."
+                          )
+                        }
+                      >
+                        {copiedReply ? "Copied! ✓" : "Copy reply"}
+                      </button>
+                    </div>
+                    <p style={{ margin: 0, fontSize: "13.5px", color: "#334155", lineHeight: 1.5 }}>
+                      "Thanks for the feedback! Charging the glow under bright light for 10 minutes helps it last longer."
+                    </p>
                   </div>
                 </div>
-              </div>
-
-              {/* Action List */}
-              <label style={{ fontSize: "13px", fontWeight: 600, color: "#374151", display: "block", marginBottom: "10px" }}>
-                What do you need?
-              </label>
-
-              <div
-                className={`rg-assistant-item ${activeAssistantAction === "summary" ? "active" : ""}`}
-                onClick={() => setActiveAssistantAction("summary")}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: "10px", fontSize: "14px", color: "#111827" }}>
-                  <span>☷</span>
-                  <span>Summarize reviews</span>
-                </div>
-                <span style={{ color: "#9ca3af", fontSize: "14px" }}>›</span>
-              </div>
-
-              <div
-                className={`rg-assistant-item ${activeAssistantAction === "replies" ? "active" : ""}`}
-                onClick={() => setActiveAssistantAction("replies")}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: "10px", fontSize: "14px", color: "#111827" }}>
-                  <span>💬</span>
-                  <span>Suggest replies</span>
-                </div>
-                <span style={{ color: "#9ca3af", fontSize: "14px" }}>›</span>
-              </div>
-
-              <div
-                className={`rg-assistant-item ${activeAssistantAction === "translate" ? "active" : ""}`}
-                onClick={() => setActiveAssistantAction("translate")}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: "10px", fontSize: "14px", color: "#111827" }}>
-                  <span>文A</span>
-                  <span>Translate reviews</span>
-                </div>
-                <span style={{ color: "#9ca3af", fontSize: "14px" }}>›</span>
-              </div>
-
-              <div
-                className={`rg-assistant-item ${activeAssistantAction === "request_email" ? "active" : ""}`}
-                onClick={() => setActiveAssistantAction("request_email")}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: "10px", fontSize: "14px", color: "#111827" }}>
-                  <span>✉</span>
-                  <span>Request email / AI Generator</span>
-                </div>
-                <span style={{ color: "#9ca3af", fontSize: "14px" }}>›</span>
-              </div>
+              )}
             </div>
 
-            {/* Right Column: AI Insights & Review Generator */}
-            <div className="rg-card">
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
-                <h3 style={{ margin: 0, fontSize: "18px", fontWeight: 700, color: "#111827" }}>
-                  AI summary of real reviews
-                </h3>
-                <span className="rg-blue-badge">
-                  {`${currentProductStats.count} reviews`}
-                </span>
+            {/* STEP 2: CONFIGURE REVIEW SETTINGS FOR THIS PRODUCT */}
+            <div className="rg-step-card">
+              <div className="rg-step-header">
+                <span className="rg-step-badge">Step 2</span>
+                <div>
+                  <h3 className="rg-step-title">Configure Review Settings</h3>
+                  <p className="rg-step-desc">
+                    Customize the tone, volume, custom selling points, and select an available AI engine.
+                  </p>
+                </div>
               </div>
 
-              {/* Pros Card */}
-              <div style={{ marginBottom: "20px" }}>
-                <span className="rg-green-badge" style={{ marginBottom: "8px" }}>Pros</span>
-                <p style={{ margin: "6px 0 0 0", fontSize: "15px", fontWeight: 500, color: "#111827" }}>
-                  Bright glow, easy to use, good packaging
-                </p>
-              </div>
-
-              {/* Cons Card */}
+              {/* Tone Selection */}
               <div style={{ marginBottom: "22px" }}>
-                <span className="rg-amber-badge" style={{ marginBottom: "8px" }}>Cons</span>
-                <p style={{ margin: "6px 0 0 0", fontSize: "15px", fontWeight: 500, color: "#111827" }}>
-                  Glow fades faster than expected (3 mentions)
-                </p>
+                <label style={{ fontSize: "13.5px", fontWeight: 600, color: "#374151", display: "block", marginBottom: "8px" }}>
+                  Review Tone
+                </label>
+                <div className="rg-pills">
+                  {[
+                    "Friendly & Relatable",
+                    "Enthusiastic & Excited",
+                    "Professional & Detailed",
+                    "Short & Punchy",
+                  ].map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      className={`rg-pill ${singleTone === t ? "active" : ""}`}
+                      onClick={() => setSingleTone(t)}
+                    >
+                      {t}
+                    </button>
+                  ))}
+                </div>
               </div>
 
-              {/* Suggested Reply Card */}
-              <div style={{ background: "#f8fafc", padding: "16px", borderRadius: "12px", border: "1px solid #e2e8f0", marginBottom: "24px" }}>
-                <span className="rg-blue-badge" style={{ marginBottom: "8px" }}>Suggested reply</span>
-                <p style={{ margin: "8px 0 14px 0", fontSize: "14px", color: "#334155", lineHeight: 1.5 }}>
-                  Thanks for the feedback! Charging the glow under bright light for 10 minutes helps it last longer.
-                </p>
-                <button
-                  type="button"
-                  className="rg-outline-btn"
-                  onClick={() =>
-                    handleCopyText("Thanks for the feedback! Charging the glow under bright light for 10 minutes helps it last longer.")
-                  }
-                >
-                  {copiedReply ? "Copied! ✓" : "Copy reply"}
-                </button>
+              {/* Reviews to Generate Selection */}
+              <div style={{ marginBottom: "24px" }}>
+                <label style={{ fontSize: "13.5px", fontWeight: 600, color: "#374151", display: "block", marginBottom: "8px" }}>
+                  Number of Reviews to Generate
+                </label>
+                <div className="rg-pills">
+                  {[
+                    { label: "1 Review", count: 1 },
+                    { label: "3 Reviews", count: 3 },
+                    { label: "5 Reviews (Recommended)", count: 5 },
+                    { label: "10 Reviews", count: 10 },
+                  ].map((opt) => (
+                    <button
+                      key={opt.count}
+                      type="button"
+                      className={`rg-pill ${singleCount === opt.count ? "active" : ""}`}
+                      onClick={() => setSingleCount(opt.count)}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
               </div>
 
-              {/* Single Product AI Review Generation Engine */}
-              <div style={{ borderTop: "1px solid #e5e7eb", paddingTop: "20px" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px", flexWrap: "wrap", gap: "8px" }}>
-                  <label style={{ fontSize: "13px", fontWeight: 600, color: "#111827", margin: 0 }}>
-                    Generate AI Reviews for this Product
+              {/* Custom USP & Language Row */}
+              <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "16px", marginBottom: "24px" }}>
+                <div>
+                  <label style={{ fontSize: "13.5px", fontWeight: 600, color: "#374151", display: "block", marginBottom: "8px" }}>
+                    Custom Angles / Key Features (Optional)
                   </label>
-                  <span style={{ fontSize: "12px", color: "#6b7280" }}>
-                    Creates high-quality draft reviews for store widget
-                  </span>
-                </div>
-
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginBottom: "12px" }}>
-                  <div>
-                    <span style={{ fontSize: "12px", color: "#4b5563" }}>Review count</span>
-                    <select
-                      className="rg-select"
-                      style={{ padding: "8px 12px", fontSize: "13px" }}
-                      value={singleCount}
-                      onChange={(e) => setSingleCount(e.target.value)}
-                    >
-                      <option value="1">1 Review</option>
-                      <option value="3">3 Reviews</option>
-                      <option value="5">5 Reviews</option>
-                      <option value="10">10 Reviews</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <span style={{ fontSize: "12px", color: "#4b5563" }}>Language</span>
-                    <select
-                      className="rg-select"
-                      style={{ padding: "8px 12px", fontSize: "13px" }}
-                      value={singleLanguage}
-                      onChange={(e) => setSingleLanguage(e.target.value)}
-                    >
-                      <option value="en">English</option>
-                      <option value="es">Spanish</option>
-                      <option value="fr">French</option>
-                      <option value="de">German</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div style={{ marginBottom: "14px" }}>
                   <input
                     type="text"
                     className="rg-input"
-                    placeholder="Custom angle / USP (e.g. ultra bright, long battery, giftable...)"
+                    placeholder="e.g. Ultra-bright glow, long battery life, fast shipping, perfect giftable item..."
                     value={singleNotes}
                     onChange={(e) => setSingleNotes(e.target.value)}
                   />
+                  <span style={{ fontSize: "12px", color: "#64748b", marginTop: "4px", display: "block" }}>
+                    The AI will incorporate these specific angles into customer reviews.
+                  </span>
                 </div>
 
-                {singleErrorMessage && (
-                  <div style={{ marginBottom: "12px" }}>
-                    <Banner tone="critical" title="Generation Error">
-                      <p>{singleErrorMessage}</p>
-                    </Banner>
+                <div>
+                  <label style={{ fontSize: "13.5px", fontWeight: 600, color: "#374151", display: "block", marginBottom: "8px" }}>
+                    Language
+                  </label>
+                  <select
+                    className="rg-select"
+                    value={singleLanguage}
+                    onChange={(e) => setSingleLanguage(e.target.value)}
+                  >
+                    <option value="en">English</option>
+                    <option value="es">Spanish</option>
+                    <option value="fr">French</option>
+                    <option value="de">German</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* AI Engine Selection with API Key Validation */}
+              <div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px", flexWrap: "wrap", gap: "8px" }}>
+                  <label style={{ fontSize: "13.5px", fontWeight: 600, color: "#374151", margin: 0 }}>
+                    Select Available AI Engine
+                  </label>
+                  <Link
+                    to="/app/ai-settings"
+                    style={{ fontSize: "13px", color: "#2563eb", textDecoration: "none", fontWeight: 500 }}
+                  >
+                    Manage API Keys in AI Settings →
+                  </Link>
+                </div>
+
+                <div className="rg-engine-grid">
+                  {availableEngines.map((engine) => {
+                    const isSelected = singleProvider === engine.id;
+                    const isDisabled = !engine.hasKey;
+
+                    return (
+                      <div
+                        key={engine.id}
+                        className={`rg-engine-card ${isSelected ? "active" : ""} ${isDisabled ? "disabled" : ""}`}
+                        onClick={() => {
+                          if (!isDisabled) {
+                            setSingleProvider(engine.id);
+                          }
+                        }}
+                      >
+                        <div>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "6px" }}>
+                            <strong style={{ fontSize: "15px", color: isDisabled ? "#6b7280" : "#111827" }}>
+                              {engine.name}
+                            </strong>
+                            {engine.hasKey ? (
+                              <span className="rg-green-badge">✓ Ready</span>
+                            ) : (
+                              <span className="rg-amber-badge">⚠️ Key Missing</span>
+                            )}
+                          </div>
+
+                          <div style={{ fontSize: "12.5px", color: "#6b7280", fontFamily: "monospace", marginBottom: "8px" }}>
+                            {engine.model}
+                          </div>
+
+                          <p style={{ margin: 0, fontSize: "12.5px", color: isDisabled ? "#9ca3af" : "#4b5563", lineHeight: 1.4 }}>
+                            {engine.description}
+                          </p>
+                        </div>
+
+                        <div style={{ marginTop: "14px", paddingTop: "10px", borderTop: "1px solid #f1f5f9" }}>
+                          {engine.hasKey ? (
+                            <span style={{ fontSize: "12px", color: isSelected ? "#0f172a" : "#16a34a", fontWeight: 600 }}>
+                              {isSelected ? "● Selected Model" : "Click to select"}
+                            </span>
+                          ) : (
+                            <Link
+                              to="/app/ai-settings"
+                              style={{ fontSize: "12px", color: "#d97706", fontWeight: 600, textDecoration: "none" }}
+                            >
+                              Add Key in AI Settings →
+                            </Link>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {/* STEP 3: REVIEW SUMMARY */}
+            <div className="rg-step-card">
+              <div className="rg-step-header">
+                <span className="rg-step-badge">Step 3</span>
+                <div>
+                  <h3 className="rg-step-title">Review Generation Summary</h3>
+                  <p className="rg-step-desc">
+                    Verify the product details and generation settings before creating reviews.
+                  </p>
+                </div>
+              </div>
+
+              <div className="rg-summary-grid">
+                <div className="rg-summary-tile">
+                  <div className="rg-summary-label">Target Product</div>
+                  <div className="rg-summary-val" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {currentProduct.label}
+                  </div>
+                  <div className="rg-summary-sub">{`${currentProductStats.count} existing reviews`}</div>
+                </div>
+
+                <div className="rg-summary-tile">
+                  <div className="rg-summary-label">Reviews to Generate</div>
+                  <div className="rg-summary-val" style={{ color: "#2563eb" }}>
+                    {`${singleCount} Reviews`}
+                  </div>
+                  <div className="rg-summary-sub">Single product generation</div>
+                </div>
+
+                <div className="rg-summary-tile">
+                  <div className="rg-summary-label">Selected Tone</div>
+                  <div className="rg-summary-val">{singleTone.split(" ")[0]}</div>
+                  <div className="rg-summary-sub">{singleTone}</div>
+                </div>
+
+                <div className="rg-summary-tile">
+                  <div className="rg-summary-label">AI Engine</div>
+                  <div className="rg-summary-val">
+                    {selectedSingleEngine ? selectedSingleEngine.name : "None Selected"}
+                  </div>
+                  <div className="rg-summary-sub">
+                    {selectedSingleEngine?.hasKey ? "✓ Valid API Key" : "⚠️ Key Missing"}
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ marginTop: "16px", padding: "12px 16px", background: "#f8fafc", borderRadius: "10px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px" }}>
+                <div style={{ fontSize: "13px", color: "#475569" }}>
+                  <strong>Destination:</strong> Generated reviews will be saved and can be published directly to your product page widget.
+                </div>
+                <div style={{ fontSize: "12.5px", color: "#64748b" }}>
+                  Includes verified purchase badges and high-converting 4-5 star ratings.
+                </div>
+              </div>
+            </div>
+
+            {/* STEP 4: GENERATE REVIEWS BUTTON */}
+            <div className="rg-step-card" style={{ textAlign: "center", padding: "32px 24px" }}>
+              <div style={{ maxWidth: "640px", margin: "0 auto" }}>
+                <span className="rg-step-badge" style={{ marginBottom: "12px" }}>Step 4</span>
+                <h3 style={{ fontSize: "20px", fontWeight: 700, color: "#111827", margin: "8px 0" }}>
+                  {`Ready to Generate Reviews for ${currentProduct.label}?`}
+                </h3>
+                <p style={{ fontSize: "14px", color: "#4b5563", margin: "0 0 24px 0" }}>
+                  Click below to create {singleCount} authentic reviews tailored specifically to {currentProduct.label} using {selectedSingleEngine?.name}.
+                </p>
+
+                {singleLoading && (
+                  <div style={{ marginBottom: "20px", textAlign: "left" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "6px", fontSize: "13px", color: "#374151" }}>
+                      <span>{`Generating ${singleCount} authentic reviews for ${currentProduct.label}...`}</span>
+                      <strong>{singleProgress}%</strong>
+                    </div>
+                    <ProgressBar progress={singleProgress} animated />
                   </div>
                 )}
 
                 <button
                   type="button"
                   className="rg-generate-btn"
-                  style={{ width: "100%" }}
-                  disabled={singleLoading || !singleProvider}
+                  disabled={singleLoading || !selectedSingleEngine?.hasKey}
                   onClick={() => handleSingleGenerate(false)}
                 >
                   <span>🪄</span>
                   <span>
                     {singleLoading
-                      ? `Generating ${singleCount} authentic reviews...`
-                      : `Generate ${singleCount} Authentic Reviews for this Product`}
+                      ? `Generating Reviews for ${currentProduct.label}...`
+                      : `Generate ${singleCount} Authentic Reviews for ${currentProduct.label}`}
                   </span>
                 </button>
 
-                {/* Generated Reviews List */}
-                {generatedReviews.length > 0 && (
-                  <div style={{ marginTop: "20px", display: "flex", flexDirection: "column", gap: "12px" }}>
-                    <span style={{ fontSize: "13px", fontWeight: 600, color: "#111827" }}>
-                      Generated Drafts ({generatedReviews.length})
-                    </span>
+                {!selectedSingleEngine?.hasKey && (
+                  <div style={{ marginTop: "12px", fontSize: "13px", color: "#dc2626" }}>
+                    ⚠️ Please select an AI Engine with a valid saved API key above, or configure one in AI Settings.
+                  </div>
+                )}
+              </div>
 
+              {/* Generated Reviews Preview Cards */}
+              {generatedReviews.length > 0 && (
+                <div style={{ marginTop: "32px", textAlign: "left" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+                    <h4 style={{ margin: 0, fontSize: "16px", fontWeight: 700, color: "#0f172a" }}>
+                      {`Generated Reviews for ${currentProduct.label} (${generatedReviews.length})`}
+                    </h4>
+                    <button
+                      type="button"
+                      className="rg-outline-btn"
+                      onClick={() => handleSingleGenerate(true)}
+                    >
+                      + Generate More Reviews
+                    </button>
+                  </div>
+
+                  <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
                     {generatedReviews.map((rev, idx) => (
                       <div
                         key={`rev-item-${idx}`}
                         style={{
                           background: "#f8fafc",
-                          borderRadius: "10px",
-                          padding: "14px",
+                          borderRadius: "12px",
+                          padding: "18px 20px",
                           border: "1px solid #e2e8f0",
                         }}
                       >
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                            <strong style={{ fontSize: "14px", color: "#0f172a" }}>{rev.reviewerName}</strong>
-                            <span style={{ color: "#b45309", fontSize: "13px" }}>{"★".repeat(rev.rating || 5)}</span>
-                            <span className="rg-green-badge">Verified</span>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px", flexWrap: "wrap", gap: "8px" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                            <strong style={{ fontSize: "15px", color: "#0f172a" }}>{rev.reviewerName}</strong>
+                            <span style={{ color: "#b45309", fontSize: "14px" }}>{"★".repeat(rev.rating || 5)}</span>
+                            <span className="rg-green-badge">Verified Buyer</span>
                           </div>
 
-                          <div style={{ display: "flex", gap: "6px" }}>
+                          <div style={{ display: "flex", gap: "8px" }}>
                             <button
                               type="button"
                               className="rg-outline-btn"
-                              style={{ padding: "4px 10px", fontSize: "12px" }}
+                              style={{ padding: "6px 12px", fontSize: "12.5px" }}
                               onClick={() => handleCopyText(rev.bodyFull, idx)}
                             >
-                              {copiedIndex === idx ? "Copied!" : "Copy"}
+                              {copiedIndex === idx ? "Copied! ✓" : "Copy"}
                             </button>
                             <button
                               type="button"
                               className="rg-generate-btn"
-                              style={{ padding: "4px 12px", fontSize: "12px" }}
+                              style={{ padding: "6px 14px", fontSize: "12.5px" }}
                               disabled={savedStatus[idx] || savingIndex === idx}
                               onClick={() => handleSaveDraft(rev, idx)}
                             >
-                              {savedStatus[idx] ? "Saved ✓" : "Save Draft"}
+                              {savedStatus[idx] ? "Saved to Drafts ✓" : "Save as Draft Review"}
                             </button>
                           </div>
                         </div>
 
-                        <p style={{ margin: "4px 0 0 0", fontSize: "13px", color: "#334155", lineHeight: 1.45 }}>
+                        {rev.bodyShort && (
+                          <div style={{ fontSize: "13.5px", fontWeight: 600, color: "#1e293b", marginBottom: "4px" }}>
+                            "{rev.bodyShort}"
+                          </div>
+                        )}
+
+                        <p style={{ margin: "4px 0 0 0", fontSize: "13.5px", color: "#334155", lineHeight: 1.5 }}>
                           {rev.bodyFull}
                         </p>
                       </div>
                     ))}
                   </div>
-                )}
-              </div>
+                </div>
+              )}
             </div>
           </div>
         )}
 
         {/* ============================================================== */}
         {/* TAB 2: ADD REAL REVIEW (CUSTOM MANUAL REVIEW)                   */}
+        {/* FULL WIDTH CONSISTENT WORKFLOW                                  */}
         {/* ============================================================== */}
         {selectedTab === 2 && (
-          <div className="rg-card" style={{ padding: "32px" }}>
+          <div className="rg-step-card" style={{ padding: "32px" }}>
             {/* Header with Title and Order Matched Badge */}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "26px", flexWrap: "wrap", gap: "12px" }}>
               <div>
