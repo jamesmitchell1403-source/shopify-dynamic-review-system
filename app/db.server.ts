@@ -63,6 +63,10 @@ export async function ensureTablesExist() {
           await prisma.$executeRawUnsafe(`ALTER TABLE ShopSettings ADD COLUMN openaiApiKey TEXT;`);
         } catch (_) {}
 
+        try {
+          await prisma.$executeRawUnsafe(`ALTER TABLE ShopSettings ADD COLUMN fallbackAiProvider TEXT DEFAULT 'auto';`);
+        } catch (_) {}
+
         await prisma.$executeRawUnsafe(`
           CREATE TABLE IF NOT EXISTS Review (
             id TEXT PRIMARY KEY,

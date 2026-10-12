@@ -2,6 +2,8 @@ export interface SavedAIKeys {
   anthropicApiKey?: string | null;
   geminiApiKey?: string | null;
   openaiApiKey?: string | null;
+  defaultAiProvider?: string | null;
+  fallbackAiProvider?: string | null;
 }
 
 export async function getShopAIKeysFromShopify(admin: any): Promise<SavedAIKeys | null> {
@@ -24,6 +26,8 @@ export async function getShopAIKeysFromShopify(admin: any): Promise<SavedAIKeys 
         anthropicApiKey: parsed.anthropicApiKey || null,
         geminiApiKey: parsed.geminiApiKey || null,
         openaiApiKey: parsed.openaiApiKey || null,
+        defaultAiProvider: parsed.defaultAiProvider || null,
+        fallbackAiProvider: parsed.fallbackAiProvider || null,
       };
     }
   } catch (err) {
@@ -57,6 +61,8 @@ export async function saveShopAIKeysToShopify(
       anthropicApiKey: keys.anthropicApiKey !== undefined ? keys.anthropicApiKey : (existing?.anthropicApiKey || ""),
       geminiApiKey: keys.geminiApiKey !== undefined ? keys.geminiApiKey : (existing?.geminiApiKey || ""),
       openaiApiKey: keys.openaiApiKey !== undefined ? keys.openaiApiKey : (existing?.openaiApiKey || ""),
+      defaultAiProvider: keys.defaultAiProvider !== undefined ? keys.defaultAiProvider : (existing?.defaultAiProvider || "gemini"),
+      fallbackAiProvider: keys.fallbackAiProvider !== undefined ? keys.fallbackAiProvider : (existing?.fallbackAiProvider || "auto"),
     };
 
     const valueStr = JSON.stringify(mergedKeys);
