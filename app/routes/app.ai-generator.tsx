@@ -20,7 +20,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     console.warn("AI Generator review restore warning:", e);
   }
 
-  const adminToken = process.env.SHOPIFY_ADMIN_ACCESS_TOKEN || ("shpat_" + "619247c484119ab17aa96895bc8d90ef");
+  const adminToken = session?.accessToken || process.env.SHOPIFY_ADMIN_ACCESS_TOKEN || "";
   let products: Array<{ label: string; value: string; description: string; imageUrl: string | null; handle?: string }> = [];
   let isScopeForbidden = false;
 

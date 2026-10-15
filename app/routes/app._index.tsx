@@ -48,9 +48,19 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   const shopWhere = getShopWhereClause(shop);
 
-  // 1. Fetch all reviews for this store
+  // 1. Fetch reviews for this store with optimized field selection
   const reviews = await db.review.findMany({
     where: shopWhere,
+    select: {
+      id: true,
+      reviewerName: true,
+      rating: true,
+      bodyShort: true,
+      source: true,
+      isPublished: true,
+      isAiGenerated: true,
+      createdAt: true,
+    },
     orderBy: { createdAt: "desc" },
   });
 
@@ -203,12 +213,83 @@ export async function loader({ request }: LoaderFunctionArgs) {
     }
   }).length;
 
-  const weeklyGrowth =
-    prev7DaysCount > 0
-      ? Math.round(((last7DaysCount - prev7DaysCount) / prev7DaysCount) * 100)
-      : last7DaysCount > 0
-      ? 12
-      : 8;
+  let weeklyGrowth = 0;
+  let weeklyGrowthText = "0% this week";
+  let isWeeklyPositive = true;
+
+  if (prev7DaysCount > 0) {
+    const pct = Math.round(((last7DaysCount - prev7DaysCount) / prev7DaysCount) * 100);
+    weeklyGrowth = pct;
+    weeklyGrowthText = `${pct >= 0 ? "+" : ""}${pct}% this week`;
+    isWeeklyPositive = pct >= 0;
+  } else if (last7DaysCount > 0) {
+    weeklyGrowth = 100;
+    weeklyGrowthText = `+${last7DaysCount} new this week`;
+    isWeeklyPositive = true;
+  } else {
+    weeklyGrowth = 0;
+    weeklyGrowthText = "0% this week";
+    isWeeklyPositive = true;
+  }
+
+  // Real Rating Difference (last 30 days vs previous 30 days)
+  const recent30Reviews = reviews.filter((r) => {
+    try {
+      return now.getTime() - new Date(r.createdAt).getTime() <= 30 * 24 * 60 * 60 * 1000;
+    } catch {
+      return false;
+    }
+  });
+  const prev30Reviews = reviews.filter((r) => {
+    try {
+      const diff = now.getTime() - new Date(r.createdAt).getTime();
+      return diff > 30 * 24 * 60 * 60 * 1000 && diff <= 60 * 24 * 60 * 60 * 1000;
+    } catch {
+      return false;
+    }
+  });
+
+  const recentAvg = recent30Reviews.length > 0
+    ? recent30Reviews.reduce((sum, r) => sum + (r.rating || 5), 0) / recent30Reviews.length
+    : Number(averageRating);
+  const prevAvg = prev30Reviews.length > 0
+    ? prev30Reviews.reduce((sum, r) => sum + (r.rating || 5), 0) / prev30Reviews.length
+    : recentAvg;
+  const ratingDiffVal = Number((recentAvg - prevAvg).toFixed(1));
+  const ratingDiffText = ratingDiffVal >= 0 ? `+${ratingDiffVal.toFixed(1)}` : `${ratingDiffVal.toFixed(1)}`;
+  const isRatingPositive = ratingDiffVal >= 0;
+
+  // Real 7-day sparklines from actual database reviews
+  const sparklineTotal: number[] = [];
+  const sparklineRating: number[] = [];
+  const sparklineRequests: number[] = [];
+
+  for (let i = 6; i >= 0; i--) {
+    const dStart = new Date(now);
+    dStart.setDate(dStart.getDate() - i);
+    dStart.setHours(0, 0, 0, 0);
+    const dEnd = new Date(dStart);
+    dEnd.setDate(dEnd.getDate() + 1);
+
+    const dayReviews = reviews.filter((r) => {
+      try {
+        const cd = new Date(r.createdAt);
+        return cd >= dStart && cd < dEnd;
+      } catch {
+        return false;
+      }
+    });
+
+    const dayCount = dayReviews.length;
+    const dayRating = dayCount > 0
+      ? Number((dayReviews.reduce((sum, r) => sum + (r.rating || 5), 0) / dayCount).toFixed(1))
+      : Number(averageRating);
+    const dayPub = dayReviews.filter((r) => r.isPublished).length;
+
+    sparklineTotal.push(dayCount);
+    sparklineRating.push(dayRating);
+    sparklineRequests.push(dayPub);
+  }
 
   // 9. Checklist status
   const hasAiKey = Boolean(
@@ -243,11 +324,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
     createdAt: r.createdAt ? new Date(r.createdAt).toISOString() : new Date().toISOString(),
   }));
 
-  // Sparkline data samples
-  const sparklineTotal = [18, 22, 20, 26, 31, 35, 42];
-  const sparklineRating = [4.4, 4.5, 4.5, 4.6, 4.5, 4.6, 4.6];
-  const sparklineRequests = [12, 14, 15, 17, 16, 18, 20];
-
   return json({
     totalReviews,
     publishedReviews,
@@ -256,13 +332,17 @@ export async function loader({ request }: LoaderFunctionArgs) {
     importedCount,
     averageRating,
     weeklyGrowth,
+    weeklyGrowthText,
+    isWeeklyPositive,
+    ratingDiffText,
+    isRatingPositive,
     totalQrScans,
     starBreakdown,
     sourcesBreakdown,
     chartData: {
-      "30d": data30d.some((d) => d.count > 0) ? data30d : [{ label: "Oct 1", count: 12 }, { label: "Oct 8", count: 28 }, { label: "Oct 15", count: 45 }, { label: "Today", count: totalReviews }],
-      "90d": data90d.some((d) => d.count > 0) ? data90d : [{ label: "Month 1", count: 40 }, { label: "Month 2", count: 120 }, { label: "Month 3", count: totalReviews }],
-      "1y": data1y.some((d) => d.count > 0) ? data1y : [{ label: "Q1", count: 35 }, { label: "Q2", count: 110 }, { label: "Q3", count: 240 }, { label: "Q4", count: totalReviews }],
+      "30d": data30d,
+      "90d": data90d,
+      "1y": data1y,
     },
     checklist: {
       items: checklistItems,
@@ -759,8 +839,20 @@ export default function DynamicReviewDashboard() {
                 {data.totalReviews}
               </div>
               <div style={{ marginTop: "6px" }}>
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 3, background: "#dcfce7", color: "#166534", padding: "2px 8px", borderRadius: "12px", fontSize: "12px", fontWeight: "700" }}>
-                  <Icon source={ArrowUpIcon} /> +{data.weeklyGrowth}% this week
+                <span
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 3,
+                    background: data.isWeeklyPositive ? "#dcfce7" : "#f1f5f9",
+                    color: data.isWeeklyPositive ? "#166534" : "#475569",
+                    padding: "2px 8px",
+                    borderRadius: "12px",
+                    fontSize: "12px",
+                    fontWeight: "700",
+                  }}
+                >
+                  {data.isWeeklyPositive && <Icon source={ArrowUpIcon} />} {data.weeklyGrowthText}
                 </span>
               </div>
             </div>
@@ -794,8 +886,20 @@ export default function DynamicReviewDashboard() {
                 <span style={{ color: "#f59e0b", fontSize: "18px", letterSpacing: "1px" }}>★★★★★</span>
               </div>
               <div style={{ marginTop: "6px" }}>
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 3, background: "#dcfce7", color: "#166534", padding: "2px 8px", borderRadius: "12px", fontSize: "12px", fontWeight: "700" }}>
-                  <Icon source={ArrowUpIcon} /> +0.2
+                <span
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 3,
+                    background: data.isRatingPositive ? "#dcfce7" : "#f1f5f9",
+                    color: data.isRatingPositive ? "#166534" : "#475569",
+                    padding: "2px 8px",
+                    borderRadius: "12px",
+                    fontSize: "12px",
+                    fontWeight: "700",
+                  }}
+                >
+                  {data.isRatingPositive && <Icon source={ArrowUpIcon} />} {data.ratingDiffText}
                 </span>
               </div>
             </div>

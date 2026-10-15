@@ -3,6 +3,7 @@ import { useLoaderData, useActionData, Form, useNavigation } from "@remix-run/re
 import db, { ensureTablesExist } from "../db.server";
 import { autoTagReviewText } from "../services/ai/autoTagger";
 import { syncReviewsToShopify, ensureReviewsAndSettingsRestored } from "../services/reviewPersistence.server";
+import { canonicalizeShopDomain } from "../services/shopDomain.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   await ensureTablesExist();
@@ -42,7 +43,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
 export async function action({ request }: ActionFunctionArgs) {
   const formData = await request.formData();
-  const shop = (formData.get("shop") as string) || "default.myshopify.com";
+  const rawShop = (formData.get("shop") as string) || new URL(request.url).searchParams.get("shop") || "";
+  const shop = rawShop ? canonicalizeShopDomain(rawShop) : "";
+  if (!shop) {
+    return json({ success: false, error: "Missing or invalid shop domain." }, { status: 400 });
+  }
   const productId = (formData.get("productId") as string) || "general";
   const orderId = (formData.get("orderId") as string) || null;
   const reviewerName = (formData.get("reviewerName") as string) || "Verified Buyer";

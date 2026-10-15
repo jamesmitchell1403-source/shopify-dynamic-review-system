@@ -35,16 +35,13 @@ export async function loader({ request }: LoaderFunctionArgs) {
       orderBy: { updatedAt: "desc" },
     }).catch(() => null);
   }
-  if (!settings) {
-    settings = await db.shopSettings.findFirst({ orderBy: { updatedAt: "desc" } }).catch(() => null);
-  }
 
   const rawPosition = settings?.widgetPosition || "bottom-left";
   const rawStyle = settings?.widgetLayoutStyle || "layout-1";
   const layoutStyle = rawStyle.startsWith("layout-") ? rawStyle : `layout-${rawStyle}`;
 
   const widgetConfig = {
-    position: rawPosition === "bottom-right" ? "bottom-left" : rawPosition,
+    position: rawPosition,
     layoutStyle: layoutStyle,
     delaySeconds: settings?.widgetDelaySeconds ?? 1,
     displayDuration: settings?.widgetDisplayDuration ?? 10,

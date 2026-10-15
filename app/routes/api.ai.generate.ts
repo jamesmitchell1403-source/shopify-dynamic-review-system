@@ -192,36 +192,53 @@ export async function action({ request }: ActionFunctionArgs) {
   if (actionType === "bulk_generate_all") {
     try {
       const adminToken =
-        process.env.SHOPIFY_ADMIN_ACCESS_TOKEN ||
-        "shpat_" + "619247c484119ab17aa96895bc8d90ef";
+        session?.accessToken || process.env.SHOPIFY_ADMIN_ACCESS_TOKEN || "";
       let productsList: any[] = [];
 
       // 1. Try fetching active products via GraphQL
       try {
-        const res = await admin.graphql(`
-          #graphql
-          query getAllProductsForBulkAI {
-            products(first: 250, query: "status:active") {
-              nodes {
-                id
-                title
-                handle
-                description
-                status
-                productType
-                tags
-                featuredImage {
-                  url
+        let hasNextPage = true;
+        let cursor: string | null = null;
+        let pagesFetched = 0;
+
+        while (hasNextPage && pagesFetched < 5) {
+          pagesFetched++;
+          const res: any = await admin.graphql(
+            `#graphql
+            query getAllProductsForBulkAI($cursor: String) {
+              products(first: 250, query: "status:active", after: $cursor) {
+                pageInfo {
+                  hasNextPage
+                  endCursor
+                }
+                nodes {
+                  id
+                  title
+                  handle
+                  description
+                  status
+                  productType
+                  tags
+                  featuredImage {
+                    url
+                  }
                 }
               }
-            }
-          }
-        `);
-        const jsonRes = await res.json();
-        const rawNodes = jsonRes.data?.products?.nodes || [];
-        productsList = rawNodes.filter(
-          (p: any) => (p.status || "").toUpperCase() === "ACTIVE" || !p.status,
-        );
+            }`,
+            { variables: { cursor } }
+          );
+          const jsonRes: any = await res.json();
+          const productConnection: any = jsonRes.data?.products;
+          const rawNodes = productConnection?.nodes || [];
+          const activeNodes = rawNodes.filter(
+            (p: any) => (p.status || "").toUpperCase() === "ACTIVE" || !p.status,
+          );
+          productsList.push(...activeNodes);
+
+          hasNextPage = Boolean(productConnection?.pageInfo?.hasNextPage);
+          cursor = productConnection?.pageInfo?.endCursor || null;
+          if (!cursor) break;
+        }
       } catch (gqlErr) {
         console.warn("GraphQL bulk fetch error:", gqlErr);
       }

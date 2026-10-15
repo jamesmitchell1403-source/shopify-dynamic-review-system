@@ -78,7 +78,8 @@ function getShopifyApp(request?: Request) {
 
 export default shopifyInstance2;
 export const apiVersion = ApiVersion.January25;
-export const addDocumentResponseHeaders = (res: Response) => shopifyInstance2.addDocumentResponseHeaders(res);
+export const addDocumentResponseHeaders = (request: Request, headers: Headers) =>
+  shopifyInstance2.addDocumentResponseHeaders(request, headers);
 export const authenticate = {
   admin: async (request: Request) => {
     const primaryApp = getShopifyApp(request);

@@ -139,9 +139,6 @@
     window.__rw_widget_running = true;
 
     let position = settings.position || 'bottom-left';
-    if (position === 'bottom-right') {
-      position = 'bottom-left';
-    }
     const rawStyle = settings.layoutStyle || 'layout-1';
     const layoutStyle = rawStyle.startsWith('layout-') ? rawStyle : `layout-${rawStyle}`;
     const layoutClass = `rw-layout-${layoutStyle}`;

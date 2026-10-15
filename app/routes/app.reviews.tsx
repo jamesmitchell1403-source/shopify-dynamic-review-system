@@ -64,27 +64,45 @@ export async function loader({ request }: LoaderFunctionArgs) {
   // 1. Fetch catalog products to build product title mapping
   const catalogProductMap = new Map<string, string>();
   try {
-    const res = await admin.graphql(`
-      #graphql
-      query getProductsForReviewsList {
-        products(first: 250) {
-          nodes {
-            id
-            title
-            handle
+    let hasNextPage = true;
+    let cursor: string | null = null;
+    let pagesFetched = 0;
+
+    while (hasNextPage && pagesFetched < 5) {
+      pagesFetched++;
+      const res: any = await admin.graphql(
+        `#graphql
+        query getProductsForReviewsList($cursor: String) {
+          products(first: 250, after: $cursor) {
+            pageInfo {
+              hasNextPage
+              endCursor
+            }
+            nodes {
+              id
+              title
+              handle
+            }
           }
+        }`,
+        { variables: { cursor } }
+      );
+      const data: any = await res.json();
+      const productConnection: any = data?.data?.products;
+      const nodes = productConnection?.nodes || [];
+
+      for (const node of nodes) {
+        catalogProductMap.set(node.id, node.title);
+        const rawId = node.id.replace("gid://shopify/Product/", "");
+        catalogProductMap.set(rawId, node.title);
+        if (node.handle) {
+          catalogProductMap.set(node.handle, node.title);
         }
       }
-    `);
-    const data = await res.json();
-    const nodes = data?.data?.products?.nodes || [];
-    for (const node of nodes) {
-      catalogProductMap.set(node.id, node.title);
-      const rawId = node.id.replace("gid://shopify/Product/", "");
-      catalogProductMap.set(rawId, node.title);
-      if (node.handle) {
-        catalogProductMap.set(node.handle, node.title);
-      }
+
+      hasNextPage = Boolean(productConnection?.pageInfo?.hasNextPage);
+      cursor = productConnection?.pageInfo?.endCursor || null;
+      if (!cursor) break;
     }
   } catch (err) {
     console.warn("GraphQL product fetch warning in reviews loader:", err);
@@ -110,7 +128,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     }
 
     if (r.productHandle && r.productHandle !== "all") {
-      return r.productHandle.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+      return r.productHandle.replace(/-/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase());
     }
 
     return "General Store Product";
@@ -1874,9 +1892,11 @@ export default function ReviewsPage() {
                 <Text as="p" variant="bodyXs" tone="subdued">
                   Product: <strong>{uploadTargetReview.productTitle}</strong>
                 </Text>
-                <Text as="p" variant="bodyXs" tone="subdued" style={{ marginTop: "4px" }}>
-                  "{uploadTargetReview.bodyShort}"
-                </Text>
+                <div style={{ marginTop: "4px" }}>
+                  <Text as="p" variant="bodyXs" tone="subdued">
+                    "{uploadTargetReview.bodyShort}"
+                  </Text>
+                </div>
               </div>
             )}
 
@@ -1887,7 +1907,7 @@ export default function ReviewsPage() {
                 pressed={mediaSourceMode === "shopify_files"}
                 onClick={() => setMediaSourceMode("shopify_files")}
               >
-                📁 Select Existing Shopify Media ({shopifyFiles.length})
+                {`📁 Select Existing Shopify Media (${shopifyFiles.length})`}
               </Button>
               <Button
                 size="medium"

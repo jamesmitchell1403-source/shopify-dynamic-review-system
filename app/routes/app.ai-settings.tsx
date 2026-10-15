@@ -223,7 +223,6 @@ export async function action({ request }: ActionFunctionArgs) {
         geminiApiKey,
         openaiApiKey,
         defaultAiProvider,
-        fallbackAiProvider,
       },
       create: {
         shop,
@@ -231,7 +230,6 @@ export async function action({ request }: ActionFunctionArgs) {
         geminiApiKey,
         openaiApiKey,
         defaultAiProvider,
-        fallbackAiProvider,
       },
     });
   } catch (err) {
@@ -240,24 +238,22 @@ export async function action({ request }: ActionFunctionArgs) {
       const existing = await db.$queryRawUnsafe<any[]>(`SELECT id FROM ShopSettings WHERE shop = ?`, shop);
       if (existing && existing.length > 0) {
         await db.$executeRawUnsafe(
-          `UPDATE ShopSettings SET anthropicApiKey = ?, geminiApiKey = ?, openaiApiKey = ?, defaultAiProvider = ?, fallbackAiProvider = ? WHERE shop = ?`,
+          `UPDATE ShopSettings SET anthropicApiKey = ?, geminiApiKey = ?, openaiApiKey = ?, defaultAiProvider = ? WHERE shop = ?`,
           anthropicApiKey,
           geminiApiKey,
           openaiApiKey,
           defaultAiProvider,
-          fallbackAiProvider,
           shop
         );
       } else {
         await db.$executeRawUnsafe(
-          `INSERT INTO ShopSettings (id, shop, anthropicApiKey, geminiApiKey, openaiApiKey, defaultAiProvider, fallbackAiProvider) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO ShopSettings (id, shop, anthropicApiKey, geminiApiKey, openaiApiKey, defaultAiProvider) VALUES (?, ?, ?, ?, ?, ?)`,
           `set_${Date.now()}`,
           shop,
           anthropicApiKey,
           geminiApiKey,
           openaiApiKey,
-          defaultAiProvider,
-          fallbackAiProvider
+          defaultAiProvider
         );
       }
     } catch (sqlErr) {

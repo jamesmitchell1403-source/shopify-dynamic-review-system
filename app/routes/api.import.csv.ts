@@ -23,36 +23,54 @@ export async function action({ request }: ActionFunctionArgs) {
   const sourceType = (formData.get("sourceType") as string) || "IMPORTED_AMAZON"; // IMPORTED_AMAZON | IMPORTED_FLIPKART | IMPORTED_ALIBABA
   const manualMappingsJson = formData.get("manualMappings") as string;
 
-  const adminToken = process.env.SHOPIFY_ADMIN_ACCESS_TOKEN || ("shpat_" + "619247c484119ab17aa96895bc8d90ef");
+  const adminToken = session?.accessToken || process.env.SHOPIFY_ADMIN_ACCESS_TOKEN || "";
 
   // Fetch shop products to match SKUs / Handles / Product IDs
   let shopifyProducts: Array<{ id: string; handle: string; title: string; skus: string[] }> = [];
   try {
-    const gqlResponse = await admin.graphql(`
-      query getProductsForMatching {
-        products(first: 100) {
-          nodes {
-            id
-            handle
-            title
-            variants(first: 10) {
-              nodes {
-                sku
+    let hasNextPage = true;
+    let cursor: string | null = null;
+    let pagesFetched = 0;
+
+    while (hasNextPage && pagesFetched < 5) {
+      pagesFetched++;
+      const gqlResponse: any = await admin.graphql(
+        `query getProductsForMatching($cursor: String) {
+          products(first: 250, after: $cursor) {
+            pageInfo {
+              hasNextPage
+              endCursor
+            }
+            nodes {
+              id
+              handle
+              title
+              variants(first: 20) {
+                nodes {
+                  sku
+                }
               }
             }
           }
-        }
+        }`,
+        { variables: { cursor } }
+      );
+      const gqlData: any = await gqlResponse.json();
+      const productConnection: any = gqlData?.data?.products;
+      const rawNodes = productConnection?.nodes || [];
+
+      for (const p of rawNodes) {
+        shopifyProducts.push({
+          id: p.id,
+          handle: p.handle,
+          title: p.title,
+          skus: p.variants?.nodes?.map((v: any) => v.sku).filter(Boolean) || [],
+        });
       }
-    `);
-    const gqlData = await gqlResponse.json();
-    const rawNodes = gqlData.data?.products?.nodes;
-    if (rawNodes && rawNodes.length > 0) {
-      shopifyProducts = rawNodes.map((p: any) => ({
-        id: p.id,
-        handle: p.handle,
-        title: p.title,
-        skus: p.variants?.nodes?.map((v: any) => v.sku).filter(Boolean) || [],
-      }));
+
+      hasNextPage = Boolean(productConnection?.pageInfo?.hasNextPage);
+      cursor = productConnection?.pageInfo?.endCursor || null;
+      if (!cursor) break;
     }
   } catch (err) {
     console.warn("Shopify GraphQL product query error:", err);

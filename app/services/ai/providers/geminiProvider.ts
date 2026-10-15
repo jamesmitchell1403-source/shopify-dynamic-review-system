@@ -56,7 +56,7 @@ export class GeminiProvider implements AIProvider {
       });
     }
 
-    const imagePart = response.candidates?.[0]?.content?.parts?.find((part) => part.inlineData?.data);
+    const imagePart = response.candidates?.[0]?.content?.parts?.find((part: any) => part.inlineData?.data);
     if (!imagePart?.inlineData?.data) {
       throw new Error("Gemini did not return a generated review image.");
     }

@@ -28,7 +28,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     console.warn("Import reviews restore warning:", e);
   }
 
-  const adminToken = process.env.SHOPIFY_ADMIN_ACCESS_TOKEN || ("shpat_" + "619247c484119ab17aa96895bc8d90ef");
+  const adminToken = session?.accessToken || process.env.SHOPIFY_ADMIN_ACCESS_TOKEN || "";
 
   // 1. Fetch active shop products for mapping dropdown & title resolution
   let products: Array<{ label: string; value: string; handle: string; title: string }> = [];
