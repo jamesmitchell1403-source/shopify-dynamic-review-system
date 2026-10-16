@@ -1,11 +1,11 @@
 import { json, LoaderFunctionArgs, ActionFunctionArgs } from "@remix-run/node";
 import { useLoaderData, useSubmit, useNavigation, useFetcher } from "@remix-run/react";
 import { useState, useMemo } from "react";
-import { Page, Banner } from "@shopify/polaris";
+import { Page, Banner, Modal, Text } from "@shopify/polaris";
 import { authenticate } from "../shopify.server";
 import db, { ensureTablesExist } from "../db.server";
 import { getShopAIKeysFromShopify, saveShopAIKeysToShopify } from "../services/shopifyMetafields.server";
-import { ensureAiJobsRestored, syncAiJobsToShopify } from "../services/reviewPersistence.server";
+import { ensureAiJobsRestored, syncAiJobsToShopify, fetchShopMetafieldValue } from "../services/reviewPersistence.server";
 import { canonicalizeShopDomain } from "../services/shopDomain.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -34,8 +34,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
       orderBy: { createdAt: "desc" },
     });
 
-    // If no jobs exist yet, seed the default audit history from the reference design
-    if (aiJobs.length === 0) {
+    const metaVal = await fetchShopMetafieldValue(admin, shop, "ai_jobs_backup");
+    const isCleared = metaVal === "[]";
+
+    // If no jobs exist yet and merchant hasn't explicitly cleared them, seed the default audit history from the reference design
+    if (aiJobs.length === 0 && !isCleared) {
       const seedJobs = [
         {
           id: `seed_job_1_${Date.now()}`,
@@ -91,6 +94,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
         where: { shop },
         orderBy: { createdAt: "desc" },
       });
+
+      await syncAiJobsToShopify(admin, shop, true);
     }
 
     // Read persistent API keys stored in Shopify's cloud (Shop Metafields)
@@ -183,7 +188,19 @@ export async function action({ request }: ActionFunctionArgs) {
     return json({ success: true, message: "Audit history record deleted." });
   }
 
-  // 3. Clear all audit logs
+  // 3. Delete selected audit records
+  if (intent === "deleteSelectedJobs") {
+    const jobIds = formData.getAll("jobIds") as string[];
+    if (jobIds.length > 0) {
+      await db.aiGenerationJob.deleteMany({
+        where: { id: { in: jobIds }, shop },
+      });
+      await syncAiJobsToShopify(admin, shop, true);
+    }
+    return json({ success: true, message: "Selected audit history records deleted." });
+  }
+
+  // 4. Clear all audit logs
   if (intent === "clearAllJobs") {
     await db.aiGenerationJob.deleteMany({
       where: { shop },
@@ -289,6 +306,51 @@ export default function AiSettingsPage() {
   const [savedSuccess, setSavedSuccess] = useState<boolean>(false);
   const [testingProvider, setTestingProvider] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<{ provider: string; success: boolean; message: string } | null>(null);
+
+  // Activity Log Selection & Deletion states
+  const [selectedJobIds, setSelectedJobIds] = useState<Set<string>>(new Set());
+  const [deleteConfirmModal, setDeleteConfirmModal] = useState<{
+    open: boolean;
+    type: "single" | "selected" | "all";
+    jobId?: string;
+    count?: number;
+  }>({ open: false, type: "single" });
+
+  const allCurrentJobIds = useMemo(() => aiJobs.map((j: any) => j.id), [aiJobs]);
+  const allSelected = allCurrentJobIds.length > 0 && allCurrentJobIds.every((id: string) => selectedJobIds.has(id));
+
+  const toggleSelectAll = () => {
+    if (allSelected) {
+      setSelectedJobIds(new Set());
+    } else {
+      setSelectedJobIds(new Set(allCurrentJobIds));
+    }
+  };
+
+  const toggleSelectOne = (id: string) => {
+    setSelectedJobIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const executeDelete = () => {
+    const fd = new FormData();
+    if (deleteConfirmModal.type === "single" && deleteConfirmModal.jobId) {
+      fd.append("intent", "deleteJob");
+      fd.append("jobId", deleteConfirmModal.jobId);
+    } else if (deleteConfirmModal.type === "selected") {
+      fd.append("intent", "deleteSelectedJobs");
+      selectedJobIds.forEach((id) => fd.append("jobIds", id));
+    } else if (deleteConfirmModal.type === "all") {
+      fd.append("intent", "clearAllJobs");
+    }
+    submit(fd, { method: "post" });
+    setSelectedJobIds(new Set());
+    setDeleteConfirmModal({ open: false, type: "single" });
+  };
 
   // Handle Save
   const handleSave = () => {
@@ -1106,7 +1168,42 @@ export default function AiSettingsPage() {
               <p>Every AI action with provider, model and result</p>
             </div>
 
-            <div>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+              {aiJobs.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setDeleteConfirmModal({ open: true, type: "all", count: aiJobs.length })}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    padding: "7px 14px",
+                    borderRadius: "8px",
+                    border: "1px solid #fecaca",
+                    backgroundColor: "#fef2f2",
+                    color: "#dc2626",
+                    fontSize: "13px",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    transition: "all 0.15s ease",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = "#fee2e2";
+                    e.currentTarget.style.borderColor = "#f87171";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = "#fef2f2";
+                    e.currentTarget.style.borderColor = "#fecaca";
+                  }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="3 6 5 6 21 6" />
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                  </svg>
+                  Clear all logs
+                </button>
+              )}
+
               <button
                 type="button"
                 className="btn-export-csv"
@@ -1123,11 +1220,84 @@ export default function AiSettingsPage() {
             </div>
           </div>
 
+          {/* BULK ACTIONS BAR (When records are selected) */}
+          {selectedJobIds.size > 0 && (
+            <div
+              style={{
+                margin: "0 0 16px 0",
+                padding: "10px 16px",
+                backgroundColor: "#eff6ff",
+                border: "1px solid #bfdbfe",
+                borderRadius: "8px",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: "12px",
+              }}
+            >
+              <div style={{ fontWeight: 600, color: "#1d4ed8", fontSize: "13.5px" }}>
+                {selectedJobIds.size} log {selectedJobIds.size === 1 ? "entry" : "entries"} selected
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <button
+                  type="button"
+                  onClick={() => setDeleteConfirmModal({ open: true, type: "selected", count: selectedJobIds.size })}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    padding: "6px 14px",
+                    borderRadius: "6px",
+                    border: "1px solid #fca5a5",
+                    backgroundColor: "#fee2e2",
+                    color: "#b91c1c",
+                    fontSize: "13px",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="3 6 5 6 21 6" />
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                  </svg>
+                  Delete selected
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedJobIds(new Set())}
+                  style={{
+                    padding: "6px 10px",
+                    borderRadius: "6px",
+                    border: "none",
+                    backgroundColor: "transparent",
+                    color: "#64748b",
+                    fontSize: "12px",
+                    fontWeight: 500,
+                    cursor: "pointer",
+                    textDecoration: "underline",
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Activity Log Table */}
           <div className="table-responsive">
             <table className="log-table">
               <thead>
                 <tr>
+                  <th style={{ width: "36px" }}>
+                    <input
+                      type="checkbox"
+                      checked={allSelected}
+                      onChange={toggleSelectAll}
+                      style={{ width: "16px", height: "16px", cursor: "pointer", accentColor: "#2563eb" }}
+                      title="Select all"
+                    />
+                  </th>
                   <th>Date and time</th>
                   <th>Provider</th>
                   <th>Model</th>
@@ -1135,12 +1305,13 @@ export default function AiSettingsPage() {
                   <th>Target</th>
                   <th>Items</th>
                   <th>Status</th>
+                  <th style={{ textAlign: "right", width: "70px" }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {aiJobs.length === 0 ? (
                   <tr>
-                    <td colSpan={7} style={{ textAlign: "center", padding: "30px 14px", color: "#6b7280" }}>
+                    <td colSpan={9} style={{ textAlign: "center", padding: "30px 14px", color: "#6b7280" }}>
                       No AI actions recorded yet.
                     </td>
                   </tr>
@@ -1168,6 +1339,14 @@ export default function AiSettingsPage() {
 
                     return (
                       <tr key={job.id}>
+                        <td style={{ width: "36px" }}>
+                          <input
+                            type="checkbox"
+                            checked={selectedJobIds.has(job.id)}
+                            onChange={() => toggleSelectOne(job.id)}
+                            style={{ width: "16px", height: "16px", cursor: "pointer", accentColor: "#2563eb" }}
+                          />
+                        </td>
                         <td style={{ color: "#111827", fontWeight: 500 }}>{dt}</td>
                         <td>
                           {prov === "Gemini" && (
@@ -1195,6 +1374,41 @@ export default function AiSettingsPage() {
                             </span>
                           )}
                         </td>
+                        <td style={{ textAlign: "right" }}>
+                          <button
+                            type="button"
+                            onClick={() => setDeleteConfirmModal({ open: true, type: "single", jobId: job.id })}
+                            title="Delete this log entry"
+                            style={{
+                              width: "30px",
+                              height: "30px",
+                              borderRadius: "6px",
+                              border: "1px solid #cbd5e1",
+                              backgroundColor: "#ffffff",
+                              color: "#dc2626",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              cursor: "pointer",
+                              transition: "all 0.15s ease",
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.backgroundColor = "#fee2e2";
+                              e.currentTarget.style.borderColor = "#fca5a5";
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.backgroundColor = "#ffffff";
+                              e.currentTarget.style.borderColor = "#cbd5e1";
+                            }}
+                          >
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <polyline points="3 6 5 6 21 6" />
+                              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                              <line x1="10" y1="11" x2="10" y2="17" />
+                              <line x1="14" y1="11" x2="14" y2="17" />
+                            </svg>
+                          </button>
+                        </td>
                       </tr>
                     );
                   })
@@ -1203,6 +1417,40 @@ export default function AiSettingsPage() {
             </table>
           </div>
         </div>
+
+        {/* CONFIRMATION POPUP MODAL FOR DELETIONS */}
+        <Modal
+          open={deleteConfirmModal.open}
+          onClose={() => setDeleteConfirmModal({ open: false, type: "single" })}
+          title={
+            deleteConfirmModal.type === "all"
+              ? "Clear all AI activity logs?"
+              : deleteConfirmModal.type === "selected"
+              ? `Delete ${deleteConfirmModal.count || selectedJobIds.size} selected log entries?`
+              : "Delete AI activity log entry?"
+          }
+          primaryAction={{
+            content: deleteConfirmModal.type === "all" ? "Clear all" : "Delete",
+            destructive: true,
+            onAction: executeDelete,
+          }}
+          secondaryActions={[
+            {
+              content: "Cancel",
+              onAction: () => setDeleteConfirmModal({ open: false, type: "single" }),
+            },
+          ]}
+        >
+          <Modal.Section>
+            <Text as="p" variant="bodyMd">
+              {deleteConfirmModal.type === "all"
+                ? `Are you sure you want to clear all ${aiJobs.length} AI activity log records? This action cannot be undone.`
+                : deleteConfirmModal.type === "selected"
+                ? `Are you sure you want to delete the ${deleteConfirmModal.count || selectedJobIds.size} selected activity log entries? This action cannot be undone.`
+                : "Are you sure you want to delete this activity log record? This action cannot be undone."}
+            </Text>
+          </Modal.Section>
+        </Modal>
       </div>
     </Page>
   );

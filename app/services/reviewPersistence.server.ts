@@ -158,7 +158,7 @@ async function fetchAllBackupMetafields(
   return map;
 }
 
-async function fetchShopMetafieldValue(
+export async function fetchShopMetafieldValue(
   admin: any,
   shop: string,
   key: string,
@@ -960,6 +960,9 @@ export async function ensureAiJobsRestored(admin: any, shop: string) {
         shop,
         "ai_jobs_backup",
       );
+      if (metaVal === "[]") {
+        return; // Merchant explicitly cleared AI jobs
+      }
       if (metaVal) {
         const parsed = JSON.parse(metaVal);
         if (Array.isArray(parsed) && parsed.length > 0) {
