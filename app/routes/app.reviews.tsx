@@ -443,6 +443,7 @@ export async function action({ request }: ActionFunctionArgs) {
         where: { id: reviewId },
         data: { isPublished: !review.isPublished },
       });
+      syncReviewsToShopify(admin, shop).catch((e) => console.warn(e));
     }
   } else if (intent === "approveSelected") {
     const ids = formData.getAll("ids") as string[];
@@ -451,7 +452,7 @@ export async function action({ request }: ActionFunctionArgs) {
         where: { AND: [shopWhere, { id: { in: ids } }] },
         data: { isPublished: true },
       });
-      await syncReviewsToShopify(admin, shop);
+      syncReviewsToShopify(admin, shop).catch((e) => console.warn(e));
     }
   } else if (intent === "unpublishSelected") {
     const ids = formData.getAll("ids") as string[];
@@ -460,13 +461,14 @@ export async function action({ request }: ActionFunctionArgs) {
         where: { AND: [shopWhere, { id: { in: ids } }] },
         data: { isPublished: false },
       });
-      await syncReviewsToShopify(admin, shop);
+      syncReviewsToShopify(admin, shop).catch((e) => console.warn(e));
     }
   } else if (intent === "approveAllPending") {
     await db.review.updateMany({
       where: { AND: [shopWhere, { isPublished: false }] },
       data: { isPublished: true },
     });
+    syncReviewsToShopify(admin, shop).catch((e) => console.warn(e));
   } else if (intent === "delete") {
     if (reviewId) {
       await recordDeletedReviewIds(admin, shop, [reviewId]);
@@ -474,7 +476,7 @@ export async function action({ request }: ActionFunctionArgs) {
     await db.review.deleteMany({
       where: { AND: [shopWhere, { id: reviewId }] },
     });
-    await syncReviewsToShopify(admin, shop);
+    syncReviewsToShopify(admin, shop).catch((e) => console.warn(e));
   } else if (intent === "deleteAllPending") {
     const pendingReviews = await db.review.findMany({
       where: { AND: [shopWhere, { isPublished: false }] },
@@ -487,7 +489,7 @@ export async function action({ request }: ActionFunctionArgs) {
     await db.review.deleteMany({
       where: { AND: [shopWhere, { isPublished: false }] },
     });
-    await syncReviewsToShopify(admin, shop);
+    syncReviewsToShopify(admin, shop).catch((e) => console.warn(e));
   } else if (intent === "deleteAll") {
     const allReviews = await db.review.findMany({
       where: shopWhere,
@@ -498,7 +500,7 @@ export async function action({ request }: ActionFunctionArgs) {
       await recordDeletedReviewIds(admin, shop, allIds);
     }
     await db.review.deleteMany({ where: shopWhere });
-    await syncReviewsToShopify(admin, shop, true);
+    syncReviewsToShopify(admin, shop, true).catch((e) => console.warn(e));
   } else if (intent === "deleteSelected") {
     const ids = formData.getAll("ids") as string[];
     if (ids.length > 0) {
@@ -506,7 +508,7 @@ export async function action({ request }: ActionFunctionArgs) {
       await db.review.deleteMany({
         where: { AND: [shopWhere, { id: { in: ids } }] },
       });
-      await syncReviewsToShopify(admin, shop);
+      syncReviewsToShopify(admin, shop).catch((e) => console.warn(e));
     }
   } else if (intent === "edit" || intent === "updateMedia") {
     const reviewerName = formData.get("reviewerName") as string;
@@ -563,10 +565,9 @@ export async function action({ request }: ActionFunctionArgs) {
         where: { AND: [shopWhere, { id: reviewId }] },
         data: updateData,
       });
+      syncReviewsToShopify(admin, shop).catch((e) => console.warn(e));
     }
   }
-
-  await syncReviewsToShopify(admin, shop);
 
   return json({ success: true });
 }
@@ -613,9 +614,19 @@ export default function ReviewsPage() {
   // Optimistic tab state for instantaneous visual feedback on click
   const [activeTab, setActiveTab] = useState<string>(tabFilter);
 
+  // Optimistic UI state for instantaneous response on click
+  const [optimisticHiddenIds, setOptimisticHiddenIds] = useState<Set<string>>(new Set());
+  const [optimisticPublishedMap, setOptimisticPublishedMap] = useState<Map<string, boolean>>(new Map());
+
   useEffect(() => {
     setActiveTab(tabFilter);
   }, [tabFilter]);
+
+  // Clear optimistic overrides when loader delivers fresh data
+  useEffect(() => {
+    setOptimisticHiddenIds(new Set());
+    setOptimisticPublishedMap(new Map());
+  }, [reviews]);
 
   const [searchValue, setSearchValue] = useState<string>(searchQuery);
   const [productSearchValue, setProductSearchValue] = useState<string>(productSearchQuery);
@@ -779,7 +790,16 @@ export default function ReviewsPage() {
     setUploadModalOpen(false);
   };
 
-  const allCurrentIds = reviews.map((r: any) => r.id);
+  const displayedReviews = reviews
+    .filter((r: any) => !optimisticHiddenIds.has(r.id))
+    .map((r: any) => ({
+      ...r,
+      isPublished: optimisticPublishedMap.has(r.id)
+        ? optimisticPublishedMap.get(r.id)
+        : r.isPublished,
+    }));
+
+  const allCurrentIds = displayedReviews.map((r: any) => r.id);
   const allSelected =
     allCurrentIds.length > 0 &&
     allCurrentIds.every((id: string) => selectedIds.has(id));
@@ -813,6 +833,11 @@ export default function ReviewsPage() {
   };
 
   const handleTogglePublish = (id: string) => {
+    const current = optimisticPublishedMap.has(id)
+      ? optimisticPublishedMap.get(id)
+      : reviews.find((r: any) => r.id === id)?.isPublished;
+    setOptimisticPublishedMap((prev) => new Map(prev).set(id, !current));
+
     const fd = new FormData();
     fd.append("intent", "togglePublish");
     fd.append("reviewId", id);
@@ -821,6 +846,11 @@ export default function ReviewsPage() {
 
   const handleBulkApprove = () => {
     if (selectedIds.size === 0) return;
+    setOptimisticPublishedMap((prev) => {
+      const next = new Map(prev);
+      selectedIds.forEach((id) => next.set(id, true));
+      return next;
+    });
     const fd = new FormData();
     fd.append("intent", "approveSelected");
     selectedIds.forEach((id) => fd.append("ids", id));
@@ -829,6 +859,11 @@ export default function ReviewsPage() {
 
   const handleBulkUnpublish = () => {
     if (selectedIds.size === 0) return;
+    setOptimisticPublishedMap((prev) => {
+      const next = new Map(prev);
+      selectedIds.forEach((id) => next.set(id, false));
+      return next;
+    });
     const fd = new FormData();
     fd.append("intent", "unpublishSelected");
     selectedIds.forEach((id) => fd.append("ids", id));
@@ -840,18 +875,21 @@ export default function ReviewsPage() {
     setDeleteConfirmModal({ open: false, type: "single" });
 
     if (type === "single" && id) {
+      setOptimisticHiddenIds((prev) => new Set(prev).add(id));
       const fd = new FormData();
       fd.append("intent", "delete");
       fd.append("reviewId", id);
       submit(fd, { method: "post" });
     } else if (type === "selected") {
       if (selectedIds.size === 0) return;
+      setOptimisticHiddenIds((prev) => new Set([...prev, ...selectedIds]));
       const fd = new FormData();
       fd.append("intent", "deleteSelected");
       selectedIds.forEach((sid) => fd.append("ids", sid));
       submit(fd, { method: "post" });
       setSelectedIds(new Set());
     } else if (type === "all") {
+      setOptimisticHiddenIds(new Set(reviews.map((r: any) => r.id)));
       const fd = new FormData();
       fd.append("intent", "deleteAll");
       submit(fd, { method: "post" });
@@ -1319,14 +1357,14 @@ export default function ReviewsPage() {
                 </tr>
               </thead>
               <tbody>
-                {reviews.length === 0 ? (
+                {displayedReviews.length === 0 ? (
                   <tr>
                     <td colSpan={8} style={{ padding: "36px 20px", textAlign: "center", color: "#64748b", fontSize: "14px" }}>
                       No reviews match your selected filters.
                     </td>
                   </tr>
                 ) : (
-                  reviews.map((r: any) => {
+                  displayedReviews.map((r: any) => {
                     const isAiDraft = r.isAiGenerated;
                     const rowBg = isAiDraft ? "#fef3c7" : "#ffffff";
 

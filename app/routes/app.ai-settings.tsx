@@ -1,6 +1,6 @@
 import { json, LoaderFunctionArgs, ActionFunctionArgs } from "@remix-run/node";
 import { useLoaderData, useSubmit, useNavigation, useFetcher } from "@remix-run/react";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Page, Banner, Modal, Text } from "@shopify/polaris";
 import { authenticate } from "../shopify.server";
 import db, { ensureTablesExist } from "../db.server";
@@ -183,7 +183,7 @@ export async function action({ request }: ActionFunctionArgs) {
       await db.aiGenerationJob.deleteMany({
         where: { id: jobId, shop },
       });
-      await syncAiJobsToShopify(admin, shop, true);
+      syncAiJobsToShopify(admin, shop, true).catch((e) => console.warn(e));
     }
     return json({ success: true, message: "Audit history record deleted." });
   }
@@ -195,7 +195,7 @@ export async function action({ request }: ActionFunctionArgs) {
       await db.aiGenerationJob.deleteMany({
         where: { id: { in: jobIds }, shop },
       });
-      await syncAiJobsToShopify(admin, shop, true);
+      syncAiJobsToShopify(admin, shop, true).catch((e) => console.warn(e));
     }
     return json({ success: true, message: "Selected audit history records deleted." });
   }
@@ -205,7 +205,7 @@ export async function action({ request }: ActionFunctionArgs) {
     await db.aiGenerationJob.deleteMany({
       where: { shop },
     });
-    await syncAiJobsToShopify(admin, shop, true);
+    syncAiJobsToShopify(admin, shop, true).catch((e) => console.warn(e));
     return json({ success: true, message: "All audit history records cleared." });
   }
 
@@ -222,14 +222,14 @@ export async function action({ request }: ActionFunctionArgs) {
   const defaultAiProvider = defaultAiProviderRaw ? defaultAiProviderRaw.trim() : "gemini";
   const fallbackAiProvider = fallbackAiProviderRaw ? fallbackAiProviderRaw.trim() : "auto";
 
-  // 1. Save permanently to Shopify Cloud (Shop Metafields) — survives all Render restarts
-  await saveShopAIKeysToShopify(admin, {
+  // 1. Save permanently to Shopify Cloud (Shop Metafields in background)
+  saveShopAIKeysToShopify(admin, {
     anthropicApiKey,
     geminiApiKey,
     openaiApiKey,
     defaultAiProvider,
     fallbackAiProvider,
-  });
+  }, shop).catch((e) => console.warn(e));
 
   // 2. Also update local DB
   try {
@@ -307,8 +307,21 @@ export default function AiSettingsPage() {
   const [testingProvider, setTestingProvider] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<{ provider: string; success: boolean; message: string } | null>(null);
 
-  // Activity Log Selection & Deletion states
+  // Activity Log Selection & Deletion states with instantaneous optimistic response
   const [selectedJobIds, setSelectedJobIds] = useState<Set<string>>(new Set());
+  const [optimisticDeletedJobIds, setOptimisticDeletedJobIds] = useState<Set<string>>(new Set());
+  const [optimisticCleared, setOptimisticCleared] = useState<boolean>(false);
+
+  useEffect(() => {
+    setOptimisticDeletedJobIds(new Set());
+    setOptimisticCleared(false);
+  }, [aiJobs]);
+
+  const displayedAiJobs = useMemo(() => {
+    if (optimisticCleared) return [];
+    return aiJobs.filter((j: any) => !optimisticDeletedJobIds.has(j.id));
+  }, [aiJobs, optimisticDeletedJobIds, optimisticCleared]);
+
   const [deleteConfirmModal, setDeleteConfirmModal] = useState<{
     open: boolean;
     type: "single" | "selected" | "all";
@@ -316,7 +329,7 @@ export default function AiSettingsPage() {
     count?: number;
   }>({ open: false, type: "single" });
 
-  const allCurrentJobIds = useMemo(() => aiJobs.map((j: any) => j.id), [aiJobs]);
+  const allCurrentJobIds = useMemo(() => displayedAiJobs.map((j: any) => j.id), [displayedAiJobs]);
   const allSelected = allCurrentJobIds.length > 0 && allCurrentJobIds.every((id: string) => selectedJobIds.has(id));
 
   const toggleSelectAll = () => {
@@ -337,17 +350,24 @@ export default function AiSettingsPage() {
   };
 
   const executeDelete = () => {
-    const fd = new FormData();
     if (deleteConfirmModal.type === "single" && deleteConfirmModal.jobId) {
+      setOptimisticDeletedJobIds((prev) => new Set(prev).add(deleteConfirmModal.jobId!));
+      const fd = new FormData();
       fd.append("intent", "deleteJob");
       fd.append("jobId", deleteConfirmModal.jobId);
+      submit(fd, { method: "post" });
     } else if (deleteConfirmModal.type === "selected") {
+      setOptimisticDeletedJobIds((prev) => new Set([...prev, ...selectedJobIds]));
+      const fd = new FormData();
       fd.append("intent", "deleteSelectedJobs");
       selectedJobIds.forEach((id) => fd.append("jobIds", id));
+      submit(fd, { method: "post" });
     } else if (deleteConfirmModal.type === "all") {
+      setOptimisticCleared(true);
+      const fd = new FormData();
       fd.append("intent", "clearAllJobs");
+      submit(fd, { method: "post" });
     }
-    submit(fd, { method: "post" });
     setSelectedJobIds(new Set());
     setDeleteConfirmModal({ open: false, type: "single" });
   };
@@ -1309,14 +1329,14 @@ export default function AiSettingsPage() {
                 </tr>
               </thead>
               <tbody>
-                {aiJobs.length === 0 ? (
+                {displayedAiJobs.length === 0 ? (
                   <tr>
                     <td colSpan={9} style={{ textAlign: "center", padding: "30px 14px", color: "#6b7280" }}>
                       No AI actions recorded yet.
                     </td>
                   </tr>
                 ) : (
-                  aiJobs.map((job) => {
+                  displayedAiJobs.map((job) => {
                     const dt = formatDateTime(job.createdAt);
                     const provLower = (job.provider || "").toLowerCase();
                     const prov = provLower.includes("gemini")

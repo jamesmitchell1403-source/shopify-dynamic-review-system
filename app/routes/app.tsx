@@ -1,5 +1,5 @@
 import { json, type HeadersFunction, type LoaderFunctionArgs } from "@remix-run/node";
-import { Link, Outlet, useLoaderData, useRouteError } from "@remix-run/react";
+import { Link, Outlet, useLoaderData, useRouteError, useNavigation } from "@remix-run/react";
 import { boundary } from "@shopify/shopify-app-remix/server";
 import { AppProvider } from "@shopify/shopify-app-remix/react";
 import { NavMenu } from "@shopify/app-bridge-react";
@@ -35,10 +35,34 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
 export default function App() {
   const { apiKey } = useLoaderData<typeof loader>();
+  const navigation = useNavigation();
+  const isNavigating = navigation.state !== "idle";
 
   return (
     <AppProvider isEmbeddedApp apiKey={apiKey}>
+      {/* Top Instant Loading Feedback Bar across All Tabs & Options */}
+      {isNavigating && (
+        <div
+          id="global-top-loader"
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            width: "100%",
+            height: "3px",
+            zIndex: 999999,
+            background: "linear-gradient(90deg, #2563eb, #6366f1, #38bdf8, #2563eb)",
+            backgroundSize: "200% 100%",
+            animation: "topPulse 0.9s infinite linear",
+            boxShadow: "0 1px 6px rgba(37, 99, 235, 0.4)",
+          }}
+        />
+      )}
       <style>{`
+        @keyframes topPulse {
+          0% { background-position: 200% 0; }
+          100% { background-position: -200% 0; }
+        }
         :root {
           --pg-layout-width-primary-max: 100% !important;
           --pg-layout-width-secondary-max: 0px !important;

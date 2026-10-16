@@ -26,6 +26,8 @@ const ADMIN_TOKEN = process.env.SHOPIFY_ADMIN_ACCESS_TOKEN || "";
 // In-memory flags to prevent repetitive Shopify GraphQL roundtrips on every click/navigation
 const restoredShops = new Set<string>();
 const restoredImportHistoryShops = new Set<string>();
+const restoredAiJobsShops = new Set<string>();
+const shopIdCache = new Map<string, string>();
 
 interface MetafieldCacheEntry {
   data: Record<string, string>;
@@ -549,14 +551,18 @@ export async function syncReviewsToShopify(
 
     if (admin) {
       try {
-        const shopRes = await admin.graphql(
-          `#graphql
-          query getShopId {
-            shop { id }
-          }`,
-        );
-        const shopJson = await shopRes.json();
-        const shopId = shopJson.data?.shop?.id;
+        let shopId = shopIdCache.get(shop);
+        if (!shopId) {
+          const shopRes = await admin.graphql(
+            `#graphql
+            query getShopId {
+              shop { id }
+            }`,
+          );
+          const shopJson = await shopRes.json();
+          shopId = shopJson.data?.shop?.id;
+          if (shopId) shopIdCache.set(shop, shopId);
+        }
         if (shopId) {
           const metafieldsInputs: any[] = [
             {
@@ -891,14 +897,18 @@ export async function syncSettingsToShopify(
   invalidateShopPersistenceCache(shop);
   try {
     if (admin) {
-      const shopRes = await admin.graphql(
-        `#graphql
-        query getShopId {
-          shop { id }
-        }`,
-      );
-      const shopJson = await shopRes.json();
-      const shopId = shopJson.data?.shop?.id;
+      let shopId = shopIdCache.get(shop);
+      if (!shopId) {
+        const shopRes = await admin.graphql(
+          `#graphql
+          query getShopId {
+            shop { id }
+          }`,
+        );
+        const shopJson = await shopRes.json();
+        shopId = shopJson.data?.shop?.id;
+        if (shopId) shopIdCache.set(shop, shopId);
+      }
       if (shopId) {
         await admin.graphql(
           `#graphql
@@ -950,6 +960,11 @@ export async function syncSettingsToShopify(
 
 export async function ensureAiJobsRestored(admin: any, shop: string) {
   if (!shop) return;
+  const shopCanonical = canonicalizeShopDomain(shop);
+  if (restoredAiJobsShops.has(shopCanonical)) {
+    return;
+  }
+
   try {
     const count = await db.aiGenerationJob
       .count({ where: { shop } })
@@ -961,6 +976,7 @@ export async function ensureAiJobsRestored(admin: any, shop: string) {
         "ai_jobs_backup",
       );
       if (metaVal === "[]") {
+        restoredAiJobsShops.add(shopCanonical);
         return; // Merchant explicitly cleared AI jobs
       }
       if (metaVal) {
@@ -1003,6 +1019,7 @@ export async function ensureAiJobsRestored(admin: any, shop: string) {
         }
       }
     }
+    restoredAiJobsShops.add(shopCanonical);
   } catch (err) {
     console.error("[Persistence] Error in ensureAiJobsRestored:", err);
   }
@@ -1014,6 +1031,9 @@ export async function syncAiJobsToShopify(
   allowEmptySync: boolean = false,
 ) {
   if (!shop) return;
+  const shopCanonical = canonicalizeShopDomain(shop);
+  restoredAiJobsShops.add(shopCanonical);
+
   try {
     const allJobs = await db.aiGenerationJob.findMany({
       where: { shop },
@@ -1027,14 +1047,18 @@ export async function syncAiJobsToShopify(
 
     if (admin) {
       try {
-        const shopRes = await admin.graphql(
-          `#graphql
-          query getShopId {
-            shop { id }
-          }`,
-        );
-        const shopJson = await shopRes.json();
-        const shopId = shopJson.data?.shop?.id;
+        let shopId = shopIdCache.get(shop);
+        if (!shopId) {
+          const shopRes = await admin.graphql(
+            `#graphql
+            query getShopId {
+              shop { id }
+            }`,
+          );
+          const shopJson = await shopRes.json();
+          shopId = shopJson.data?.shop?.id;
+          if (shopId) shopIdCache.set(shop, shopId);
+        }
         if (shopId) {
           await admin.graphql(
             `#graphql

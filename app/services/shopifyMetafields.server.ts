@@ -6,12 +6,28 @@ export interface SavedAIKeys {
   fallbackAiProvider?: string | null;
 }
 
-export async function getShopAIKeysFromShopify(admin: any): Promise<SavedAIKeys | null> {
+// In-memory cache for AI keys with 5-minute TTL to eliminate GraphQL overhead on page navigation & revalidation
+interface CachedAIKeys {
+  keys: SavedAIKeys | null;
+  expiresAt: number;
+}
+const aiKeysMemoryCache = new Map<string, CachedAIKeys>();
+const AI_KEYS_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+let cachedShopGid: string | null = null;
+
+export async function getShopAIKeysFromShopify(admin: any, cacheKey: string = "default"): Promise<SavedAIKeys | null> {
+  const now = Date.now();
+  const cached = aiKeysMemoryCache.get(cacheKey);
+  if (cached && cached.expiresAt > now) {
+    return cached.keys;
+  }
+
   try {
     const res = await admin.graphql(`
       #graphql
       query getShopAIKeys {
         shop {
+          id
           metafield(namespace: "ai_dynamic_reviews", key: "api_keys") {
             value
           }
@@ -19,17 +35,23 @@ export async function getShopAIKeysFromShopify(admin: any): Promise<SavedAIKeys 
       }
     `);
     const jsonRes = (await res.json()) as any;
+    if (jsonRes.data?.shop?.id) {
+      cachedShopGid = jsonRes.data.shop.id;
+    }
     const rawValue = jsonRes.data?.shop?.metafield?.value;
     if (rawValue) {
       const parsed = JSON.parse(rawValue);
-      return {
+      const keys: SavedAIKeys = {
         anthropicApiKey: parsed.anthropicApiKey || null,
         geminiApiKey: parsed.geminiApiKey || null,
         openaiApiKey: parsed.openaiApiKey || null,
         defaultAiProvider: parsed.defaultAiProvider || null,
         fallbackAiProvider: parsed.fallbackAiProvider || null,
       };
+      aiKeysMemoryCache.set(cacheKey, { keys, expiresAt: now + AI_KEYS_CACHE_TTL });
+      return keys;
     }
+    aiKeysMemoryCache.set(cacheKey, { keys: null, expiresAt: now + AI_KEYS_CACHE_TTL });
   } catch (err) {
     console.warn("Failed to read Shopify Shop Metafields:", err);
   }
@@ -38,24 +60,29 @@ export async function getShopAIKeysFromShopify(admin: any): Promise<SavedAIKeys 
 
 export async function saveShopAIKeysToShopify(
   admin: any,
-  keys: SavedAIKeys
+  keys: SavedAIKeys,
+  cacheKey: string = "default"
 ): Promise<boolean> {
   try {
-    // 1. Get Shop GID
-    const shopRes = await admin.graphql(`
-      #graphql
-      query getShopId {
-        shop {
-          id
+    // 1. Get Shop GID (reuse cached if available)
+    let shopGid = cachedShopGid;
+    if (!shopGid) {
+      const shopRes = await admin.graphql(`
+        #graphql
+        query getShopId {
+          shop {
+            id
+          }
         }
-      }
-    `);
-    const shopJson = (await shopRes.json()) as any;
-    const shopGid = shopJson.data?.shop?.id;
+      `);
+      const shopJson = (await shopRes.json()) as any;
+      shopGid = shopJson.data?.shop?.id;
+      if (shopGid) cachedShopGid = shopGid;
+    }
     if (!shopGid) return false;
 
     // 2. Fetch existing keys to merge if omitted
-    const existing = await getShopAIKeysFromShopify(admin);
+    const existing = await getShopAIKeysFromShopify(admin, cacheKey);
 
     const mergedKeys = {
       anthropicApiKey: keys.anthropicApiKey !== undefined ? keys.anthropicApiKey : (existing?.anthropicApiKey || ""),
@@ -101,6 +128,7 @@ export async function saveShopAIKeysToShopify(
       console.error("Shopify Metafields set userErrors:", errors);
       return false;
     }
+    aiKeysMemoryCache.set(cacheKey, { keys: mergedKeys, expiresAt: Date.now() + AI_KEYS_CACHE_TTL });
     return true;
   } catch (err) {
     console.error("Failed to save Shopify Shop Metafields:", err);

@@ -388,7 +388,7 @@ export async function action({ request }: ActionFunctionArgs) {
         where: { id: reviewId },
         data: { isPublished: !review.isPublished },
       });
-      await syncReviewsToShopify(admin, shop);
+      syncReviewsToShopify(admin, shop).catch((e) => console.warn(e));
     }
     return json({ success: true, message: "Review status updated." });
   }
@@ -398,7 +398,7 @@ export async function action({ request }: ActionFunctionArgs) {
     await db.review.deleteMany({
       where: { AND: [shopWhere, { id: reviewId }] },
     });
-    await syncReviewsToShopify(admin, shop);
+    syncReviewsToShopify(admin, shop).catch((e) => console.warn(e));
     return json({ success: true, message: "Review deleted." });
   }
 
@@ -409,7 +409,7 @@ export async function action({ request }: ActionFunctionArgs) {
       await db.review.deleteMany({
         where: { AND: [shopWhere, { id: { in: ids } }] },
       });
-      await syncReviewsToShopify(admin, shop);
+      syncReviewsToShopify(admin, shop).catch((e) => console.warn(e));
       return json({ success: true, message: `${ids.length} review(s) deleted.` });
     }
     return json({ success: true });
@@ -425,7 +425,7 @@ export async function action({ request }: ActionFunctionArgs) {
       await recordDeletedReviewIds(admin, shop, allIds);
     }
     await db.review.deleteMany({ where: shopWhere });
-    await syncReviewsToShopify(admin, shop, true);
+    syncReviewsToShopify(admin, shop, true).catch((e) => console.warn(e));
     return json({ success: true, message: "All reviews permanently deleted." });
   }
 

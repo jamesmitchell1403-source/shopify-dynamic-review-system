@@ -104,7 +104,7 @@ export async function action({ request }: ActionFunctionArgs) {
     },
   }).catch(() => {});
 
-  await syncSettingsToShopify(admin, shop, updatedSettings);
+  syncSettingsToShopify(admin, shop, updatedSettings).catch((err) => console.warn(err));
 
   return json({ success: true });
 }

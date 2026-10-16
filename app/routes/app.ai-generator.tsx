@@ -25,6 +25,13 @@ interface AiProductsCacheEntry {
 const aiProductsCache = new Map<string, AiProductsCacheEntry>();
 const AI_PRODUCTS_CACHE_TTL = 10 * 60 * 1000;
 
+interface OrdersCacheEntry {
+  orders: Array<{ orderNumber: string; customerName: string; productId?: string }>;
+  expiresAt: number;
+}
+const ordersCache = new Map<string, OrdersCacheEntry>();
+const ORDERS_CACHE_TTL = 10 * 60 * 1000;
+
 export async function loader({ request }: LoaderFunctionArgs) {
   await ensureTablesExist();
   const { admin, session } = await authenticate.admin(request);
@@ -184,40 +191,46 @@ export async function loader({ request }: LoaderFunctionArgs) {
     console.warn("Error grouping reviews:", err);
   }
 
-  // Fetch recent orders for matching in Tab 3
+  // Fetch recent orders for matching in Tab 3 (cached with 10-minute TTL)
   let recentOrders: Array<{ orderNumber: string; customerName: string; productId?: string }> = [];
-  try {
-    const ordersRes = await admin.graphql(`
-      #graphql
-      query getRecentOrdersForReviews {
-        orders(first: 20, sortKey: CREATED_AT, reverse: true) {
-          nodes {
-            id
-            name
-            customer {
-              firstName
-              lastName
-            }
-            lineItems(first: 1) {
-              nodes {
-                product {
-                  id
+  const cachedOrders = ordersCache.get(shop);
+  if (cachedOrders && cachedOrders.expiresAt > now) {
+    recentOrders = cachedOrders.orders;
+  } else {
+    try {
+      const ordersRes = await admin.graphql(`
+        #graphql
+        query getRecentOrdersForReviews {
+          orders(first: 20, sortKey: CREATED_AT, reverse: true) {
+            nodes {
+              id
+              name
+              customer {
+                firstName
+                lastName
+              }
+              lineItems(first: 1) {
+                nodes {
+                  product {
+                    id
+                  }
                 }
               }
             }
           }
         }
-      }
-    `);
-    const ordersJson = (await ordersRes.json()) as any;
-    const nodes = ordersJson.data?.orders?.nodes || [];
-    recentOrders = nodes.map((o: any) => ({
-      orderNumber: o.name,
-      customerName: [o.customer?.firstName, o.customer?.lastName].filter(Boolean).join(" ") || "Verified Customer",
-      productId: o.lineItems?.nodes?.[0]?.product?.id,
-    }));
-  } catch (ordersErr) {
-    // Graceful fallback
+      `);
+      const ordersJson = (await ordersRes.json()) as any;
+      const nodes = ordersJson.data?.orders?.nodes || [];
+      recentOrders = nodes.map((o: any) => ({
+        orderNumber: o.name,
+        customerName: [o.customer?.firstName, o.customer?.lastName].filter(Boolean).join(" ") || "Verified Customer",
+        productId: o.lineItems?.nodes?.[0]?.product?.id,
+      }));
+      ordersCache.set(shop, { orders: recentOrders, expiresAt: now + ORDERS_CACHE_TTL });
+    } catch (ordersErr) {
+      // Graceful fallback
+    }
   }
 
   const aiConfig = await getShopAIConfig(session.shop, admin);
