@@ -11,61 +11,85 @@ import db, { ensureTablesExist } from "../db.server";
 import { getShopAIConfig } from "../services/ai/config";
 import { ensureReviewsAndSettingsRestored } from "../services/reviewPersistence.server";
 
+interface AiProductOption {
+  label: string;
+  value: string;
+  description: string;
+  imageUrl: string | null;
+  handle?: string;
+}
+interface AiProductsCacheEntry {
+  products: AiProductOption[];
+  expiresAt: number;
+}
+const aiProductsCache = new Map<string, AiProductsCacheEntry>();
+const AI_PRODUCTS_CACHE_TTL = 10 * 60 * 1000;
+
 export async function loader({ request }: LoaderFunctionArgs) {
   await ensureTablesExist();
   const { admin, session } = await authenticate.admin(request);
+  const shop = session.shop;
+
   try {
-    await ensureReviewsAndSettingsRestored(admin, session.shop);
+    await ensureReviewsAndSettingsRestored(admin, shop);
   } catch (e) {
     console.warn("AI Generator review restore warning:", e);
   }
 
   const adminToken = session?.accessToken || process.env.SHOPIFY_ADMIN_ACCESS_TOKEN || "";
-  let products: Array<{ label: string; value: string; description: string; imageUrl: string | null; handle?: string }> = [];
+  let products: AiProductOption[] = [];
   let isScopeForbidden = false;
 
-  // 1. Try fetching via GraphQL (query only active/published products)
-  try {
-    const res = await admin.graphql(`
-      #graphql
-      query getProductsForAI {
-        products(first: 250, query: "status:active") {
-          nodes {
-            id
-            title
-            handle
-            description
-            status
-            featuredImage {
-              url
+  // 1. Try fetching via in-memory cache or GraphQL (query only active/published products)
+  const now = Date.now();
+  const cached = aiProductsCache.get(shop);
+
+  if (cached && cached.expiresAt > now) {
+    products = cached.products;
+  } else {
+    try {
+      const res = await admin.graphql(`
+        #graphql
+        query getProductsForAI {
+          products(first: 250, query: "status:active") {
+            nodes {
+              id
+              title
+              handle
+              description
+              status
+              featuredImage {
+                url
+              }
             }
           }
         }
-      }
-    `);
+      `);
 
-    if (res.status !== 403) {
-      const jsonRes = (await res.json()) as any;
-      let rawNodes = jsonRes.data?.products?.nodes;
-      if (!rawNodes || rawNodes.length === 0) {
-        rawNodes = jsonRes.data?.products?.edges?.map((e: any) => e.node) || [];
-      }
+      if (res.status !== 403) {
+        const jsonRes = (await res.json()) as any;
+        let rawNodes = jsonRes.data?.products?.nodes;
+        if (!rawNodes || rawNodes.length === 0) {
+          rawNodes = jsonRes.data?.products?.edges?.map((e: any) => e.node) || [];
+        }
 
-      if (rawNodes.length > 0) {
-        const activeNodes = rawNodes.filter(
-          (p: any) => (p.status || "").toUpperCase() === "ACTIVE" || !p.status,
-        );
-        products = activeNodes.map((p: any) => ({
-          label: p.title,
-          value: p.id,
-          handle: p.handle || "",
-          description: p.description || p.title || "",
-          imageUrl: p.featuredImage?.url || null,
-        }));
+        if (rawNodes.length > 0) {
+          const activeNodes = rawNodes.filter(
+            (p: any) => (p.status || "").toUpperCase() === "ACTIVE" || !p.status,
+          );
+          products = activeNodes.map((p: any) => ({
+            label: p.title,
+            value: p.id,
+            handle: p.handle || "",
+            description: p.description || p.title || "",
+            imageUrl: p.featuredImage?.url || null,
+          }));
+        }
+        aiProductsCache.set(shop, { products, expiresAt: now + AI_PRODUCTS_CACHE_TTL });
       }
+    } catch (err: any) {
+      console.error("GraphQL product fetch error:", err);
     }
-  } catch (err: any) {
-    console.error("GraphQL product fetch error:", err);
   }
 
   // 2. Fallback: Fetch via Admin Access Token REST API (status=active)

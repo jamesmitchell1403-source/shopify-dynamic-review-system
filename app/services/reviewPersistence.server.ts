@@ -23,6 +23,22 @@ import {
 const LOCAL_BACKUP_PATH = path.join(process.cwd(), "reviews_backup_data.json");
 const ADMIN_TOKEN = process.env.SHOPIFY_ADMIN_ACCESS_TOKEN || "";
 
+// In-memory flags to prevent repetitive Shopify GraphQL roundtrips on every click/navigation
+const restoredShops = new Set<string>();
+const restoredImportHistoryShops = new Set<string>();
+
+interface MetafieldCacheEntry {
+  data: Record<string, string>;
+  expiresAt: number;
+}
+const metafieldsCache = new Map<string, MetafieldCacheEntry>();
+const METAFIELDS_CACHE_TTL = 3 * 60 * 1000; // 3 minutes
+
+export function invalidateShopPersistenceCache(shop: string) {
+  const shopCanonical = canonicalizeShopDomain(shop);
+  metafieldsCache.delete(shopCanonical);
+}
+
 function readLocalBackup(): any[] {
   try {
     if (fs.existsSync(LOCAL_BACKUP_PATH)) {
@@ -71,6 +87,13 @@ async function fetchAllBackupMetafields(
   admin: any,
   shop: string,
 ): Promise<Record<string, string>> {
+  const shopCanonical = canonicalizeShopDomain(shop);
+  const now = Date.now();
+  const cached = metafieldsCache.get(shopCanonical);
+  if (cached && cached.expiresAt > now) {
+    return cached.data;
+  }
+
   const map: Record<string, string> = {};
 
   if (admin) {
@@ -95,7 +118,10 @@ async function fetchAllBackupMetafields(
           map[node.key] = node.value;
         }
       }
-      if (Object.keys(map).length > 0) return map;
+      if (Object.keys(map).length > 0) {
+        metafieldsCache.set(shopCanonical, { data: map, expiresAt: now + METAFIELDS_CACHE_TTL });
+        return map;
+      }
     } catch (e) {
       console.warn("[Persistence] GraphQL fetchAllBackupMetafields warning:", e);
     }
@@ -128,6 +154,7 @@ async function fetchAllBackupMetafields(
     console.warn("[Persistence] REST fetchAllBackupMetafields warning:", restErr);
   }
 
+  metafieldsCache.set(shopCanonical, { data: map, expiresAt: now + METAFIELDS_CACHE_TTL });
   return map;
 }
 
@@ -202,6 +229,7 @@ export async function recordDeletedReviewIds(
   deletedIds: string[],
 ): Promise<void> {
   if (!shop || !deletedIds || deletedIds.length === 0) return;
+  invalidateShopPersistenceCache(shop);
   try {
     const shopCanonical = canonicalizeShopDomain(shop);
     const currentSet = await fetchDeletedReviewIds(admin, shop);
@@ -262,15 +290,31 @@ export async function recordDeletedReviewIds(
 export async function ensureReviewsAndSettingsRestored(
   admin: any,
   shop: string,
+  force: boolean = false,
 ) {
   if (!shop) return;
+  const shopCanonical = canonicalizeShopDomain(shop);
+
+  // 1. In-memory check: if already verified or restored in this server session, skip network roundtrips completely
+  if (!force && restoredShops.has(shopCanonical)) {
+    return;
+  }
 
   try {
-    // Restore shop settings if missing
-    let settings = await db.shopSettings
-      .findFirst({ where: getShopWhereClause(shop) })
-      .catch(() => null);
+    const shopWhere = getShopWhereClause(shop);
 
+    // 2. Fast DB check: if local SQLite DB already has both settings AND reviews, we're 100% good!
+    let [settings, reviewCount] = await Promise.all([
+      db.shopSettings.findFirst({ where: shopWhere }).catch(() => null),
+      db.review.count({ where: shopWhere }).catch(() => 0),
+    ]);
+
+    if (!force && settings && reviewCount > 0) {
+      restoredShops.add(shopCanonical);
+      return;
+    }
+
+    // Restore shop settings if missing
     if (!settings) {
       const metaVal = await fetchShopMetafieldValue(
         admin,
@@ -320,13 +364,13 @@ export async function ensureReviewsAndSettingsRestored(
         .catch(() => null);
     }
 
-    // If local database container was rebuilt (e.g. on Render redeployment), restore merchant reviews from Shopify Cloud Metafield & local backup
-    const shopWhere = getShopWhereClause(shop);
-    const shopCanonical = canonicalizeShopDomain(shop);
-    const reviewCount = await db.review
-      .count({ where: shopWhere })
-      .catch(() => 0);
+    // If reviews already exist in local DB and we just needed settings, we can stop here
+    if (!force && reviewCount > 0) {
+      restoredShops.add(shopCanonical);
+      return;
+    }
 
+    // If local database container was rebuilt (e.g. on Render redeployment), restore merchant reviews from Shopify Cloud Metafield & local backup
     const backupMetafieldsMap = await fetchAllBackupMetafields(admin, shop);
     const deletedReviewIds = await fetchDeletedReviewIds(admin, shop);
 
@@ -458,6 +502,7 @@ export async function ensureReviewsAndSettingsRestored(
       // Sync restored dataset back to Shopify Cloud Metafield to keep cloud backup up to date
       await syncReviewsToShopify(admin, shop);
     }
+    restoredShops.add(shopCanonical);
   } catch (err) {
     console.error(
       "[Persistence] Error in ensureReviewsAndSettingsRestored:",
@@ -479,6 +524,7 @@ export async function syncReviewsToShopify(
   explicitWipe: boolean = false,
 ) {
   if (!shop) return;
+  invalidateShopPersistenceCache(shop);
   try {
     const shopWhere = getShopWhereClause(shop);
     const allReviews = await db.review.findMany({
@@ -842,6 +888,7 @@ export async function syncSettingsToShopify(
   settingsData: any,
 ) {
   if (!shop) return;
+  invalidateShopPersistenceCache(shop);
   try {
     if (admin) {
       const shopRes = await admin.graphql(
@@ -1070,10 +1117,23 @@ export function writeLocalImportHistoryBackup(history: any[], shop: string): voi
   }
 }
 
-export async function ensureImportHistoryRestored(admin: any, shop: string): Promise<void> {
+export async function ensureImportHistoryRestored(admin: any, shop: string, force: boolean = false): Promise<void> {
+  if (!shop) return;
+  const shopCanonical = canonicalizeShopDomain(shop);
+
+  if (!force && restoredImportHistoryShops.has(shopCanonical)) {
+    return;
+  }
+
   try {
     const shopWhere = getShopWhereClause(shop);
     const currentCount = await db.productImportHistory.count({ where: shopWhere }).catch(() => 0);
+
+    if (!force && currentCount > 0) {
+      restoredImportHistoryShops.add(shopCanonical);
+      return;
+    }
+
     const backupMetafieldsMap = await fetchAllBackupMetafields(admin, shop);
     let itemsToRestore: any[] = [];
 
@@ -1088,7 +1148,6 @@ export async function ensureImportHistoryRestored(admin: any, shop: string): Pro
 
     if (itemsToRestore.length === 0) {
       const local = readLocalImportHistoryBackup();
-      const shopCanonical = canonicalizeShopDomain(shop);
       itemsToRestore = local.filter((item: any) => canonicalizeShopDomain(item.shop || "") === shopCanonical);
     }
 
@@ -1128,6 +1187,8 @@ export async function ensureImportHistoryRestored(admin: any, shop: string): Pro
         reviewCount: { in: [64, 31, 19] },
       },
     }).catch(() => null);
+
+    restoredImportHistoryShops.add(shopCanonical);
   } catch (e) {
     console.warn("[Persistence] ensureImportHistoryRestored error:", e);
   }

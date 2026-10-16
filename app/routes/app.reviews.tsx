@@ -1,6 +1,6 @@
 import { json, LoaderFunctionArgs, ActionFunctionArgs } from "@remix-run/node";
 import { useLoaderData, useSubmit, useNavigation, useNavigate } from "@remix-run/react";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import {
   Page,
   Card,
@@ -39,6 +39,22 @@ import { ensureReviewsAndSettingsRestored, syncReviewsToShopify, uploadReviewMed
 
 import { getShopWhereClause } from "../services/shopDomain.server";
 
+// In-memory catalog product mapping cache with 10-minute TTL to make tab & filter clicks instantaneous
+interface CatalogCacheEntry {
+  map: Map<string, string>;
+  expiresAt: number;
+}
+const catalogCache = new Map<string, CatalogCacheEntry>();
+const CATALOG_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+
+// In-memory Shopify Files cache with 5-minute TTL
+interface FilesCacheEntry {
+  files: Array<{ id: string; type: "IMAGE" | "VIDEO"; url: string; previewUrl: string; filename: string }>;
+  expiresAt: number;
+}
+const filesCache = new Map<string, FilesCacheEntry>();
+const FILES_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
 export async function loader({ request }: LoaderFunctionArgs) {
   await ensureTablesExist();
   const { admin, session } = await authenticate.admin(request);
@@ -61,51 +77,60 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const page = Math.max(Number(url.searchParams.get("page")) || 1, 1);
   const pageSize = 10;
 
-  // 1. Fetch catalog products to build product title mapping
-  const catalogProductMap = new Map<string, string>();
-  try {
-    let hasNextPage = true;
-    let cursor: string | null = null;
-    let pagesFetched = 0;
+  // 1. Fetch catalog products to build product title mapping (with in-memory cache)
+  const now = Date.now();
+  let catalogProductMap: Map<string, string>;
+  const cachedCatalog = catalogCache.get(shop);
 
-    while (hasNextPage && pagesFetched < 5) {
-      pagesFetched++;
-      const res: any = await admin.graphql(
-        `#graphql
-        query getProductsForReviewsList($cursor: String) {
-          products(first: 250, after: $cursor) {
-            pageInfo {
-              hasNextPage
-              endCursor
+  if (cachedCatalog && cachedCatalog.expiresAt > now) {
+    catalogProductMap = cachedCatalog.map;
+  } else {
+    catalogProductMap = new Map<string, string>();
+    try {
+      let hasNextPage = true;
+      let cursor: string | null = null;
+      let pagesFetched = 0;
+
+      while (hasNextPage && pagesFetched < 5) {
+        pagesFetched++;
+        const res: any = await admin.graphql(
+          `#graphql
+          query getProductsForReviewsList($cursor: String) {
+            products(first: 250, after: $cursor) {
+              pageInfo {
+                hasNextPage
+                endCursor
+              }
+              nodes {
+                id
+                title
+                handle
+              }
             }
-            nodes {
-              id
-              title
-              handle
-            }
+          }`,
+          { variables: { cursor } }
+        );
+        const data: any = await res.json();
+        const productConnection: any = data?.data?.products;
+        const nodes = productConnection?.nodes || [];
+
+        for (const node of nodes) {
+          catalogProductMap.set(node.id, node.title);
+          const rawId = node.id.replace("gid://shopify/Product/", "");
+          catalogProductMap.set(rawId, node.title);
+          if (node.handle) {
+            catalogProductMap.set(node.handle, node.title);
           }
-        }`,
-        { variables: { cursor } }
-      );
-      const data: any = await res.json();
-      const productConnection: any = data?.data?.products;
-      const nodes = productConnection?.nodes || [];
-
-      for (const node of nodes) {
-        catalogProductMap.set(node.id, node.title);
-        const rawId = node.id.replace("gid://shopify/Product/", "");
-        catalogProductMap.set(rawId, node.title);
-        if (node.handle) {
-          catalogProductMap.set(node.handle, node.title);
         }
-      }
 
-      hasNextPage = Boolean(productConnection?.pageInfo?.hasNextPage);
-      cursor = productConnection?.pageInfo?.endCursor || null;
-      if (!cursor) break;
+        hasNextPage = Boolean(productConnection?.pageInfo?.hasNextPage);
+        cursor = productConnection?.pageInfo?.endCursor || null;
+        if (!cursor) break;
+      }
+      catalogCache.set(shop, { map: catalogProductMap, expiresAt: now + CATALOG_CACHE_TTL });
+    } catch (err) {
+      console.warn("GraphQL product fetch warning in reviews loader:", err);
     }
-  } catch (err) {
-    console.warn("GraphQL product fetch warning in reviews loader:", err);
   }
 
   // Helper function to resolve product title for a review record
@@ -297,77 +322,83 @@ export async function loader({ request }: LoaderFunctionArgs) {
     selectedProductSummary = productStatsMap.get(productFilter);
   }
 
-  // Fetch existing media files from Shopify store Content -> Files
+  // Fetch existing media files from Shopify store Content -> Files (with in-memory cache)
   let shopifyFiles: Array<{ id: string; type: "IMAGE" | "VIDEO"; url: string; previewUrl: string; filename: string }> = [];
-  try {
-    const filesRes = await admin.graphql(`
-      #graphql
-      query getShopifyFilesForPicker {
-        files(first: 250, sortKey: CREATED_AT, reverse: true) {
-          nodes {
-            id
-            createdAt
-            fileStatus
-            alt
-            ... on MediaImage {
-              image {
-                url
-              }
-            }
-            ... on Video {
-              filename
-              originalSource {
-                url
-              }
-              sources {
-                url
-              }
-              preview {
+  const cachedFiles = filesCache.get(shop);
+  if (cachedFiles && cachedFiles.expiresAt > now) {
+    shopifyFiles = cachedFiles.files;
+  } else {
+    try {
+      const filesRes = await admin.graphql(`
+        #graphql
+        query getShopifyFilesForPicker {
+          files(first: 250, sortKey: CREATED_AT, reverse: true) {
+            nodes {
+              id
+              createdAt
+              fileStatus
+              alt
+              ... on MediaImage {
                 image {
                   url
                 }
               }
-            }
-            ... on GenericFile {
-              url
+              ... on Video {
+                filename
+                originalSource {
+                  url
+                }
+                sources {
+                  url
+                }
+                preview {
+                  image {
+                    url
+                  }
+                }
+              }
+              ... on GenericFile {
+                url
+              }
             }
           }
         }
+      `);
+      const filesJson = await filesRes.json();
+      const fileNodes = filesJson.data?.files?.nodes || [];
+      for (const node of fileNodes) {
+        if (node.image?.url) {
+          shopifyFiles.push({
+            id: node.id,
+            type: "IMAGE",
+            url: node.image.url,
+            previewUrl: node.image.url,
+            filename: node.alt || `Shopify Image (${node.id.split("/").pop()})`,
+          });
+        } else if (node.sources?.[0]?.url || node.originalSource?.url) {
+          const vidUrl = node.sources?.[0]?.url || node.originalSource?.url;
+          const prevUrl = node.preview?.image?.url || "";
+          shopifyFiles.push({
+            id: node.id,
+            type: "VIDEO",
+            url: vidUrl,
+            previewUrl: prevUrl,
+            filename: node.filename || node.alt || `Shopify Video (${node.id.split("/").pop()})`,
+          });
+        } else if (node.url && (typeof node.url === "string") && node.url.match(/\.(mp4|mov|webm|avi|mkv)(\?|$)/i)) {
+          shopifyFiles.push({
+            id: node.id,
+            type: "VIDEO",
+            url: node.url,
+            previewUrl: node.url,
+            filename: node.alt || `Shopify Video (${node.id.split("/").pop()})`,
+          });
+        }
       }
-    `);
-    const filesJson = await filesRes.json();
-    const fileNodes = filesJson.data?.files?.nodes || [];
-    for (const node of fileNodes) {
-      if (node.image?.url) {
-        shopifyFiles.push({
-          id: node.id,
-          type: "IMAGE",
-          url: node.image.url,
-          previewUrl: node.image.url,
-          filename: node.alt || `Shopify Image (${node.id.split("/").pop()})`,
-        });
-      } else if (node.sources?.[0]?.url || node.originalSource?.url) {
-        const vidUrl = node.sources?.[0]?.url || node.originalSource?.url;
-        const prevUrl = node.preview?.image?.url || "";
-        shopifyFiles.push({
-          id: node.id,
-          type: "VIDEO",
-          url: vidUrl,
-          previewUrl: prevUrl,
-          filename: node.filename || node.alt || `Shopify Video (${node.id.split("/").pop()})`,
-        });
-      } else if (node.url && (typeof node.url === "string") && node.url.match(/\.(mp4|mov|webm|avi|mkv)(\?|$)/i)) {
-        shopifyFiles.push({
-          id: node.id,
-          type: "VIDEO",
-          url: node.url,
-          previewUrl: node.url,
-          filename: node.alt || `Shopify Video (${node.id.split("/").pop()})`,
-        });
-      }
+      filesCache.set(shop, { files: shopifyFiles, expiresAt: now + FILES_CACHE_TTL });
+    } catch (err) {
+      console.warn("Error fetching Shopify store files:", err);
     }
-  } catch (err) {
-    console.warn("Error fetching Shopify store files:", err);
   }
 
   return json({
@@ -578,6 +609,13 @@ export default function ReviewsPage() {
   const submit = useSubmit();
   const navigation = useNavigation();
   const isSubmitting = navigation.state === "submitting";
+
+  // Optimistic tab state for instantaneous visual feedback on click
+  const [activeTab, setActiveTab] = useState<string>(tabFilter);
+
+  useEffect(() => {
+    setActiveTab(tabFilter);
+  }, [tabFilter]);
 
   const [searchValue, setSearchValue] = useState<string>(searchQuery);
   const [productSearchValue, setProductSearchValue] = useState<string>(productSearchQuery);
@@ -984,11 +1022,14 @@ export default function ReviewsPage() {
               { id: "media", label: `With media ${mediaCount}` },
               { id: "ai_drafts", label: `AI drafts ${aiGeneratedCount}` },
             ].map((tab) => {
-              const isActive = tabFilter === tab.id;
+              const isActive = activeTab === tab.id;
               return (
                 <button
                   key={tab.id}
-                  onClick={() => updateFilters({ tab: tab.id, page: "1" })}
+                  onClick={() => {
+                    setActiveTab(tab.id);
+                    updateFilters({ tab: tab.id, page: "1" });
+                  }}
                   style={{
                     background: "none",
                     border: "none",
@@ -1256,7 +1297,7 @@ export default function ReviewsPage() {
           )}
 
           {/* TABLE MATCHING REFERENCE DESIGN */}
-          <div style={{ overflowX: "auto" }}>
+          <div style={{ overflowX: "auto", opacity: navigation.state === "loading" ? 0.6 : 1, transition: "opacity 0.15s ease" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
               <thead>
                 <tr style={{ borderBottom: "1px solid #e2e8f0", backgroundColor: "#ffffff" }}>

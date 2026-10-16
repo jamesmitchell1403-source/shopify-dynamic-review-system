@@ -15,6 +15,20 @@ import {
 } from "../services/reviewPersistence.server";
 import { canonicalizeShopDomain, getShopWhereClause } from "../services/shopDomain.server";
 
+interface ImportProductOption {
+  label: string;
+  value: string;
+  handle: string;
+  title: string;
+}
+interface ImportProductsCacheEntry {
+  products: ImportProductOption[];
+  catalogProductMap: Map<string, string>;
+  expiresAt: number;
+}
+const importProductsCache = new Map<string, ImportProductsCacheEntry>();
+const IMPORT_PRODUCTS_CACHE_TTL = 10 * 60 * 1000;
+
 export async function loader({ request }: LoaderFunctionArgs) {
   await ensureTablesExist();
   const { admin, session } = await authenticate.admin(request);
@@ -30,44 +44,56 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   const adminToken = session?.accessToken || process.env.SHOPIFY_ADMIN_ACCESS_TOKEN || "";
 
-  // 1. Fetch active shop products for mapping dropdown & title resolution
-  let products: Array<{ label: string; value: string; handle: string; title: string }> = [];
-  const catalogProductMap = new Map<string, string>();
+  // 1. Fetch active shop products for mapping dropdown & title resolution (cached)
+  const now = Date.now();
+  let products: ImportProductOption[] = [];
+  let catalogProductMap = new Map<string, string>();
+  const cached = importProductsCache.get(shop);
 
-  try {
-    const res = await admin.graphql(`
-      query getProductsForImport {
-        products(first: 100, query: "status:active") {
-          nodes {
-            id
-            title
-            handle
-            status
+  if (cached && cached.expiresAt > now) {
+    products = cached.products;
+    catalogProductMap = cached.catalogProductMap;
+  } else {
+    try {
+      const res = await admin.graphql(`
+        query getProductsForImport {
+          products(first: 100, query: "status:active") {
+            nodes {
+              id
+              title
+              handle
+              status
+            }
           }
         }
+      `);
+      const jsonRes = await res.json();
+      const rawNodes = jsonRes.data?.products?.nodes || jsonRes.data?.products?.edges?.map((e: any) => e.node) || [];
+      const activeNodes = rawNodes.filter(
+        (p: any) => (p.status || "").toUpperCase() === "ACTIVE" || !p.status,
+      );
+      if (activeNodes.length > 0) {
+        products = activeNodes.map((p: any) => {
+          catalogProductMap.set(p.id, p.title);
+          const rawId = p.id.replace("gid://shopify/Product/", "");
+          catalogProductMap.set(rawId, p.title);
+          if (p.handle) catalogProductMap.set(p.handle, p.title);
+          return {
+            label: p.title,
+            value: p.id,
+            handle: p.handle || "",
+            title: p.title,
+          };
+        });
       }
-    `);
-    const jsonRes = await res.json();
-    const rawNodes = jsonRes.data?.products?.nodes || jsonRes.data?.products?.edges?.map((e: any) => e.node) || [];
-    const activeNodes = rawNodes.filter(
-      (p: any) => (p.status || "").toUpperCase() === "ACTIVE" || !p.status,
-    );
-    if (activeNodes.length > 0) {
-      products = activeNodes.map((p: any) => {
-        catalogProductMap.set(p.id, p.title);
-        const rawId = p.id.replace("gid://shopify/Product/", "");
-        catalogProductMap.set(rawId, p.title);
-        if (p.handle) catalogProductMap.set(p.handle, p.title);
-        return {
-          label: p.title,
-          value: p.id,
-          handle: p.handle || "",
-          title: p.title,
-        };
+      importProductsCache.set(shop, {
+        products,
+        catalogProductMap,
+        expiresAt: now + IMPORT_PRODUCTS_CACHE_TTL,
       });
+    } catch (e) {
+      console.warn("GraphQL products fetch error:", e);
     }
-  } catch (e) {
-    console.warn("GraphQL products fetch error:", e);
   }
 
   if (products.length === 0) {

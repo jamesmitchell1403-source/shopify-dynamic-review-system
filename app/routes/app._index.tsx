@@ -64,9 +64,20 @@ export async function loader({ request }: LoaderFunctionArgs) {
     orderBy: { createdAt: "desc" },
   });
 
-  // 2. Fetch settings and cloud keys
+  // 2. Fetch settings and cloud keys (cached / conditional to avoid redundant GraphQL calls)
   const settings = await db.shopSettings.findUnique({ where: { shop } });
-  const cloudKeys = await getShopAIKeysFromShopify(admin);
+  const hasLocalAiKey = Boolean(
+    settings?.anthropicApiKey ||
+    settings?.geminiApiKey ||
+    (settings as any)?.openaiApiKey
+  );
+
+  let cloudKeys: any = null;
+  if (!hasLocalAiKey) {
+    try {
+      cloudKeys = await getShopAIKeysFromShopify(admin);
+    } catch (_) {}
+  }
 
   // 3. QR code scans (used for review request conversion)
   const qrScansResult = await db.qrCodeRecord.aggregate({
