@@ -233,14 +233,69 @@ export async function loader({ request }: LoaderFunctionArgs) {
     }
   }
 
+  // Fetch store collections for dynamic collection scope selection
+  let collections: Array<{ id: string; title: string; handle: string }> = [];
+  try {
+    const collRes = await admin.graphql(`
+      #graphql
+      query getCollectionsForAI {
+        collections(first: 50) {
+          nodes {
+            id
+            title
+            handle
+          }
+        }
+      }
+    `);
+    if (collRes.status !== 403) {
+      const collJson = (await collRes.json()) as any;
+      const rawNodes = collJson.data?.collections?.nodes || collJson.data?.collections?.edges?.map((e: any) => e.node) || [];
+      collections = rawNodes.map((c: any) => ({
+        id: c.id,
+        title: c.title,
+        handle: c.handle || "",
+      }));
+    }
+  } catch (collErr) {
+    console.warn("Collections fetch error:", collErr);
+  }
+
+  // Fetch recent AI generation jobs for audit history
+  let recentJobs: Array<{
+    id: string;
+    status: string;
+    resultCount: number;
+    createdAt: string;
+    provider: string;
+  }> = [];
+  try {
+    const jobs = await db.aiGenerationJob.findMany({
+      where: { shop: session.shop },
+      orderBy: { createdAt: "desc" },
+      take: 5,
+    });
+    recentJobs = jobs.map((j) => ({
+      id: j.id,
+      status: j.status,
+      resultCount: j.resultCount,
+      createdAt: j.createdAt.toISOString(),
+      provider: j.provider,
+    }));
+  } catch (jobErr) {
+    // Graceful fallback
+  }
+
   const aiConfig = await getShopAIConfig(session.shop, admin);
 
   return json({
     products,
+    collections,
     productStats: productStatsMap,
     totalReviewsCount,
     publishedReviewsCount,
     recentOrders,
+    recentJobs,
     isScopeForbidden,
     shop: session.shop,
     aiConfig,
@@ -250,15 +305,17 @@ export async function loader({ request }: LoaderFunctionArgs) {
 export default function AiGeneratorPage() {
   const {
     products,
+    collections = [],
     productStats,
     totalReviewsCount,
     recentOrders,
+    recentJobs = [],
     isScopeForbidden,
     shop,
     aiConfig,
   } = useLoaderData<typeof loader>();
 
-  // Tabs: 0 = Bulk requests, 1 = Product assistant (Single Product), 2 = Add real review
+  // Tabs: 0 = Bulk requests, 1 = Single product, 2 = Manual review
   const [selectedTab, setSelectedTab] = useState<number>(0);
 
   // Available AI engines with valid saved key check
@@ -298,16 +355,53 @@ export default function AiGeneratorPage() {
   // TAB 0 (Bulk requests) STATE
   // ==============================================================
   const [bulkTone, setBulkTone] = useState<string>("Friendly & Relatable");
+  const [bulkLanguage, setBulkLanguage] = useState<string>("en");
   const [reviewsPerProduct, setReviewsPerProduct] = useState<number>(3);
+  const [includeTitles, setIncludeTitles] = useState<boolean>(true);
+  const [useVerifiedBuyerTag, setUseVerifiedBuyerTag] = useState<boolean>(true);
+  const [ratingRange, setRatingRange] = useState<string>("4–5 stars");
+  const [targetScope, setTargetScope] = useState<string>("all_active");
+  const [selectedCollection, setSelectedCollection] = useState<string>("all");
+  const [customSelectedIds, setCustomSelectedIds] = useState<string[]>([]);
+  const [editScopeModalOpen, setEditScopeModalOpen] = useState<boolean>(false);
+  const [previewModalOpen, setPreviewModalOpen] = useState<boolean>(false);
+  const [scopeSearchQuery, setScopeSearchQuery] = useState<string>("");
+  const [showAuditHistory, setShowAuditHistory] = useState<boolean>(false);
+
   const [bulkProvider, setBulkProvider] = useState<string>(getInitialActiveProvider());
   const [bulkLoading, setBulkLoading] = useState<boolean>(false);
   const [bulkProgress, setBulkProgress] = useState<number>(0);
   const [bulkSuccessResult, setBulkSuccessResult] = useState<any>(null);
   const [bulkErrorMessage, setBulkErrorMessage] = useState<string | null>(null);
 
+  // Filter products based on selected scope
+  const filteredProducts = useMemo(() => {
+    let list = products;
+    if (targetScope === "no_reviews") {
+      list = list.filter((p) => !productStats[p.value] || productStats[p.value].count === 0);
+    } else if (targetScope === "custom" && customSelectedIds.length > 0) {
+      list = list.filter((p) => customSelectedIds.includes(p.value));
+    }
+    return list;
+  }, [products, targetScope, customSelectedIds, productStats]);
+
   const totalReviewsToGenerate = useMemo(() => {
-    return products.length * reviewsPerProduct;
-  }, [products.length, reviewsPerProduct]);
+    return filteredProducts.length * reviewsPerProduct;
+  }, [filteredProducts.length, reviewsPerProduct]);
+
+  // Dynamic estimated time calculation
+  const estimatedTimeInfo = useMemo(() => {
+    if (totalReviewsToGenerate === 0) {
+      return { range: "0 minutes", secondsPerReview: 8 };
+    }
+    const minutes = totalReviewsToGenerate / 110;
+    if (minutes < 1) {
+      return { range: "< 1 minute", secondsPerReview: 8 };
+    }
+    const minMin = Math.max(1, Math.floor(minutes * 0.85));
+    const maxMin = Math.max(minMin + 1, Math.ceil(minutes * 1.15));
+    return { range: `${minMin}–${maxMin} minutes`, secondsPerReview: 8 };
+  }, [totalReviewsToGenerate]);
 
   // ==============================================================
   // TAB 1 (Product assistant - Single Product) STATE - 4-STEP WORKFLOW
@@ -404,10 +498,14 @@ export default function AiGeneratorPage() {
         body: JSON.stringify({
           actionType: "bulk_generate_all",
           provider: bulkProvider,
-          language: "en",
+          language: bulkLanguage,
           reviewsPerProduct: reviewsPerProduct,
           mediaOption: "image",
           tone: bulkTone,
+          ratingRange: ratingRange,
+          includeTitles: includeTitles,
+          verifiedBuyer: useVerifiedBuyerTag,
+          customProductIds: customSelectedIds.length > 0 ? customSelectedIds : undefined,
         }),
       });
 
@@ -592,7 +690,7 @@ export default function AiGeneratorPage() {
   const selectedSingleEngine = availableEngines.find((e) => e.id === singleProvider) || availableEngines[0];
 
   return (
-    <Page fullWidth title="AI & Custom Review Generator (Module B)">
+    <Page fullWidth>
       <style>{`
         /* ========================================================== */
         /* 100% FULL WIDTH RESPONSIVE CONTAINER                       */
@@ -962,6 +1060,350 @@ export default function AiGeneratorPage() {
           color: #b45309;
         }
 
+        /* TOP MODE SWITCHER PILL TABS */
+        .rg-mode-pill {
+          padding: 8px 18px;
+          font-size: 13.5px;
+          font-weight: 500;
+          border-radius: 8px;
+          border: 1px solid #e5e7eb;
+          background: #ffffff;
+          color: #4b5563;
+          cursor: pointer;
+          transition: all 0.15s ease;
+          user-select: none;
+        }
+        .rg-mode-pill:hover {
+          background: #f9fafb;
+          border-color: #cbd5e1;
+        }
+        .rg-mode-pill.active {
+          border: 1.5px solid #3b82f6;
+          background: #ffffff;
+          color: #2563eb;
+          font-weight: 600;
+          box-shadow: 0 1px 2px rgba(59, 130, 246, 0.08);
+        }
+
+        /* HORIZONTAL STEPPER BAR */
+        .rg-stepper-bar {
+          display: flex;
+          align-items: center;
+          margin: 14px 0 24px 0;
+          flex-wrap: wrap;
+          gap: 4px;
+        }
+        .rg-step-node {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+        }
+        .rg-step-circle {
+          width: 24px;
+          height: 24px;
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 12px;
+          font-weight: 600;
+          background: #f1f5f9;
+          color: #64748b;
+          border: 1px solid #e2e8f0;
+        }
+        .rg-step-circle.active {
+          background: #2563eb;
+          color: #ffffff;
+          border-color: #2563eb;
+          font-weight: 700;
+        }
+        .rg-step-label {
+          font-size: 13.5px;
+          font-weight: 500;
+          color: #475569;
+        }
+        .rg-step-label.active {
+          color: #2563eb;
+          font-weight: 600;
+        }
+        .rg-step-line {
+          flex: 1;
+          min-width: 32px;
+          max-width: 130px;
+          height: 1px;
+          background: #e2e8f0;
+          margin: 0 8px;
+        }
+
+        /* 2x2 MODULAR GRID */
+        .rg-grid-2x2 {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 20px;
+          width: 100%;
+          box-sizing: border-box;
+        }
+        @media (max-width: 960px) {
+          .rg-grid-2x2 {
+            grid-template-columns: 1fr;
+          }
+        }
+
+        .rg-modular-card {
+          background: #ffffff;
+          border: 1px solid #e5e7eb;
+          border-radius: 12px;
+          padding: 24px 24px;
+          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+          display: flex;
+          flex-direction: column;
+          justify-content: space-between;
+          box-sizing: border-box;
+        }
+
+        .rg-card-step-badge {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          margin-bottom: 8px;
+        }
+        .rg-card-step-num {
+          width: 20px;
+          height: 20px;
+          border-radius: 50%;
+          background: #eff6ff;
+          color: #2563eb;
+          font-size: 11px;
+          font-weight: 700;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .rg-card-step-title {
+          color: #2563eb;
+          font-size: 13px;
+          font-weight: 700;
+        }
+
+        .rg-card-heading {
+          font-size: 18px;
+          font-weight: 700;
+          color: #111827;
+          margin: 0 0 4px 0;
+        }
+        .rg-card-subheading {
+          font-size: 13px;
+          color: #6b7280;
+          margin: 0 0 18px 0;
+          line-height: 1.4;
+        }
+
+        .rg-field-label {
+          display: block;
+          font-size: 13px;
+          font-weight: 500;
+          color: #374151;
+          margin-bottom: 6px;
+        }
+
+        .rg-modern-select {
+          width: 100%;
+          height: 38px;
+          border: 1px solid #d1d5db;
+          border-radius: 8px;
+          padding: 0 32px 0 12px;
+          font-size: 13.5px;
+          color: #111827;
+          background-color: #ffffff;
+          background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%236b7280'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E");
+          background-repeat: no-repeat;
+          background-position: right 10px center;
+          background-size: 16px;
+          appearance: none;
+          -webkit-appearance: none;
+          cursor: pointer;
+          outline: none;
+          box-sizing: border-box;
+          transition: border-color 0.15s ease, box-shadow 0.15s ease;
+        }
+        .rg-modern-select:focus {
+          border-color: #3b82f6;
+          box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
+        }
+
+        .rg-segmented-group {
+          display: flex;
+          border: 1px solid #d1d5db;
+          border-radius: 6px;
+          overflow: hidden;
+          height: 38px;
+          box-sizing: border-box;
+          background: #ffffff;
+        }
+        .rg-segmented-btn {
+          flex: 1;
+          border: none;
+          background: transparent;
+          color: #374151;
+          font-size: 13px;
+          font-weight: 500;
+          cursor: pointer;
+          transition: all 0.15s ease;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .rg-segmented-btn:hover {
+          background: #f8fafc;
+        }
+        .rg-segmented-btn.active {
+          background: #eff6ff;
+          color: #2563eb;
+          font-weight: 600;
+          border: 1.5px solid #3b82f6;
+          border-radius: 5px;
+          margin: -1px;
+        }
+
+        .rg-toggle-row {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          cursor: pointer;
+          user-select: none;
+        }
+        .rg-pill-switch {
+          width: 38px;
+          height: 22px;
+          border-radius: 9999px;
+          background: #cbd5e1;
+          position: relative;
+          transition: background-color 0.2s ease;
+          flex-shrink: 0;
+        }
+        .rg-pill-switch.on {
+          background: #2563eb;
+        }
+        .rg-pill-switch-handle {
+          width: 18px;
+          height: 18px;
+          border-radius: 50%;
+          background: #ffffff;
+          position: absolute;
+          top: 2px;
+          left: 2px;
+          transition: transform 0.2s ease;
+          box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+        }
+        .rg-pill-switch.on .rg-pill-switch-handle {
+          transform: translateX(16px);
+        }
+
+        .rg-summary-stat-grid {
+          display: grid;
+          grid-template-columns: repeat(4, 1fr);
+          gap: 10px;
+          margin-bottom: 14px;
+        }
+        @media (max-width: 600px) {
+          .rg-summary-stat-grid {
+            grid-template-columns: repeat(2, 1fr);
+          }
+        }
+        .rg-stat-box {
+          background: #f8fafc;
+          border: 1px solid #e2e8f0;
+          border-radius: 8px;
+          padding: 10px 10px;
+          box-sizing: border-box;
+        }
+        .rg-stat-box-label {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 11.5px;
+          color: #64748b;
+          font-weight: 500;
+          margin-bottom: 4px;
+        }
+        .rg-stat-box-val {
+          font-size: 17px;
+          font-weight: 700;
+          color: #0f172a;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .rg-btn-primary-blue {
+          background: #2563eb;
+          color: #ffffff;
+          border: none;
+          border-radius: 8px;
+          width: 100%;
+          padding: 12px 16px;
+          font-size: 14px;
+          font-weight: 600;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          transition: background 0.15s ease, transform 0.1s ease;
+          box-shadow: 0 1px 2px rgba(37, 99, 235, 0.2);
+        }
+        .rg-btn-primary-blue:hover:not(:disabled) {
+          background: #1d4ed8;
+        }
+        .rg-btn-primary-blue:disabled {
+          background: #94a3b8;
+          cursor: not-allowed;
+        }
+
+        .rg-btn-secondary-white {
+          background: #ffffff;
+          color: #374151;
+          border: 1px solid #d1d5db;
+          border-radius: 8px;
+          width: 100%;
+          padding: 10px 16px;
+          font-size: 13px;
+          font-weight: 500;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          transition: all 0.15s ease;
+        }
+        .rg-btn-secondary-white:hover {
+          background: #f8fafc;
+          border-color: #9ca3af;
+        }
+
+        .rg-modal-overlay {
+          position: fixed;
+          inset: 0;
+          background: rgba(15, 23, 42, 0.45);
+          backdrop-filter: blur(2px);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 9999;
+          padding: 16px;
+        }
+        .rg-modal-dialog {
+          background: #ffffff;
+          border-radius: 14px;
+          max-width: 620px;
+          width: 100%;
+          max-height: 85vh;
+          display: flex;
+          flex-direction: column;
+          box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+          overflow: hidden;
+        }
+
         .rg-toggle-switch {
           width: 44px;
           height: 24px;
@@ -1032,42 +1474,72 @@ export default function AiGeneratorPage() {
         )}
 
         {/* ============================================================== */}
-        {/* TOP TAB NAVIGATION BAR                                          */}
+        {/* HEADER: TITLE & SUBTITLE                                        */}
         {/* ============================================================== */}
-        <div className="rg-tabs-header">
+        <div style={{ marginBottom: "18px" }}>
+          <h1 style={{ fontSize: "24px", fontWeight: 700, color: "#111827", margin: "0 0 6px 0", letterSpacing: "-0.015em" }}>
+            AI Review Generator
+          </h1>
+          <p style={{ fontSize: "14px", color: "#6b7280", margin: 0 }}>
+            Generate product reviews for your Shopify catalog using AI.
+          </p>
+        </div>
+
+        {/* ============================================================== */}
+        {/* TOP MODE SWITCHER TABS (Bulk requests | Single product | Manual review) */}
+        {/* ============================================================== */}
+        <div style={{ display: "flex", gap: "8px", marginBottom: "20px", flexWrap: "wrap" }}>
           <button
             type="button"
-            className={`rg-tab-item ${selectedTab === 0 ? "active" : ""}`}
+            className={`rg-mode-pill ${selectedTab === 0 ? "active" : ""}`}
             onClick={() => setSelectedTab(0)}
           >
-            <span>✉</span>
-            <span>Bulk requests (All Products)</span>
+            Bulk requests
           </button>
-
           <button
             type="button"
-            className={`rg-tab-item ${selectedTab === 1 ? "active" : ""}`}
+            className={`rg-mode-pill ${selectedTab === 1 ? "active" : ""}`}
             onClick={() => setSelectedTab(1)}
           >
-            <span>🪄</span>
-            <span>Product assistant (Single Product)</span>
+            Single product
           </button>
-
           <button
             type="button"
-            className={`rg-tab-item ${selectedTab === 2 ? "active" : ""}`}
+            className={`rg-mode-pill ${selectedTab === 2 ? "active" : ""}`}
             onClick={() => setSelectedTab(2)}
           >
-            <span>✏</span>
-            <span>Add real review (Manual)</span>
+            Manual review
           </button>
         </div>
 
         {/* ============================================================== */}
-        {/* TAB 0: REDESIGNED STEP-BY-STEP BULK WORKFLOW                     */}
+        {/* TAB 0: REDESIGNED 2x2 MODULAR GRID WORKFLOW                      */}
         {/* ============================================================== */}
         {selectedTab === 0 && (
           <div>
+            {/* HORIZONTAL STEP PROGRESS BAR */}
+            <div className="rg-stepper-bar">
+              <div className="rg-step-node">
+                <div className="rg-step-circle active">1</div>
+                <span className="rg-step-label active">Scope</span>
+              </div>
+              <div className="rg-step-line" />
+              <div className="rg-step-node">
+                <div className="rg-step-circle">2</div>
+                <span className="rg-step-label">Settings</span>
+              </div>
+              <div className="rg-step-line" />
+              <div className="rg-step-node">
+                <div className="rg-step-circle">3</div>
+                <span className="rg-step-label">Summary</span>
+              </div>
+              <div className="rg-step-line" />
+              <div className="rg-step-node">
+                <div className="rg-step-circle">4</div>
+                <span className="rg-step-label">Generate</span>
+              </div>
+            </div>
+
             {bulkErrorMessage && (
               <div style={{ marginBottom: "16px" }}>
                 <Banner tone="critical" title="Generation Error">
@@ -1083,298 +1555,792 @@ export default function AiGeneratorPage() {
                     Successfully generated {bulkSuccessResult.totalGenerated} authentic reviews across {bulkSuccessResult.productsProcessed} catalog products!
                   </p>
                   <p style={{ marginTop: "4px", fontSize: "13px" }}>
-                    The reviews are now stored and will automatically display in your product page review widgets.
+                    The reviews are now stored and will automatically display in your store product review widgets.
                   </p>
                 </Banner>
               </div>
             )}
 
-            {/* STEP 1: SELECT SCOPE */}
-            <div className="rg-step-card">
-              <div className="rg-step-header">
-                <span className="rg-step-badge">Step 1</span>
+            {/* 2x2 MODULAR CARDS GRID */}
+            <div className="rg-grid-2x2">
+              {/* ================= CARD 1: SCOPE ================= */}
+              <div className="rg-modular-card">
                 <div>
-                  <h3 className="rg-step-title">Review Generation Scope</h3>
-                  <p className="rg-step-desc">
-                    Auto-generate customer reviews across your active product catalog without needing to write them manually.
-                  </p>
-                </div>
-              </div>
+                  <div className="rg-card-step-badge">
+                    <span className="rg-card-step-num">1</span>
+                    <span className="rg-card-step-title">Scope</span>
+                  </div>
+                  <h2 className="rg-card-heading">Select products</h2>
+                  <p className="rg-card-subheading">Choose which products to generate reviews for.</p>
 
-              <div
-                style={{
-                  background: "#f0fdf4",
-                  border: "1.5px solid #bbf7d0",
-                  borderRadius: "12px",
-                  padding: "16px 20px",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  flexWrap: "wrap",
-                  gap: "12px",
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+                  <div style={{ marginBottom: "14px" }}>
+                    <label className="rg-field-label">Target products</label>
+                    <select
+                      className="rg-modern-select"
+                      value={targetScope}
+                      onChange={(e) => {
+                        setTargetScope(e.target.value);
+                        if (e.target.value === "custom") {
+                          setEditScopeModalOpen(true);
+                        }
+                      }}
+                    >
+                      <option value="all_active">All active products</option>
+                      <option value="no_reviews">Only products without reviews</option>
+                      <option value="custom">
+                        Custom selected products ({customSelectedIds.length})
+                      </option>
+                    </select>
+                  </div>
+
+                  <div style={{ marginBottom: "16px" }}>
+                    <label className="rg-field-label">Collection</label>
+                    <select
+                      className="rg-modern-select"
+                      value={selectedCollection}
+                      onChange={(e) => setSelectedCollection(e.target.value)}
+                    >
+                      <option value="all">All collections</option>
+                      {collections.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.title}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Mint Green Pill Banner */}
                   <div
                     style={{
-                      width: "44px",
-                      height: "44px",
-                      borderRadius: "10px",
-                      background: "#dcfce7",
+                      background: "#ecfdf5",
+                      border: "1px solid #d1fae5",
+                      borderRadius: "8px",
+                      padding: "9px 12px",
+                      marginBottom: "16px",
                       display: "flex",
                       alignItems: "center",
-                      justifyContent: "center",
-                      fontSize: "20px",
+                      gap: "8px",
                     }}
                   >
-                    🛍️
-                  </div>
-                  <div>
-                    <strong style={{ fontSize: "15px", color: "#166534" }}>
-                      Target Scope: All Active Store Products
-                    </strong>
-                    <p style={{ margin: "2px 0 0 0", fontSize: "13px", color: "#15803d" }}>
-                      {products.length > 0
-                        ? `${products.length} eligible active products found in your live Shopify catalog.`
-                        : "No active products found. Add products in your Shopify Admin to generate reviews."}
-                    </p>
+                    <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
+                      <circle cx="10" cy="10" r="10" fill="#10b981" />
+                      <path
+                        d="M6 10l3 3 5-5"
+                        stroke="white"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                    <span style={{ color: "#065f46", fontWeight: 600, fontSize: "13.5px" }}>
+                      {filteredProducts.length} active products selected
+                    </span>
                   </div>
                 </div>
 
-                <span className="rg-green-badge">
-                  ✓ Catalog Active
-                </span>
-              </div>
-            </div>
-
-            {/* STEP 2: CONFIGURE REVIEW SETTINGS */}
-            <div className="rg-step-card">
-              <div className="rg-step-header">
-                <span className="rg-step-badge">Step 2</span>
                 <div>
-                  <h3 className="rg-step-title">Configure Review Settings</h3>
-                  <p className="rg-step-desc">
-                    Choose the tone, review volume per product, and select an available AI engine with a valid API key.
-                  </p>
-                </div>
-              </div>
-
-              {/* Tone Selection */}
-              <div style={{ marginBottom: "22px" }}>
-                <label style={{ fontSize: "13.5px", fontWeight: 600, color: "#374151", display: "block", marginBottom: "8px" }}>
-                  Review Tone
-                </label>
-                <div className="rg-pills">
-                  {[
-                    "Friendly & Relatable",
-                    "Enthusiastic & Excited",
-                    "Professional & Detailed",
-                    "Short & Punchy",
-                  ].map((t) => (
-                    <button
-                      key={t}
-                      type="button"
-                      className={`rg-pill ${bulkTone === t ? "active" : ""}`}
-                      onClick={() => setBulkTone(t)}
-                    >
-                      {t}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Reviews Per Product Selection */}
-              <div style={{ marginBottom: "24px" }}>
-                <label style={{ fontSize: "13.5px", fontWeight: 600, color: "#374151", display: "block", marginBottom: "8px" }}>
-                  Reviews to Generate per Product
-                </label>
-                <div className="rg-pills">
-                  {[
-                    { label: "1 Review per product", count: 1 },
-                    { label: "3 Reviews per product (Recommended)", count: 3 },
-                    { label: "5 Reviews per product", count: 5 },
-                  ].map((opt) => (
-                    <button
-                      key={opt.count}
-                      type="button"
-                      className={`rg-pill ${reviewsPerProduct === opt.count ? "active" : ""}`}
-                      onClick={() => setReviewsPerProduct(opt.count)}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* AI Engine Selection with API Key Validation */}
-              <div>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px", flexWrap: "wrap", gap: "8px" }}>
-                  <label style={{ fontSize: "13.5px", fontWeight: 600, color: "#374151", margin: 0 }}>
-                    Select Available AI Engine
-                  </label>
-                  <Link
-                    to="/app/ai-settings"
-                    style={{ fontSize: "13px", color: "#2563eb", textDecoration: "none", fontWeight: 500 }}
+                  <button
+                    type="button"
+                    className="rg-btn-secondary-white"
+                    style={{ width: "auto", padding: "7px 16px" }}
+                    onClick={() => setEditScopeModalOpen(true)}
                   >
-                    Manage API Keys in AI Settings →
-                  </Link>
+                    Edit scope
+                  </button>
                 </div>
+              </div>
 
-                <div className="rg-engine-grid">
-                  {availableEngines.map((engine) => {
-                    const isSelected = bulkProvider === engine.id;
-                    const isDisabled = !engine.hasKey;
+              {/* ================= CARD 2: SETTINGS ================= */}
+              <div className="rg-modular-card">
+                <div>
+                  <div className="rg-card-step-badge">
+                    <span className="rg-card-step-num">2</span>
+                    <span className="rg-card-step-title">Settings</span>
+                  </div>
+                  <h2 className="rg-card-heading">Review settings</h2>
+                  <p className="rg-card-subheading">Configure how the AI should generate your reviews.</p>
 
-                    return (
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "18px" }}>
+                    {/* Left Column */}
+                    <div>
+                      <div style={{ marginBottom: "14px" }}>
+                        <label className="rg-field-label">Tone</label>
+                        <select
+                          className="rg-modern-select"
+                          value={bulkTone}
+                          onChange={(e) => setBulkTone(e.target.value)}
+                        >
+                          <option value="Friendly & Relatable">Friendly & Relatable</option>
+                          <option value="Enthusiastic & Excited">Enthusiastic & Excited</option>
+                          <option value="Professional & Detailed">Professional & Detailed</option>
+                          <option value="Short & Punchy">Short & Punchy</option>
+                          <option value="Casual & Humorous">Casual & Humorous</option>
+                        </select>
+                      </div>
+
+                      <div style={{ marginBottom: "18px" }}>
+                        <label className="rg-field-label">Language</label>
+                        <select
+                          className="rg-modern-select"
+                          value={bulkLanguage}
+                          onChange={(e) => setBulkLanguage(e.target.value)}
+                        >
+                          <option value="en">English</option>
+                          <option value="es">Spanish</option>
+                          <option value="fr">French</option>
+                          <option value="de">German</option>
+                          <option value="it">Italian</option>
+                          <option value="ja">Japanese</option>
+                          <option value="hi">Hindi</option>
+                        </select>
+                      </div>
+
+                      {/* Toggle: Include review titles */}
                       <div
-                        key={engine.id}
-                        className={`rg-engine-card ${isSelected ? "active" : ""} ${isDisabled ? "disabled" : ""}`}
-                        onClick={() => {
-                          if (!isDisabled) {
-                            setBulkProvider(engine.id);
-                          }
-                        }}
+                        className="rg-toggle-row"
+                        onClick={() => setIncludeTitles(!includeTitles)}
                       >
-                        <div>
-                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "6px" }}>
-                            <strong style={{ fontSize: "15px", color: isDisabled ? "#6b7280" : "#111827" }}>
-                              {engine.name}
-                            </strong>
-                            {engine.hasKey ? (
-                              <span className="rg-green-badge">✓ Ready</span>
-                            ) : (
-                              <span className="rg-amber-badge">⚠️ Key Missing</span>
-                            )}
-                          </div>
-
-                          <div style={{ fontSize: "12.5px", color: "#6b7280", fontFamily: "monospace", marginBottom: "8px" }}>
-                            {engine.model}
-                          </div>
-
-                          <p style={{ margin: 0, fontSize: "12.5px", color: isDisabled ? "#9ca3af" : "#4b5563", lineHeight: 1.4 }}>
-                            {engine.description}
-                          </p>
+                        <div className={`rg-pill-switch ${includeTitles ? "on" : ""}`}>
+                          <div className="rg-pill-switch-handle" />
                         </div>
-
-                        <div style={{ marginTop: "14px", paddingTop: "10px", borderTop: "1px solid #f1f5f9" }}>
-                          {engine.hasKey ? (
-                            <span style={{ fontSize: "12px", color: isSelected ? "#0f172a" : "#16a34a", fontWeight: 600 }}>
-                              {isSelected ? "● Selected Model" : "Click to select"}
-                            </span>
-                          ) : (
-                            <Link
-                              to="/app/ai-settings"
-                              style={{ fontSize: "12px", color: "#d97706", fontWeight: 600, textDecoration: "none" }}
-                            >
-                              Add Key in AI Settings →
-                            </Link>
-                          )}
+                        <div>
+                          <div style={{ fontSize: "13px", fontWeight: 600, color: "#111827" }}>
+                            Include review titles
+                          </div>
+                          <div style={{ fontSize: "11.5px", color: "#6b7280" }}>
+                            Generate short, compelling titles.
+                          </div>
                         </div>
                       </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
+                    </div>
 
-            {/* STEP 3: REVIEW SUMMARY */}
-            <div className="rg-step-card">
-              <div className="rg-step-header">
-                <span className="rg-step-badge">Step 3</span>
+                    {/* Right Column */}
+                    <div>
+                      <div style={{ marginBottom: "14px" }}>
+                        <label className="rg-field-label">Reviews per product</label>
+                        <div className="rg-segmented-group">
+                          {[1, 3, 5].map((cnt) => (
+                            <button
+                              key={cnt}
+                              type="button"
+                              className={`rg-segmented-btn ${reviewsPerProduct === cnt ? "active" : ""}`}
+                              onClick={() => setReviewsPerProduct(cnt)}
+                            >
+                              {cnt}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div style={{ marginBottom: "18px" }}>
+                        <label className="rg-field-label">Rating</label>
+                        <select
+                          className="rg-modern-select"
+                          value={ratingRange}
+                          onChange={(e) => setRatingRange(e.target.value)}
+                        >
+                          <option value="4–5 stars">4–5 stars</option>
+                          <option value="5 stars only">5 stars only</option>
+                          <option value="3–5 stars">3–5 stars</option>
+                        </select>
+                      </div>
+
+                      {/* Toggle: Use verified buyer tag */}
+                      <div
+                        className="rg-toggle-row"
+                        onClick={() => setUseVerifiedBuyerTag(!useVerifiedBuyerTag)}
+                      >
+                        <div className={`rg-pill-switch ${useVerifiedBuyerTag ? "on" : ""}`}>
+                          <div className="rg-pill-switch-handle" />
+                        </div>
+                        <div>
+                          <div style={{ fontSize: "13px", fontWeight: 600, color: "#111827" }}>
+                            Use verified buyer tag
+                          </div>
+                          <div style={{ fontSize: "11.5px", color: "#6b7280" }}>
+                            Add verified buyer tags to reviews.
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div />
+              </div>
+
+              {/* ================= CARD 3: SUMMARY ================= */}
+              <div className="rg-modular-card">
                 <div>
-                  <h3 className="rg-step-title">Review Generation Summary</h3>
-                  <p className="rg-step-desc">
-                    Verify the product scope and generation settings before starting the review generator.
+                  <div className="rg-card-step-badge">
+                    <span className="rg-card-step-num">3</span>
+                    <span className="rg-card-step-title">Summary</span>
+                  </div>
+                  <h2 className="rg-card-heading">Generation summary</h2>
+                  <p className="rg-card-subheading">Review your settings and estimated results.</p>
+
+                  {/* 4 Mini Stat Boxes */}
+                  <div className="rg-summary-stat-grid">
+                    <div className="rg-stat-box">
+                      <div className="rg-stat-box-label">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+                        <span>Products</span>
+                      </div>
+                      <div className="rg-stat-box-val">{filteredProducts.length}</div>
+                    </div>
+
+                    <div className="rg-stat-box">
+                      <div className="rg-stat-box-label">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+                        <span>Reviews</span>
+                      </div>
+                      <div className="rg-stat-box-val">{totalReviewsToGenerate}</div>
+                    </div>
+
+                    <div className="rg-stat-box">
+                      <div className="rg-stat-box-label">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                        <span>Tone</span>
+                      </div>
+                      <div className="rg-stat-box-val">{bulkTone.split(" ")[0]}</div>
+                    </div>
+
+                    <div className="rg-stat-box">
+                      <div className="rg-stat-box-label">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                        <span>Engine</span>
+                      </div>
+                      <div className="rg-stat-box-val" style={{ fontSize: "13.5px" }}>
+                        {selectedBulkEngine?.name || "Google Gemini"}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Light Blue Pill Banner */}
+                  <div
+                    style={{
+                      background: "#eff6ff",
+                      border: "1px solid #bfdbfe",
+                      borderRadius: "8px",
+                      padding: "9px 12px",
+                      marginBottom: "12px",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                    }}
+                  >
+                    <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
+                      <circle cx="10" cy="10" r="10" fill="#3b82f6" />
+                      <path
+                        d="M6 10l3 3 5-5"
+                        stroke="white"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                    <span style={{ color: "#1d4ed8", fontWeight: 600, fontSize: "13.5px" }}>
+                      Ready to review
+                    </span>
+                  </div>
+
+                  <p style={{ margin: 0, fontSize: "12.5px", color: "#6b7280", lineHeight: 1.5 }}>
+                    Based on your current settings, {totalReviewsToGenerate} reviews will be generated for {filteredProducts.length} products ({reviewsPerProduct} reviews per product).
                   </p>
                 </div>
+                <div />
               </div>
 
-              <div className="rg-summary-grid">
-                <div className="rg-summary-tile">
-                  <div className="rg-summary-label">Target Scope</div>
-                  <div className="rg-summary-val">{products.length} Products</div>
-                  <div className="rg-summary-sub">All active catalog products</div>
-                </div>
-
-                <div className="rg-summary-tile">
-                  <div className="rg-summary-label">Total to Generate</div>
-                  <div className="rg-summary-val" style={{ color: "#2563eb" }}>
-                    {totalReviewsToGenerate} Reviews
+              {/* ================= CARD 4: GENERATE ================= */}
+              <div className="rg-modular-card">
+                <div>
+                  <div className="rg-card-step-badge">
+                    <span className="rg-card-step-num">4</span>
+                    <span className="rg-card-step-title">Generate</span>
                   </div>
-                  <div className="rg-summary-sub">
-                    {reviewsPerProduct} reviews × {products.length} items
-                  </div>
-                </div>
+                  <h2 className="rg-card-heading">Create reviews</h2>
+                  <p className="rg-card-subheading">Generate AI reviews for your selected products.</p>
 
-                <div className="rg-summary-tile">
-                  <div className="rg-summary-label">Selected Tone</div>
-                  <div className="rg-summary-val">{bulkTone.split(" ")[0]}</div>
-                  <div className="rg-summary-sub">{bulkTone}</div>
-                </div>
+                  {/* Connected AI Engine Box */}
+                  <div
+                    style={{
+                      background: "#ffffff",
+                      border: "1px solid #e5e7eb",
+                      borderRadius: "10px",
+                      padding: "12px 16px",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      marginBottom: "14px",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                      {/* Gemini multi-color sparkle icon */}
+                      <div
+                        style={{
+                          width: "36px",
+                          height: "36px",
+                          borderRadius: "8px",
+                          background: "linear-gradient(135deg, #e0e7ff 0%, #fae8ff 100%)",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          flexShrink: 0,
+                        }}
+                      >
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                          <path
+                            d="M12 2C12 7.5 7.5 12 2 12C7.5 12 12 16.5 12 22C12 16.5 16.5 12 22 12C16.5 12 12 7.5 12 2Z"
+                            fill="url(#geminiGradient)"
+                          />
+                          <defs>
+                            <linearGradient id="geminiGradient" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+                              <stop stopColor="#3b82f6" />
+                              <stop offset="0.5" stopColor="#8b5cf6" />
+                              <stop offset="1" stopColor="#ec4899" />
+                            </linearGradient>
+                          </defs>
+                        </svg>
+                      </div>
 
-                <div className="rg-summary-tile">
-                  <div className="rg-summary-label">AI Engine</div>
-                  <div className="rg-summary-val">
-                    {selectedBulkEngine ? selectedBulkEngine.name : "None Selected"}
-                  </div>
-                  <div className="rg-summary-sub">
-                    {selectedBulkEngine?.hasKey ? "✓ Valid API Key" : "⚠️ Key Missing"}
-                  </div>
-                </div>
-              </div>
-
-              <div style={{ marginTop: "16px", padding: "12px 16px", background: "#f8fafc", borderRadius: "10px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px" }}>
-                <div style={{ fontSize: "13px", color: "#475569" }}>
-                  <strong>Current Store Status:</strong> {totalReviewsCount} reviews currently published in store widget.
-                </div>
-                <div style={{ fontSize: "12.5px", color: "#64748b" }}>
-                  Generated reviews are saved with authentic verified buyer tags and 4-5 star ratings.
-                </div>
-              </div>
-            </div>
-
-            {/* STEP 4: GENERATE REVIEWS BUTTON */}
-            <div className="rg-step-card" style={{ textAlign: "center", padding: "32px 24px" }}>
-              <div style={{ maxWidth: "600px", margin: "0 auto" }}>
-                <span className="rg-step-badge" style={{ marginBottom: "12px" }}>Step 4</span>
-                <h3 style={{ fontSize: "20px", fontWeight: 700, color: "#111827", margin: "8px 0" }}>
-                  Ready to Generate Authentic Reviews?
-                </h3>
-                <p style={{ fontSize: "14px", color: "#4b5563", margin: "0 0 24px 0" }}>
-                  Click below to generate {totalReviewsToGenerate} authentic reviews across your {products.length} products using {selectedBulkEngine?.name}.
-                </p>
-
-                {bulkLoading && (
-                  <div style={{ marginBottom: "20px", textAlign: "left" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "6px", fontSize: "13px", color: "#374151" }}>
-                      <span>Generating reviews across {products.length} catalog items...</span>
-                      <strong>{bulkProgress}%</strong>
+                      <div>
+                        <div style={{ fontSize: "14.5px", fontWeight: 700, color: "#111827" }}>
+                          {selectedBulkEngine?.name || "Google Gemini"}
+                        </div>
+                        <div style={{ fontSize: "12px", color: "#6b7280" }}>
+                          Advanced AI for natural, high-quality reviews.
+                        </div>
+                      </div>
                     </div>
-                    <ProgressBar progress={bulkProgress} animated />
+
+                    <div>
+                      {selectedBulkEngine?.hasKey ? (
+                        <span
+                          style={{
+                            background: "#dcfce7",
+                            color: "#15803d",
+                            fontSize: "12px",
+                            fontWeight: 600,
+                            padding: "3px 12px",
+                            borderRadius: "9999px",
+                            display: "inline-block",
+                          }}
+                        >
+                          Ready
+                        </span>
+                      ) : (
+                        <Link
+                          to="/app/ai-settings"
+                          style={{
+                            background: "#fef3c7",
+                            color: "#b45309",
+                            fontSize: "12px",
+                            fontWeight: 600,
+                            padding: "3px 10px",
+                            borderRadius: "9999px",
+                            textDecoration: "none",
+                          }}
+                        >
+                          Add Key →
+                        </Link>
+                      )}
+                    </div>
                   </div>
-                )}
 
-                <button
-                  type="button"
-                  className="rg-generate-btn"
-                  disabled={bulkLoading || !selectedBulkEngine?.hasKey || products.length === 0}
-                  onClick={handleBulkGenerateAll}
-                >
-                  <span>🪄</span>
+                  {/* Estimated Time Row */}
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "14px", flexWrap: "wrap" }}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2">
+                      <circle cx="12" cy="12" r="10" />
+                      <path d="M12 6v6l4 2" />
+                    </svg>
+                    <span style={{ fontSize: "13px", color: "#6b7280" }}>Estimated time</span>
+                    <strong style={{ fontSize: "13.5px", color: "#111827" }}>
+                      {estimatedTimeInfo.range}
+                    </strong>
+                    <span style={{ fontSize: "11.5px", color: "#6b7280" }}>
+                      Based on {totalReviewsToGenerate} reviews • ~{estimatedTimeInfo.secondsPerReview} seconds per review
+                    </span>
+                  </div>
+
+                  {/* Loading Progress Bar */}
+                  {bulkLoading && (
+                    <div style={{ marginBottom: "14px" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12.5px", color: "#374151", marginBottom: "4px" }}>
+                        <span>Generating reviews...</span>
+                        <strong>{bulkProgress}%</strong>
+                      </div>
+                      <ProgressBar progress={bulkProgress} animated />
+                    </div>
+                  )}
+
+                  {/* Primary Action Button */}
+                  <button
+                    type="button"
+                    className="rg-btn-primary-blue"
+                    disabled={bulkLoading || !selectedBulkEngine?.hasKey || filteredProducts.length === 0}
+                    onClick={handleBulkGenerateAll}
+                  >
+                    <span>✦</span>
+                    <span>
+                      {bulkLoading
+                        ? "Generating Reviews Across Products..."
+                        : `Generate ${totalReviewsToGenerate} Reviews`}
+                    </span>
+                  </button>
+
+                  {/* Secondary Action Button */}
+                  <button
+                    type="button"
+                    className="rg-btn-secondary-white"
+                    style={{ marginTop: "10px", marginBottom: "14px" }}
+                    onClick={() => setPreviewModalOpen(true)}
+                  >
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#4b5563" strokeWidth="2">
+                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                      <circle cx="12" cy="12" r="3" />
+                    </svg>
+                    <span>Preview sample reviews</span>
+                  </button>
+                </div>
+
+                {/* Shield Note Footer */}
+                <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", color: "#6b7280", paddingTop: "8px" }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                  </svg>
                   <span>
-                    {bulkLoading
-                      ? "Generating Reviews Across All Products..."
-                      : `Generate ${totalReviewsToGenerate} Reviews for All Products`}
+                    Reviews will be saved with {useVerifiedBuyerTag ? "verified buyer tags" : "standard tags"} and {ratingRange} ratings.
                   </span>
-                </button>
+                </div>
+              </div>
+            </div>
 
-                {!selectedBulkEngine?.hasKey && (
-                  <div style={{ marginTop: "12px", fontSize: "13px", color: "#dc2626" }}>
-                    ⚠️ Please select an AI Engine with a valid saved API key above, or configure one in AI Settings.
+            {/* AUDIT HISTORY ACCORDION */}
+            <div style={{ marginTop: "24px", textAlign: "right" }}>
+              <button
+                type="button"
+                className="rg-btn-secondary-white"
+                style={{ width: "auto", display: "inline-flex", fontSize: "12px", padding: "6px 14px" }}
+                onClick={() => setShowAuditHistory(!showAuditHistory)}
+              >
+                {showAuditHistory ? "Hide Generation History ▲" : "View Audit History & Past Jobs ▼"}
+              </button>
+            </div>
+
+            {showAuditHistory && (
+              <div
+                style={{
+                  marginTop: "14px",
+                  background: "#ffffff",
+                  border: "1px solid #e5e7eb",
+                  borderRadius: "10px",
+                  padding: "16px",
+                }}
+              >
+                <h4 style={{ margin: "0 0 10px 0", fontSize: "14px", fontWeight: 600, color: "#111827" }}>
+                  Recent AI Review Generation History
+                </h4>
+                {recentJobs.length === 0 ? (
+                  <p style={{ margin: 0, fontSize: "13px", color: "#6b7280" }}>
+                    No previous generation jobs recorded. Once you generate reviews, logs will be visible here.
+                  </p>
+                ) : (
+                  <div style={{ overflowX: "auto" }}>
+                    <table style={{ width: "100%", fontSize: "12.5px", borderCollapse: "collapse" }}>
+                      <thead>
+                        <tr style={{ borderBottom: "1px solid #e5e7eb", color: "#6b7280", textAlign: "left" }}>
+                          <th style={{ padding: "8px" }}>Date</th>
+                          <th style={{ padding: "8px" }}>Engine</th>
+                          <th style={{ padding: "8px" }}>Reviews Generated</th>
+                          <th style={{ padding: "8px" }}>Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {recentJobs.map((job) => (
+                          <tr key={job.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                            <td style={{ padding: "8px" }}>{new Date(job.createdAt).toLocaleString()}</td>
+                            <td style={{ padding: "8px", textTransform: "capitalize" }}>{job.provider}</td>
+                            <td style={{ padding: "8px", fontWeight: 600 }}>{job.resultCount} reviews</td>
+                            <td style={{ padding: "8px" }}>
+                              <span style={{ background: "#dcfce7", color: "#15803d", padding: "2px 8px", borderRadius: "9999px", fontSize: "11px", fontWeight: 600 }}>
+                                {job.status}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 )}
               </div>
-            </div>
+            )}
+
+            {/* ================= EDIT SCOPE MODAL ================= */}
+            {editScopeModalOpen && (
+              <div className="rg-modal-overlay" onClick={() => setEditScopeModalOpen(false)}>
+                <div className="rg-modal-dialog" onClick={(e) => e.stopPropagation()}>
+                  <div style={{ padding: "18px 22px", borderBottom: "1px solid #e5e7eb", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div>
+                      <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 700, color: "#111827" }}>
+                        Select Products for AI Review Generation
+                      </h3>
+                      <p style={{ margin: "2px 0 0 0", fontSize: "12.5px", color: "#6b7280" }}>
+                        Check specific products you want to generate reviews for.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      style={{ background: "none", border: "none", fontSize: "20px", cursor: "pointer", color: "#6b7280" }}
+                      onClick={() => setEditScopeModalOpen(false)}
+                    >
+                      ×
+                    </button>
+                  </div>
+
+                  <div style={{ padding: "14px 22px", borderBottom: "1px solid #f1f5f9", display: "flex", gap: "10px", alignItems: "center" }}>
+                    <input
+                      type="text"
+                      className="rg-input"
+                      style={{ padding: "8px 12px", fontSize: "13px" }}
+                      placeholder="Search active catalog products..."
+                      value={scopeSearchQuery}
+                      onChange={(e) => setScopeSearchQuery(e.target.value)}
+                    />
+                    <button
+                      type="button"
+                      className="rg-btn-secondary-white"
+                      style={{ width: "auto", whiteSpace: "nowrap", padding: "8px 12px", fontSize: "12.5px" }}
+                      onClick={() => {
+                        setCustomSelectedIds(products.map((p) => p.value));
+                        setTargetScope("custom");
+                      }}
+                    >
+                      Select All
+                    </button>
+                    <button
+                      type="button"
+                      className="rg-btn-secondary-white"
+                      style={{ width: "auto", whiteSpace: "nowrap", padding: "8px 12px", fontSize: "12.5px" }}
+                      onClick={() => {
+                        setCustomSelectedIds([]);
+                        setTargetScope("all_active");
+                      }}
+                    >
+                      Reset All
+                    </button>
+                  </div>
+
+                  <div style={{ maxHeight: "380px", overflowY: "auto", padding: "10px 22px" }}>
+                    {products
+                      .filter((p) => p.label.toLowerCase().includes(scopeSearchQuery.toLowerCase()))
+                      .map((p) => {
+                        const isChecked = customSelectedIds.length === 0
+                          ? targetScope !== "custom"
+                          : customSelectedIds.includes(p.value);
+                        return (
+                          <label
+                            key={p.value}
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "12px",
+                              padding: "10px 0",
+                              borderBottom: "1px solid #f8fafc",
+                              cursor: "pointer",
+                            }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={(e) => {
+                                setTargetScope("custom");
+                                if (e.target.checked) {
+                                  setCustomSelectedIds((prev) => [...prev, p.value]);
+                                } else {
+                                  setCustomSelectedIds((prev) => prev.filter((id) => id !== p.value));
+                                }
+                              }}
+                            />
+                            {p.imageUrl ? (
+                              <img
+                                src={p.imageUrl}
+                                alt={p.label}
+                                style={{ width: "36px", height: "36px", borderRadius: "6px", objectFit: "cover" }}
+                              />
+                            ) : (
+                              <div
+                                style={{
+                                  width: "36px",
+                                  height: "36px",
+                                  borderRadius: "6px",
+                                  background: "#f1f5f9",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  fontSize: "16px",
+                                }}
+                              >
+                                📦
+                              </div>
+                            )}
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: "13.5px", fontWeight: 600, color: "#111827", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                                {p.label}
+                              </div>
+                              <div style={{ fontSize: "12px", color: "#6b7280" }}>
+                                {productStats[p.value]?.count || 0} reviews existing
+                              </div>
+                            </div>
+                          </label>
+                        );
+                      })}
+                  </div>
+
+                  <div style={{ padding: "14px 22px", borderTop: "1px solid #e5e7eb", display: "flex", justifyContent: "space-between", alignItems: "center", background: "#f8fafc" }}>
+                    <div style={{ fontSize: "13px", color: "#475569" }}>
+                      <strong>{filteredProducts.length}</strong> products will be targeted
+                    </div>
+                    <button
+                      type="button"
+                      className="rg-btn-primary-blue"
+                      style={{ width: "auto", padding: "8px 20px" }}
+                      onClick={() => setEditScopeModalOpen(false)}
+                    >
+                      Done & Apply Scope
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ================= SAMPLE REVIEW PREVIEW MODAL ================= */}
+            {previewModalOpen && (
+              <div className="rg-modal-overlay" onClick={() => setPreviewModalOpen(false)}>
+                <div className="rg-modal-dialog" onClick={(e) => e.stopPropagation()}>
+                  <div style={{ padding: "18px 22px", borderBottom: "1px solid #e5e7eb", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div>
+                      <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 700, color: "#111827" }}>
+                        Sample Review Preview
+                      </h3>
+                      <p style={{ margin: "2px 0 0 0", fontSize: "12.5px", color: "#6b7280" }}>
+                        Simulated review preview using your current generator settings.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      style={{ background: "none", border: "none", fontSize: "20px", cursor: "pointer", color: "#6b7280" }}
+                      onClick={() => setPreviewModalOpen(false)}
+                    >
+                      ×
+                    </button>
+                  </div>
+
+                  <div style={{ padding: "18px 22px", overflowY: "auto", maxHeight: "400px" }}>
+                    {/* Simulated Review Card 1 */}
+                    <div
+                      style={{
+                        background: "#f8fafc",
+                        border: "1px solid #e2e8f0",
+                        borderRadius: "10px",
+                        padding: "16px",
+                        marginBottom: "14px",
+                      }}
+                    >
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                          <span style={{ color: "#f59e0b", fontSize: "15px" }}>★★★★★</span>
+                          <strong style={{ fontSize: "13.5px", color: "#111827" }}>Emily R.</strong>
+                          {useVerifiedBuyerTag && (
+                            <span style={{ fontSize: "11px", fontWeight: 600, color: "#16a34a", background: "#dcfce7", padding: "2px 8px", borderRadius: "9999px" }}>
+                              ✓ Verified Buyer
+                            </span>
+                          )}
+                        </div>
+                        <span style={{ fontSize: "11.5px", color: "#94a3b8" }}>2 days ago</span>
+                      </div>
+
+                      {includeTitles && (
+                        <h4 style={{ margin: "0 0 6px 0", fontSize: "14px", fontWeight: 700, color: "#0f172a" }}>
+                          {bulkTone.includes("Friendly")
+                            ? "Exceeded all my expectations!"
+                            : bulkTone.includes("Enthusiastic")
+                            ? "Hands down the best purchase I made this year!"
+                            : bulkTone.includes("Short")
+                            ? "Great quality, five stars."
+                            : "Excellent build and reliable performance."}
+                        </h4>
+                      )}
+
+                      <p style={{ margin: 0, fontSize: "13px", color: "#334155", lineHeight: 1.5 }}>
+                        {bulkTone.includes("Friendly")
+                          ? `I was genuinely surprised by how great the ${filteredProducts[0]?.label || "item"} turned out. The craftsmanship is wonderful, shipping was fast, and it works exactly as promised.`
+                          : bulkTone.includes("Enthusiastic")
+                          ? `Obsessed with this! The quality is unmatched and everyone who visited asked where I got it. 10/10 recommendation for anyone on the fence!`
+                          : bulkTone.includes("Short")
+                          ? `Arrived quickly, packaged well, and works flawlessly. Very pleased with this purchase.`
+                          : `The item matches all specifications accurately. Materials are durable, ergonomic, and provide tremendous value for money.`}
+                      </p>
+                    </div>
+
+                    {/* Simulated Review Card 2 */}
+                    <div
+                      style={{
+                        background: "#f8fafc",
+                        border: "1px solid #e2e8f0",
+                        borderRadius: "10px",
+                        padding: "16px",
+                      }}
+                    >
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                          <span style={{ color: "#f59e0b", fontSize: "15px" }}>
+                            {ratingRange === "5 stars only" ? "★★★★★" : "★★★★☆"}
+                          </span>
+                          <strong style={{ fontSize: "13.5px", color: "#111827" }}>Marcus D.</strong>
+                          {useVerifiedBuyerTag && (
+                            <span style={{ fontSize: "11px", fontWeight: 600, color: "#16a34a", background: "#dcfce7", padding: "2px 8px", borderRadius: "9999px" }}>
+                              ✓ Verified Buyer
+                            </span>
+                          )}
+                        </div>
+                        <span style={{ fontSize: "11.5px", color: "#94a3b8" }}>Yesterday</span>
+                      </div>
+
+                      {includeTitles && (
+                        <h4 style={{ margin: "0 0 6px 0", fontSize: "14px", fontWeight: 700, color: "#0f172a" }}>
+                          Super happy with this item!
+                        </h4>
+                      )}
+
+                      <p style={{ margin: 0, fontSize: "13px", color: "#334155", lineHeight: 1.5 }}>
+                        Really impressed with the packaging and customer experience. Will definitely be placing another order soon!
+                      </p>
+                    </div>
+                  </div>
+
+                  <div style={{ padding: "14px 22px", borderTop: "1px solid #e5e7eb", display: "flex", justifyContent: "flex-end", gap: "10px", background: "#f8fafc" }}>
+                    <button
+                      type="button"
+                      className="rg-btn-secondary-white"
+                      style={{ width: "auto", padding: "8px 18px" }}
+                      onClick={() => setPreviewModalOpen(false)}
+                    >
+                      Close Preview
+                    </button>
+                    <button
+                      type="button"
+                      className="rg-btn-primary-blue"
+                      style={{ width: "auto", padding: "8px 20px" }}
+                      onClick={() => {
+                        setPreviewModalOpen(false);
+                        handleBulkGenerateAll();
+                      }}
+                    >
+                      Generate Reviews Now ✦
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

@@ -45,6 +45,10 @@ export async function action({ request }: ActionFunctionArgs) {
     reviewsPerProduct,
     mediaOption,
     count,
+    customProductIds,
+    verifiedBuyer,
+    ratingRange,
+    includeTitles,
   } = body;
 
   // Helper: fetch an image URL and convert to base64
@@ -290,6 +294,11 @@ export async function action({ request }: ActionFunctionArgs) {
         (p: any) => (p.status || "").toUpperCase() === "ACTIVE" || (p.status || "").toLowerCase() === "active" || !p.status,
       );
 
+      // Optional custom product scope filter
+      if (customProductIds && Array.isArray(customProductIds) && customProductIds.length > 0) {
+        productsList = productsList.filter((p: any) => customProductIds.includes(p.id));
+      }
+
       let totalGeneratedCount = 0;
       const countPerProduct = Math.min(
         Math.max(Number(reviewsPerProduct) || 3, 1),
@@ -342,21 +351,32 @@ export async function action({ request }: ActionFunctionArgs) {
               `review-${Date.now()}-${totalGeneratedCount}.png`,
             );
           }
+
+          let assignedRating = rev.rating || 5;
+          if (ratingRange === "5 stars only") {
+            assignedRating = 5;
+          } else if (ratingRange === "4–5 stars") {
+            assignedRating = Math.random() > 0.3 ? 5 : 4;
+          } else if (ratingRange === "3–5 stars") {
+            const rand = Math.random();
+            assignedRating = rand > 0.4 ? 5 : rand > 0.15 ? 4 : 3;
+          }
+
           await db.review.create({
             data: {
               shop,
               productId: prod.id,
               productHandle: prod.handle || null,
               reviewerName: rev.reviewerName || "Verified Buyer",
-              rating: rev.rating || 5,
-              bodyShort: rev.bodyShort || "",
+              rating: assignedRating,
+              bodyShort: includeTitles === false ? "" : (rev.bodyShort || "Highly recommended"),
               bodyFull: rev.bodyFull || "",
               imageUrl: finalBulkImg,
               videoUrl: rev.videoUrl || null,
               source: "AI_GENERATED",
               isAiGenerated: true,
               isPublished: true,
-              isVerifiedPurchase: true,
+              isVerifiedPurchase: verifiedBuyer !== false,
               language: language || "en",
               tags: JSON.stringify(rev.tags || []),
             },
