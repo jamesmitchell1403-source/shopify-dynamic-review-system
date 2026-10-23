@@ -1,27 +1,6 @@
 import { json, LoaderFunctionArgs, ActionFunctionArgs } from "@remix-run/node";
 import { useLoaderData, useNavigate, useFetcher, useRouteError } from "@remix-run/react";
-import { useState, useMemo } from "react";
-import {
-  Page,
-  Card,
-  Text,
-  BlockStack,
-  InlineStack,
-  Button,
-  Icon,
-} from "@shopify/polaris";
-import {
-  ChatIcon,
-  StarFilledIcon,
-  EmailIcon,
-  ClockIcon,
-  CheckCircleIcon,
-  ArrowRightIcon,
-  ArrowUpIcon,
-  ViewIcon,
-  HideIcon,
-  DeleteIcon,
-} from "@shopify/polaris-icons";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { authenticate } from "../shopify.server";
 import db, { ensureTablesExist } from "../db.server";
 import {
@@ -33,7 +12,7 @@ import { getShopWhereClause } from "../services/shopDomain.server";
 import { getShopAIKeysFromShopify } from "../services/shopifyMetafields.server";
 
 // ==========================================
-// 1. LOADER FUNCTION
+// 1. LOADER FUNCTION (DYNAMIC DATA ENGINE)
 // ==========================================
 export async function loader({ request }: LoaderFunctionArgs) {
   await ensureTablesExist();
@@ -48,7 +27,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   const shopWhere = getShopWhereClause(shop);
 
-  // 1. Fetch reviews for this store with optimized field selection
+  // 1. Fetch reviews with full details
   const reviews = await db.review.findMany({
     where: shopWhere,
     select: {
@@ -64,7 +43,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     orderBy: { createdAt: "desc" },
   });
 
-  // 2. Fetch settings and cloud keys (cached / conditional to avoid redundant GraphQL calls)
+  // 2. Fetch settings and cloud keys
   const settings = await db.shopSettings.findUnique({ where: { shop } });
   const hasLocalAiKey = Boolean(
     settings?.anthropicApiKey ||
@@ -79,7 +58,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     } catch (_) {}
   }
 
-  // 3. QR code scans (used for review request conversion)
+  // 3. QR code scans
   const qrScansResult = await db.qrCodeRecord.aggregate({
     where: shopWhere,
     _sum: { scans: true },
@@ -90,9 +69,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const totalReviews = reviews.length;
   const publishedReviews = reviews.filter((r) => r.isPublished).length;
   const pendingReviews = reviews.filter((r) => !r.isPublished).length;
-  const aiGeneratedCount = reviews.filter((r) => r.isAiGenerated).length;
+  const aiGeneratedCount = reviews.filter((r) => r.isAiGenerated || (r.source || "").toUpperCase().includes("AI")).length;
   const importedCount = reviews.filter((r) =>
-    ["IMPORTED_AMAZON", "IMPORTED_FLIPKART", "IMPORTED_ALIBABA", "AMAZON", "FLIPKART", "ALIBABA"].includes(r.source)
+    ["IMPORTED_AMAZON", "IMPORTED_FLIPKART", "IMPORTED_ALIBABA", "AMAZON", "FLIPKART", "ALIBABA"].some((s) =>
+      (r.source || "").toUpperCase().includes(s)
+    )
   ).length;
 
   const totalRatingSum = reviews.reduce((sum, r) => sum + (r.rating || 5), 0);
@@ -111,14 +92,33 @@ export async function loader({ request }: LoaderFunctionArgs) {
     return { stars: s, count, percentage };
   });
 
-  // 6. Sources breakdown
+  // 6. Source Counts for Tab Pills
+  const sourceCounts = {
+    all: totalReviews,
+    alibaba: reviews.filter((r) => (r.source || "").toUpperCase().includes("ALIBABA")).length,
+    flipkart: reviews.filter((r) => (r.source || "").toUpperCase().includes("FLIPKART")).length,
+    amazon: reviews.filter((r) => (r.source || "").toUpperCase().includes("AMAZON")).length,
+    ai_drafts: aiGeneratedCount,
+    store_orders: reviews.filter((r) => {
+      const src = (r.source || "").toUpperCase();
+      return (
+        !src.includes("ALIBABA") &&
+        !src.includes("FLIPKART") &&
+        !src.includes("AMAZON") &&
+        !r.isAiGenerated &&
+        !src.includes("AI")
+      );
+    }).length,
+  };
+
+  // 7. Sources breakdown for Donut Chart
   const sourceGroups: { [key: string]: number } = {};
   reviews.forEach((r) => {
     const src = (r.source || "STORE_ORDER").toUpperCase();
     let normalized = "Store orders";
-    if (src.includes("AMAZON")) normalized = "Amazon";
+    if (src.includes("ALIBABA")) normalized = "Alibaba";
     else if (src.includes("FLIPKART")) normalized = "Flipkart";
-    else if (src.includes("ALIBABA")) normalized = "Alibaba";
+    else if (src.includes("AMAZON")) normalized = "Amazon";
     else if (r.isAiGenerated || src.includes("AI")) normalized = "AI Drafts";
     else normalized = "Store orders";
 
@@ -126,11 +126,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
   });
 
   const sourceColors: { [key: string]: string } = {
-    "Store orders": "#22c55e",
-    "Amazon": "#f59e0b",
-    "Flipkart": "#3b82f6",
-    "Alibaba": "#64748b",
+    Alibaba: "#3b82f6",
+    Flipkart: "#0ea5e9",
+    Amazon: "#f59e0b",
     "AI Drafts": "#a855f7",
+    "Store orders": "#10b981",
   };
 
   const sourcesBreakdown = Object.entries(sourceGroups).map(([label, count]) => ({
@@ -142,18 +142,18 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   if (sourcesBreakdown.length === 0) {
     sourcesBreakdown.push(
-      { label: "Store orders", count: 0, color: "#22c55e", percentage: 0 },
+      { label: "Alibaba", count: 0, color: "#3b82f6", percentage: 0 },
+      { label: "Flipkart", count: 0, color: "#0ea5e9", percentage: 0 },
       { label: "Amazon", count: 0, color: "#f59e0b", percentage: 0 },
-      { label: "Flipkart", count: 0, color: "#3b82f6", percentage: 0 },
-      { label: "Alibaba", count: 0, color: "#64748b", percentage: 0 }
+      { label: "AI Drafts", count: 0, color: "#a855f7", percentage: 0 }
     );
   }
 
-  // 7. Reviews over time (30d, 90d, 1y)
+  // 8. Reviews over time (30d, 90d, 1y)
   const now = new Date();
 
-  // 30 Days daily data
-  const data30d: { label: string; count: number }[] = [];
+  // 30 Days daily data (30 points)
+  const data30d: { label: string; count: number; dateStr: string }[] = [];
   for (let i = 29; i >= 0; i--) {
     const d = new Date(now);
     d.setDate(d.getDate() - i);
@@ -166,11 +166,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
         return false;
       }
     }).length;
-    data30d.push({ label: dayLabel, count });
+    data30d.push({ label: dayLabel, count, dateStr });
   }
 
   // 90 Days weekly data (12 points)
-  const data90d: { label: string; count: number }[] = [];
+  const data90d: { label: string; count: number; dateStr: string }[] = [];
   for (let w = 11; w >= 0; w--) {
     const startW = new Date(now);
     startW.setDate(startW.getDate() - (w + 1) * 7);
@@ -185,11 +185,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
         return false;
       }
     }).length;
-    data90d.push({ label, count });
+    data90d.push({ label, count, dateStr: label });
   }
 
-  // 1 Year monthly data (12 months)
-  const data1y: { label: string; count: number }[] = [];
+  // 1 Year monthly data (12 points)
+  const data1y: { label: string; count: number; dateStr: string }[] = [];
   for (let m = 11; m >= 0; m--) {
     const targetMonth = new Date(now.getFullYear(), now.getMonth() - m, 1);
     const nextMonth = new Date(now.getFullYear(), now.getMonth() - m + 1, 1);
@@ -202,48 +202,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
         return false;
       }
     }).length;
-    data1y.push({ label, count });
+    data1y.push({ label, count, dateStr: label });
   }
 
-  // 8. Weekly growth trend
-  const last7DaysCount = reviews.filter((r) => {
-    try {
-      const cd = new Date(r.createdAt);
-      return now.getTime() - cd.getTime() <= 7 * 24 * 60 * 60 * 1000;
-    } catch {
-      return false;
-    }
-  }).length;
-  const prev7DaysCount = reviews.filter((r) => {
-    try {
-      const cd = new Date(r.createdAt);
-      const diff = now.getTime() - cd.getTime();
-      return diff > 7 * 24 * 60 * 60 * 1000 && diff <= 14 * 24 * 60 * 60 * 1000;
-    } catch {
-      return false;
-    }
-  }).length;
-
-  let weeklyGrowth = 0;
-  let weeklyGrowthText = "0% this week";
-  let isWeeklyPositive = true;
-
-  if (prev7DaysCount > 0) {
-    const pct = Math.round(((last7DaysCount - prev7DaysCount) / prev7DaysCount) * 100);
-    weeklyGrowth = pct;
-    weeklyGrowthText = `${pct >= 0 ? "+" : ""}${pct}% this week`;
-    isWeeklyPositive = pct >= 0;
-  } else if (last7DaysCount > 0) {
-    weeklyGrowth = 100;
-    weeklyGrowthText = `+${last7DaysCount} new this week`;
-    isWeeklyPositive = true;
-  } else {
-    weeklyGrowth = 0;
-    weeklyGrowthText = "0% this week";
-    isWeeklyPositive = true;
-  }
-
-  // Real Rating Difference (last 30 days vs previous 30 days)
+  // 9. Trend calculations (last 30 days vs previous 30 days matching screenshot)
   const recent30Reviews = reviews.filter((r) => {
     try {
       return now.getTime() - new Date(r.createdAt).getTime() <= 30 * 24 * 60 * 60 * 1000;
@@ -260,20 +222,42 @@ export async function loader({ request }: LoaderFunctionArgs) {
     }
   });
 
-  const recentAvg = recent30Reviews.length > 0
-    ? recent30Reviews.reduce((sum, r) => sum + (r.rating || 5), 0) / recent30Reviews.length
-    : Number(averageRating);
-  const prevAvg = prev30Reviews.length > 0
-    ? prev30Reviews.reduce((sum, r) => sum + (r.rating || 5), 0) / prev30Reviews.length
-    : recentAvg;
+  let monthlyGrowth = 0;
+  let monthlyGrowthText = "+0% vs. previous 30 days";
+  let isMonthlyPositive = true;
+
+  if (prev30Reviews.length > 0) {
+    const pct = Math.round(((recent30Reviews.length - prev30Reviews.length) / prev30Reviews.length) * 100);
+    monthlyGrowth = pct;
+    monthlyGrowthText = `${pct >= 0 ? "+" : ""}${pct}% vs. previous 30 days`;
+    isMonthlyPositive = pct >= 0;
+  } else if (recent30Reviews.length > 0) {
+    monthlyGrowth = 100;
+    monthlyGrowthText = `+${recent30Reviews.length} new vs. previous 30 days`;
+    isMonthlyPositive = true;
+  } else {
+    monthlyGrowth = 0;
+    monthlyGrowthText = "0% vs. previous 30 days";
+    isMonthlyPositive = true;
+  }
+
+  // Rating difference
+  const recentAvg =
+    recent30Reviews.length > 0
+      ? recent30Reviews.reduce((sum, r) => sum + (r.rating || 5), 0) / recent30Reviews.length
+      : Number(averageRating);
+  const prevAvg =
+    prev30Reviews.length > 0
+      ? prev30Reviews.reduce((sum, r) => sum + (r.rating || 5), 0) / prev30Reviews.length
+      : recentAvg;
   const ratingDiffVal = Number((recentAvg - prevAvg).toFixed(1));
-  const ratingDiffText = ratingDiffVal >= 0 ? `+${ratingDiffVal.toFixed(1)}` : `${ratingDiffVal.toFixed(1)}`;
+  const ratingDiffText = `${ratingDiffVal >= 0 ? "+" : ""}${ratingDiffVal.toFixed(1)} vs. previous 30 days`;
   const isRatingPositive = ratingDiffVal >= 0;
 
-  // Real 7-day sparklines from actual database reviews
+  // 10. Dynamic 7-day sparklines
   const sparklineTotal: number[] = [];
   const sparklineRating: number[] = [];
-  const sparklineRequests: number[] = [];
+  const sparklinePending: number[] = [];
 
   for (let i = 6; i >= 0; i--) {
     const dStart = new Date(now);
@@ -292,38 +276,39 @@ export async function loader({ request }: LoaderFunctionArgs) {
     });
 
     const dayCount = dayReviews.length;
-    const dayRating = dayCount > 0
-      ? Number((dayReviews.reduce((sum, r) => sum + (r.rating || 5), 0) / dayCount).toFixed(1))
-      : Number(averageRating);
-    const dayPub = dayReviews.filter((r) => r.isPublished).length;
+    const dayRating =
+      dayCount > 0
+        ? Number((dayReviews.reduce((sum, r) => sum + (r.rating || 5), 0) / dayCount).toFixed(1))
+        : Number(averageRating);
+    const dayPend = dayReviews.filter((r) => !r.isPublished).length;
 
     sparklineTotal.push(dayCount);
     sparklineRating.push(dayRating);
-    sparklineRequests.push(dayPub);
+    sparklinePending.push(dayPend);
   }
 
-  // 9. Checklist status
+  // 11. Checklist status
   const hasAiKey = Boolean(
     settings?.anthropicApiKey ||
-      settings?.geminiApiKey ||
-      (settings as any)?.openaiApiKey ||
-      cloudKeys?.anthropicApiKey ||
-      cloudKeys?.geminiApiKey ||
-      cloudKeys?.openaiApiKey
+    settings?.geminiApiKey ||
+    (settings as any)?.openaiApiKey ||
+    cloudKeys?.anthropicApiKey ||
+    cloudKeys?.geminiApiKey ||
+    cloudKeys?.openaiApiKey
   );
   const isWidgetEnabled = Boolean(settings?.widgetEnabled ?? true);
   const hasMarketplaceReviews = importedCount > 0;
-  const hasReviewRequests = totalQrScans > 0 || totalReviews > 5;
+  const isWidgetConfigured = Boolean(settings?.widgetLayoutStyle);
 
   const checklistItems = [
     { id: "widget", title: "Enable popup widget", completed: isWidgetEnabled, href: "/app/widget-settings" },
     { id: "import", title: "Import marketplace reviews", completed: hasMarketplaceReviews, href: "/app/import-reviews" },
     { id: "ai", title: "Connect AI provider", completed: hasAiKey, href: "/app/ai-settings" },
-    { id: "generate", title: "Generate AI reviews", completed: aiGeneratedCount > 0, href: "/app/ai-generator" },
+    { id: "widget_settings", title: "Configure widget settings", completed: isWidgetConfigured, href: "/app/widget-settings" },
   ];
   const completedChecklistCount = checklistItems.filter((c) => c.completed).length;
 
-  // 10. Reviews for moderation table (full list for client pagination & bulk management)
+  // 12. Recent reviews formatted for the table
   const recentReviews = reviews.map((r) => ({
     id: r.id,
     reviewerName: r.reviewerName || "Verified Buyer",
@@ -335,6 +320,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
     createdAt: r.createdAt ? new Date(r.createdAt).toISOString() : new Date().toISOString(),
   }));
 
+  const adminName = (shop || "admin").split(".")[0].replace(/-/g, " ");
+
   return json({
     totalReviews,
     publishedReviews,
@@ -342,13 +329,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
     aiGeneratedCount,
     importedCount,
     averageRating,
-    weeklyGrowth,
-    weeklyGrowthText,
-    isWeeklyPositive,
+    monthlyGrowth,
+    monthlyGrowthText,
+    isMonthlyPositive,
     ratingDiffText,
     isRatingPositive,
     totalQrScans,
     starBreakdown,
+    sourceCounts,
     sourcesBreakdown,
     chartData: {
       "30d": data30d,
@@ -364,13 +352,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
     sparklines: {
       total: sparklineTotal,
       rating: sparklineRating,
-      requests: sparklineRequests,
+      pending: sparklinePending,
     },
+    adminName,
   });
 }
 
 // ==========================================
-// 2. ACTION FUNCTION (QUICK MODERATION)
+// 2. ACTION FUNCTION (MODERATION HANDLERS)
 // ==========================================
 export async function action({ request }: ActionFunctionArgs) {
   const { admin, session } = await authenticate.admin(request);
@@ -436,22 +425,32 @@ export async function action({ request }: ActionFunctionArgs) {
 // 3. SVG VISUALIZATION COMPONENTS
 // ==========================================
 
-// Smooth Sparkline Curve for KPI Cards
-function Sparkline({ points, color }: { points: number[]; color: string }) {
-  if (!points || points.length < 2) return null;
-  const min = Math.min(...points);
-  const max = Math.max(...points);
-  const range = max - min || 1;
-  const width = 100;
-  const height = 26;
+// Helper to extract initials
+function getInitials(name: string) {
+  if (!name) return "VC";
+  const clean = name.replace(/[^a-zA-Z\s]/g, "").trim();
+  const parts = clean.split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "VC";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
 
-  const coords = points.map((val, idx) => {
-    const x = (idx / (points.length - 1)) * width;
+// Smooth Sparkline Curve for KPI Cards
+function SparklineWave({ points, color }: { points: number[]; color: string }) {
+  const width = 84;
+  const height = 24;
+
+  let validPoints = points && points.length >= 2 ? points : [2, 3, 4, 3, 6, 8, 7];
+  const min = Math.min(...validPoints);
+  const max = Math.max(...validPoints);
+  const range = max - min || 1;
+
+  const coords = validPoints.map((val, idx) => {
+    const x = (idx / (validPoints.length - 1)) * width;
     const y = height - ((val - min) / range) * (height - 6) - 3;
     return { x, y };
   });
 
-  // Generate smooth cubic bezier SVG path
   let pathD = `M ${coords[0].x} ${coords[0].y}`;
   for (let i = 0; i < coords.length - 1; i++) {
     const curr = coords[i];
@@ -461,26 +460,39 @@ function Sparkline({ points, color }: { points: number[]; color: string }) {
   }
 
   return (
-    <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} style={{ overflow: "visible" }}>
+    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} style={{ overflow: "visible" }}>
       <path d={pathD} fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
 
-// Reviews Over Time Area Chart
-function ReviewsOverTimeChart({ data }: { data: { label: string; count: number }[] }) {
+// Review Performance Area Chart (Matches Reference Exactly)
+function ReviewPerformanceChart({
+  data,
+  timeframe,
+}: {
+  data: { label: string; count: number; dateStr: string }[];
+  timeframe: string;
+}) {
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
 
   const counts = data.map((d) => d.count);
-  const maxCount = Math.max(...counts, 10);
-  const width = 600;
+  const rawMax = Math.max(...counts, 0);
+  const maxScale = rawMax > 60 ? 80 : rawMax > 30 ? 60 : rawMax > 15 ? 40 : rawMax > 0 ? 20 : 80;
+
+  const width = 560;
   const height = 180;
-  const paddingX = 30;
-  const paddingY = 25;
+  const padLeft = 32;
+  const padRight = 16;
+  const padTop = 14;
+  const padBottom = 26;
+
+  const chartW = width - padLeft - padRight;
+  const chartH = height - padTop - padBottom;
 
   const coords = data.map((item, idx) => {
-    const x = paddingX + (idx / Math.max(1, data.length - 1)) * (width - paddingX * 2);
-    const y = height - paddingY - (item.count / maxCount) * (height - paddingY * 2);
+    const x = padLeft + (idx / Math.max(1, data.length - 1)) * chartW;
+    const y = padTop + chartH - (item.count / maxScale) * chartH;
     return { x, y, ...item };
   });
 
@@ -492,47 +504,60 @@ function ReviewsOverTimeChart({ data }: { data: { label: string; count: number }
     lineD += ` C ${mx} ${curr.y}, ${mx} ${next.y}, ${next.x} ${next.y}`;
   }
 
-  const areaD = coords.length > 0
-    ? `${lineD} L ${coords[coords.length - 1].x} ${height - paddingY} L ${coords[0].x} ${height - paddingY} Z`
-    : "";
+  const areaD =
+    coords.length > 0
+      ? `${lineD} L ${coords[coords.length - 1].x} ${padTop + chartH} L ${coords[0].x} ${padTop + chartH} Z`
+      : "";
+
+  // 5 Y-Axis scale marks: e.g. 80, 60, 40, 20, 0
+  const yTicks = [
+    { val: maxScale, y: padTop },
+    { val: Math.round(maxScale * 0.75), y: padTop + chartH * 0.25 },
+    { val: Math.round(maxScale * 0.5), y: padTop + chartH * 0.5 },
+    { val: Math.round(maxScale * 0.25), y: padTop + chartH * 0.75 },
+    { val: 0, y: padTop + chartH },
+  ];
+
+  // Pick 7 evenly spaced dates for X-axis
+  const xLabelsIndices = useMemo(() => {
+    if (coords.length <= 7) return coords.map((_, i) => i);
+    const step = (coords.length - 1) / 6;
+    return [0, 1, 2, 3, 4, 5, 6].map((i) => Math.round(i * step));
+  }, [coords.length]);
 
   return (
     <div style={{ position: "relative", width: "100%", height: "200px" }}>
-      <svg
-        width="100%"
-        height="100%"
-        viewBox={`0 0 ${width} ${height}`}
-        style={{ overflow: "visible" }}
-      >
+      <svg width="100%" height="100%" viewBox={`0 0 ${width} ${height}`} style={{ overflow: "visible" }}>
         <defs>
-          <linearGradient id="reviewAreaGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.35" />
-            <stop offset="100%" stopColor="#3b82f6" stopOpacity="0.02" />
+          <linearGradient id="areaPerfGradient" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.28" />
+            <stop offset="100%" stopColor="#3b82f6" stopOpacity="0.01" />
           </linearGradient>
         </defs>
 
-        {/* Subtle horizontal grid lines */}
-        {[0, 0.5, 1].map((ratio) => {
-          const y = height - paddingY - ratio * (height - paddingY * 2);
-          return (
+        {/* Horizontal Dotted Gridlines & Y-Axis Numbers */}
+        {yTicks.map((tick, idx) => (
+          <g key={idx}>
+            <text x={padLeft - 8} y={tick.y + 4} fill="#94a3b8" fontSize="10" textAnchor="end" fontWeight="500">
+              {tick.val}
+            </text>
             <line
-              key={ratio}
-              x1={paddingX}
-              y1={y}
-              x2={width - paddingX}
-              y2={y}
-              stroke="#e2e8f0"
-              strokeDasharray="4 4"
+              x1={padLeft}
+              y1={tick.y}
+              x2={width - padRight}
+              y2={tick.y}
+              stroke="#f1f5f9"
+              strokeDasharray="3 3"
               strokeWidth="1"
             />
-          );
-        })}
+          </g>
+        ))}
 
         {/* Gradient Area Fill */}
-        <path d={areaD} fill="url(#reviewAreaGrad)" />
+        {areaD && <path d={areaD} fill="url(#areaPerfGradient)" />}
 
-        {/* Main Smooth Line */}
-        <path d={lineD} fill="none" stroke="#2563eb" strokeWidth="2.5" strokeLinecap="round" />
+        {/* Smooth Blue Area Line */}
+        {lineD && <path d={lineD} fill="none" stroke="#2563eb" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />}
 
         {/* Interactive Dots */}
         {coords.map((c, idx) => (
@@ -540,31 +565,25 @@ function ReviewsOverTimeChart({ data }: { data: { label: string; count: number }
             <circle
               cx={c.x}
               cy={c.y}
-              r={hoveredIdx === idx ? 5.5 : 3.5}
+              r={hoveredIdx === idx ? 5.5 : 3}
               fill="#ffffff"
               stroke="#2563eb"
               strokeWidth={hoveredIdx === idx ? 3 : 2}
-              style={{ cursor: "pointer", transition: "all 0.15s ease" }}
+              style={{ cursor: "pointer", transition: "all 0.12s ease" }}
             />
           </g>
         ))}
 
-        {/* X-axis labels (first, middle, last) */}
-        {coords.length > 0 && (
-          <>
-            <text x={coords[0].x} y={height - 6} fill="#94a3b8" fontSize="11" textAnchor="start">
-              {coords[0].label}
+        {/* X-axis date labels */}
+        {xLabelsIndices.map((ptIdx) => {
+          const pt = coords[ptIdx];
+          if (!pt) return null;
+          return (
+            <text key={ptIdx} x={pt.x} y={height - 6} fill="#94a3b8" fontSize="10.5" textAnchor="middle" fontWeight="500">
+              {pt.label}
             </text>
-            {coords.length > 2 && (
-              <text x={coords[Math.floor(coords.length / 2)].x} y={height - 6} fill="#94a3b8" fontSize="11" textAnchor="middle">
-                {coords[Math.floor(coords.length / 2)].label}
-              </text>
-            )}
-            <text x={coords[coords.length - 1].x} y={height - 6} fill="#94a3b8" fontSize="11" textAnchor="end">
-              {coords[coords.length - 1].label}
-            </text>
-          </>
-        )}
+          );
+        })}
       </svg>
 
       {/* Floating Hover Tooltip */}
@@ -573,7 +592,7 @@ function ReviewsOverTimeChart({ data }: { data: { label: string; count: number }
           style={{
             position: "absolute",
             left: `${(coords[hoveredIdx].x / width) * 100}%`,
-            top: `${(coords[hoveredIdx].y / height) * 100 - 32}%`,
+            top: `${(coords[hoveredIdx].y / height) * 100 - 30}%`,
             transform: "translate(-50%, -100%)",
             backgroundColor: "#0f172a",
             color: "#ffffff",
@@ -582,7 +601,7 @@ function ReviewsOverTimeChart({ data }: { data: { label: string; count: number }
             fontSize: "12px",
             fontWeight: "600",
             pointerEvents: "none",
-            boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.2)",
+            boxShadow: "0 4px 10px rgba(0, 0, 0, 0.2)",
             whiteSpace: "nowrap",
             zIndex: 10,
           }}
@@ -594,26 +613,30 @@ function ReviewsOverTimeChart({ data }: { data: { label: string; count: number }
   );
 }
 
-// Reviews by Source Donut Chart
-function ReviewsBySourceDonut({ sources }: { sources: { label: string; count: number; color: string; percentage: number }[] }) {
-  const total = sources.reduce((sum, s) => sum + s.count, 0);
-
-  // SVG circular arc calculations
-  const radius = 55;
-  const strokeWidth = 24;
+// Reviews by Source Donut Chart (Matches Reference Exactly)
+function ReviewsBySourceDonut({
+  sources,
+  total,
+}: {
+  sources: { label: string; count: number; color: string; percentage: number }[];
+  total: number;
+}) {
+  const radius = 54;
+  const strokeWidth = 22;
   const circumference = 2 * Math.PI * radius;
 
   let accumulatedPercent = 0;
 
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: "28px", height: "100%" }}>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "24px", height: "100%" }}>
       {/* Donut Graphic */}
-      <div style={{ position: "relative", width: 140, height: 140, flexShrink: 0 }}>
+      <div style={{ position: "relative", width: 140, height: 140, flexShrink: 0, margin: "auto" }}>
         <svg width="140" height="140" viewBox="0 0 140 140" style={{ transform: "rotate(-90deg)" }}>
           {total === 0 ? (
-            <circle cx="70" cy="70" r={radius} fill="none" stroke="#e2e8f0" strokeWidth={strokeWidth} />
+            <circle cx="70" cy="70" r={radius} fill="none" stroke="#f1f5f9" strokeWidth={strokeWidth} />
           ) : (
             sources.map((item, idx) => {
+              if (item.count === 0) return null;
               const strokeDasharray = `${(item.percentage / 100) * circumference} ${circumference}`;
               const strokeDashoffset = -((accumulatedPercent / 100) * circumference);
               accumulatedPercent += item.percentage;
@@ -634,23 +657,39 @@ function ReviewsBySourceDonut({ sources }: { sources: { label: string; count: nu
             })
           )}
         </svg>
+
+        {/* Center Total Count */}
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            pointerEvents: "none",
+          }}
+        >
+          <div style={{ fontSize: "22px", fontWeight: "800", color: "#0f172a", lineHeight: 1.1 }}>{total}</div>
+          <div style={{ fontSize: "11px", fontWeight: "600", color: "#94a3b8" }}>Total</div>
+        </div>
       </div>
 
       {/* Legend Matching Reference Screenshot */}
-      <div style={{ display: "flex", flexDirection: "column", gap: "8px", flex: 1 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: "10px", flex: 1 }}>
         {sources.map((item, idx) => (
-          <div key={idx} style={{ display: "flex", alignItems: "center", gap: "10px", fontSize: "13px" }}>
+          <div key={idx} style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "13px" }}>
             <span
               style={{
-                width: 10,
-                height: 10,
+                width: 9,
+                height: 9,
                 borderRadius: "50%",
                 backgroundColor: item.color,
                 display: "inline-block",
                 flexShrink: 0,
               }}
             />
-            <span style={{ color: "#334155", fontWeight: 500, flex: 1 }}>{item.label}</span>
+            <span style={{ color: "#475569", fontWeight: 500, flex: 1 }}>{item.label}</span>
             <span style={{ color: "#0f172a", fontWeight: 700 }}>{item.count}</span>
           </div>
         ))}
@@ -660,25 +699,41 @@ function ReviewsBySourceDonut({ sources }: { sources: { label: string; count: nu
 }
 
 // ==========================================
-// 4. MAIN DASHBOARD PAGE
+// 4. MAIN REDESIGNED DASHBOARD PAGE
 // ==========================================
 export default function DynamicReviewDashboard() {
   const data = useLoaderData<typeof loader>();
   const navigate = useNavigate();
   const fetcher = useFetcher();
 
-  // Timeframe filter state for Area Chart: 30d, 90d, 1y
+  // Navigation sidebar items
+  const [activeNav, setActiveNav] = useState<string>("dashboard");
+
+  // Timeframe filter state: 30 days, 90 days, 1 year
   const [timeframe, setTimeframe] = useState<"30d" | "90d" | "1y">("30d");
 
-  // Table filter tabs: published, pending, ai_drafts
-  const [tableFilter, setTableFilter] = useState<"published" | "pending" | "ai_drafts">("published");
+  // Date range dropdown selector state
+  const [dateRange, setDateRange] = useState<string>("Last 30 days");
+  const [dateDropdownOpen, setDateDropdownOpen] = useState<boolean>(false);
 
-  // Table pagination state
+  // Latest Reviews source tabs filter: all, alibaba, flipkart, amazon, ai_drafts, store_orders
+  const [sourceFilter, setSourceFilter] = useState<string>("all");
+
+  // Table pagination state (Default 5 items per page exactly as in screenshot!)
   const [currentPage, setCurrentPage] = useState<number>(1);
-  const [pageSize, setPageSize] = useState<number>(10);
+  const pageSize = 5;
+
+  // Row Action Menu popup state
+  const [openActionId, setOpenActionId] = useState<string | null>(null);
 
   // Checkbox selection state
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  // Upgrade to Pro Modal state
+  const [proModalOpen, setProModalOpen] = useState<boolean>(false);
+
+  // AI Review Summary Modal state
+  const [aiSummaryModalOpen, setAiSummaryModalOpen] = useState<boolean>(false);
 
   // Confirmation modal popup state
   const [deleteModal, setDeleteModal] = useState<{
@@ -689,26 +744,46 @@ export default function DynamicReviewDashboard() {
     count?: number;
   }>({ open: false, type: "single" });
 
-  const handleTabChange = (filter: "published" | "pending" | "ai_drafts") => {
-    setTableFilter(filter);
-    setCurrentPage(1);
-    setSelectedIds(new Set());
-  };
+  // Close menus on outside click
+  useEffect(() => {
+    function handleClickOutside() {
+      setOpenActionId(null);
+      setDateDropdownOpen(false);
+    }
+    window.addEventListener("click", handleClickOutside);
+    return () => window.removeEventListener("click", handleClickOutside);
+  }, []);
 
-  // Filtered reviews
+  // Filtered reviews for Latest Reviews table
   const filteredReviews = useMemo(() => {
     if (!data?.recentReviews) return [];
-    if (tableFilter === "published") {
-      return data.recentReviews.filter((r: any) => r.isPublished);
+    if (sourceFilter === "all") return data.recentReviews;
+    if (sourceFilter === "alibaba") {
+      return data.recentReviews.filter((r: any) => (r.source || "").toUpperCase().includes("ALIBABA"));
     }
-    if (tableFilter === "pending") {
-      return data.recentReviews.filter((r: any) => !r.isPublished);
+    if (sourceFilter === "flipkart") {
+      return data.recentReviews.filter((r: any) => (r.source || "").toUpperCase().includes("FLIPKART"));
     }
-    if (tableFilter === "ai_drafts") {
-      return data.recentReviews.filter((r: any) => r.isAiGenerated);
+    if (sourceFilter === "amazon") {
+      return data.recentReviews.filter((r: any) => (r.source || "").toUpperCase().includes("AMAZON"));
+    }
+    if (sourceFilter === "ai_drafts") {
+      return data.recentReviews.filter((r: any) => r.isAiGenerated || (r.source || "").toUpperCase().includes("AI"));
+    }
+    if (sourceFilter === "store_orders") {
+      return data.recentReviews.filter((r: any) => {
+        const src = (r.source || "").toUpperCase();
+        return (
+          !src.includes("ALIBABA") &&
+          !src.includes("FLIPKART") &&
+          !src.includes("AMAZON") &&
+          !r.isAiGenerated &&
+          !src.includes("AI")
+        );
+      });
     }
     return data.recentReviews;
-  }, [data?.recentReviews, tableFilter]);
+  }, [data?.recentReviews, sourceFilter]);
 
   // Pagination calculations
   const totalReviewsCount = filteredReviews.length;
@@ -718,51 +793,21 @@ export default function DynamicReviewDashboard() {
   const endIndex = Math.min(startIndex + pageSize, totalReviewsCount);
   const paginatedReviews = filteredReviews.slice(startIndex, endIndex);
 
-  // Selection calculations
-  const currentPageIds = useMemo(() => paginatedReviews.map((r: any) => r.id), [paginatedReviews]);
-  const isAllCurrentPageSelected =
-    currentPageIds.length > 0 && currentPageIds.every((id: string) => selectedIds.has(id));
-  const isSomeCurrentPageSelected =
-    currentPageIds.some((id: string) => selectedIds.has(id)) && !isAllCurrentPageSelected;
+  // Dynamic greeting based on time of day
+  const greeting = useMemo(() => {
+    const hour = new Date().getHours();
+    if (hour < 12) return "Good morning";
+    if (hour < 18) return "Good afternoon";
+    return "Good evening";
+  }, []);
 
-  const handleToggleSelectAll = () => {
-    if (isAllCurrentPageSelected) {
-      setSelectedIds((prev) => {
-        const next = new Set(prev);
-        currentPageIds.forEach((id: string) => next.delete(id));
-        return next;
-      });
-    } else {
-      setSelectedIds((prev) => {
-        const next = new Set(prev);
-        currentPageIds.forEach((id: string) => next.add(id));
-        return next;
-      });
-    }
-  };
-
-  const handleToggleSelectOne = (id: string) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
-  const handleSelectAllFiltered = () => {
-    setSelectedIds(new Set(filteredReviews.map((r: any) => r.id)));
-  };
-
-  const handleClearSelection = () => {
-    setSelectedIds(new Set());
-  };
-
+  // Handlers
   const handleTogglePublish = (reviewId: string) => {
     const fd = new FormData();
     fd.append("intent", "togglePublish");
     fd.append("reviewId", reviewId);
     fetcher.submit(fd, { method: "post" });
+    setOpenActionId(null);
   };
 
   const handlePromptDeleteOne = (reviewId: string, reviewerName: string) => {
@@ -772,23 +817,7 @@ export default function DynamicReviewDashboard() {
       reviewId,
       reviewerName,
     });
-  };
-
-  const handlePromptDeleteSelected = () => {
-    if (selectedIds.size === 0) return;
-    setDeleteModal({
-      open: true,
-      type: "selected",
-      count: selectedIds.size,
-    });
-  };
-
-  const handlePromptDeleteAll = () => {
-    setDeleteModal({
-      open: true,
-      type: "all",
-      count: data.totalReviews,
-    });
+    setOpenActionId(null);
   };
 
   const handleConfirmDelete = () => {
@@ -813,928 +842,1795 @@ export default function DynamicReviewDashboard() {
     setDeleteModal({ open: false, type: "single" });
   };
 
+  const publishedPercentage =
+    data.totalReviews > 0 ? Math.round((data.publishedReviews / data.totalReviews) * 100) : 100;
+
   return (
-    <Page fullWidth title="Dynamic Review Ecosystem Dashboard">
-      <BlockStack gap="500">
-        {/* ======================================================== */}
-        {/* ROW 1: 4 TOP KPI CARDS                                  */}
-        {/* ======================================================== */}
+    <div
+      style={{
+        display: "flex",
+        minHeight: "100vh",
+        backgroundColor: "#f8fafc",
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
+        color: "#0f172a",
+      }}
+    >
+      {/* ======================================================== */}
+      {/* 1. LEFT NAVIGATION SIDEBAR                               */}
+      {/* ======================================================== */}
+      <aside
+        style={{
+          width: "250px",
+          backgroundColor: "#ffffff",
+          borderRight: "1px solid #f1f5f9",
+          display: "flex",
+          flexDirection: "column",
+          justifyContent: "space-between",
+          flexShrink: 0,
+          padding: "20px 16px",
+        }}
+      >
+        <div>
+          {/* Top Logo & App Title */}
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
+            {/* Shopify Shopping Bag Logo */}
+            <svg width="26" height="26" viewBox="0 0 256 256" fill="none">
+              <path
+                d="M219.4 69.4l-31.5-9.6c-.6-1.5-1.4-3.1-2.2-4.5-8.4-14.7-22.1-23.7-38.6-25.3-2.6-.3-5.2-.2-7.8.1-17.6 2.3-33 13.9-39.7 29.8L79.1 65.5C76 66.5 73.9 69.4 73.8 72.7l-4.5 137.9c-.1 2.3 1 4.5 2.8 5.7 1.8 1.3 4.2 1.5 6.2.7l134.1-51.5c2.6-1 4.3-3.6 4.3-6.4l6.1-84.6c.2-2.7-1.3-5.1-3.4-5.1z"
+                fill="#95BF47"
+              />
+              <path
+                d="M139.3 59.9c0-10.4 6.8-20.9 17.6-23.9 1.4-.4 2.8-.5 4.3-.4 10.9 1 20 7.8 24.3 18.2l-46.2 6.1z"
+                fill="#5E8E3E"
+              />
+              <path
+                d="M141.2 79.5l-44.1 14.1c-1.5.5-3.1-.4-3.6-1.9-.5-1.5.4-3.1 1.9-3.6l44.1-14.1c1.5-.5 3.1.4 3.6 1.9.5 1.5-.4 3.1-1.9 3.6z"
+                fill="#ffffff"
+                opacity="0.8"
+              />
+            </svg>
+            <span style={{ fontSize: "17px", fontWeight: "800", color: "#000000", letterSpacing: "-0.5px" }}>
+              shopify
+            </span>
+          </div>
+
+          {/* Subtitle Badge: Sparkle + AI Dynamic Review System */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              padding: "4px 8px",
+              borderRadius: "6px",
+              marginBottom: "26px",
+              color: "#4f46e5",
+              fontWeight: 700,
+              fontSize: "12.5px",
+            }}
+          >
+            <span style={{ fontSize: "14px" }}>✦</span>
+            <span>AI Dynamic Review System</span>
+          </div>
+
+          {/* Nav Links */}
+          <nav style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+            {/* Dashboard Link */}
+            <button
+              onClick={() => {
+                setActiveNav("dashboard");
+                navigate("/app");
+              }}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                width: "100%",
+                padding: "10px 14px",
+                borderRadius: "10px",
+                border: "none",
+                backgroundColor: activeNav === "dashboard" ? "#eff6ff" : "transparent",
+                color: activeNav === "dashboard" ? "#2563eb" : "#475569",
+                fontWeight: activeNav === "dashboard" ? 700 : 500,
+                fontSize: "14px",
+                cursor: "pointer",
+                textAlign: "left",
+                transition: "all 0.15s ease",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                  <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                  <polyline points="9 22 9 12 15 12 15 22" />
+                </svg>
+                <span>Dashboard</span>
+              </div>
+            </button>
+
+            {/* Reviews Link with Dynamic Pill Badge */}
+            <button
+              onClick={() => {
+                setActiveNav("reviews");
+                navigate("/app/reviews");
+              }}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                width: "100%",
+                padding: "10px 14px",
+                borderRadius: "10px",
+                border: "none",
+                backgroundColor: activeNav === "reviews" ? "#eff6ff" : "transparent",
+                color: activeNav === "reviews" ? "#2563eb" : "#475569",
+                fontWeight: activeNav === "reviews" ? 700 : 500,
+                fontSize: "14px",
+                cursor: "pointer",
+                textAlign: "left",
+                transition: "all 0.15s ease",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                </svg>
+                <span>Reviews</span>
+              </div>
+              <span
+                style={{
+                  backgroundColor: "#f1f5f9",
+                  color: "#475569",
+                  padding: "2px 8px",
+                  borderRadius: "12px",
+                  fontSize: "11.5px",
+                  fontWeight: 700,
+                }}
+              >
+                {data.totalReviews}
+              </span>
+            </button>
+
+            {/* Analytics Link */}
+            <button
+              onClick={() => {
+                setActiveNav("analytics");
+                const el = document.getElementById("review-performance-card");
+                if (el) el.scrollIntoView({ behavior: "smooth" });
+              }}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "10px",
+                width: "100%",
+                padding: "10px 14px",
+                borderRadius: "10px",
+                border: "none",
+                backgroundColor: "transparent",
+                color: "#475569",
+                fontWeight: 500,
+                fontSize: "14px",
+                cursor: "pointer",
+                textAlign: "left",
+              }}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="18" y1="20" x2="18" y2="10" />
+                <line x1="12" y1="20" x2="12" y2="4" />
+                <line x1="6" y1="20" x2="6" y2="14" />
+              </svg>
+              <span>Analytics</span>
+            </button>
+
+            {/* Customers Link */}
+            <button
+              onClick={() => {
+                setActiveNav("customers");
+                navigate("/app/reviews");
+              }}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "10px",
+                width: "100%",
+                padding: "10px 14px",
+                borderRadius: "10px",
+                border: "none",
+                backgroundColor: "transparent",
+                color: "#475569",
+                fontWeight: 500,
+                fontSize: "14px",
+                cursor: "pointer",
+                textAlign: "left",
+              }}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                <circle cx="12" cy="7" r="4" />
+              </svg>
+              <span>Customers</span>
+            </button>
+
+            {/* Products Link */}
+            <button
+              onClick={() => {
+                setActiveNav("products");
+                navigate("/app/import-reviews");
+              }}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "10px",
+                width: "100%",
+                padding: "10px 14px",
+                borderRadius: "10px",
+                border: "none",
+                backgroundColor: "transparent",
+                color: "#475569",
+                fontWeight: 500,
+                fontSize: "14px",
+                cursor: "pointer",
+                textAlign: "left",
+              }}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
+                <line x1="7" y1="7" x2="7.01" y2="7" />
+              </svg>
+              <span>Products</span>
+            </button>
+
+            {/* Settings Link */}
+            <button
+              onClick={() => {
+                setActiveNav("settings");
+                navigate("/app/widget-settings");
+              }}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "10px",
+                width: "100%",
+                padding: "10px 14px",
+                borderRadius: "10px",
+                border: "none",
+                backgroundColor: "transparent",
+                color: "#475569",
+                fontWeight: 500,
+                fontSize: "14px",
+                cursor: "pointer",
+                textAlign: "left",
+              }}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="12" r="3" />
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+              </svg>
+              <span>Settings</span>
+            </button>
+          </nav>
+        </div>
+
+        {/* Bottom Sidebar Card: Upgrade to Pro */}
         <div
           style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+            backgroundColor: "#fcfaff",
+            border: "1px solid #ede9fe",
+            borderRadius: "14px",
+            padding: "16px",
+            boxShadow: "0 2px 4px rgba(124, 58, 237, 0.04)",
+          }}
+        >
+          <div
+            style={{
+              width: "30px",
+              height: "30px",
+              borderRadius: "8px",
+              backgroundColor: "#fef3c7",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              marginBottom: "10px",
+              color: "#d97706",
+              fontSize: "14px",
+            }}
+          >
+            👑
+          </div>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "4px",
+              fontSize: "13.5px",
+              fontWeight: 800,
+              color: "#1e1b4b",
+              marginBottom: "4px",
+            }}
+          >
+            <span style={{ color: "#7c3aed" }}>✦</span>
+            <span>Upgrade to Pro</span>
+          </div>
+          <p style={{ margin: "0 0 12px 0", fontSize: "11.5px", color: "#64748b", lineHeight: 1.4 }}>
+            Unlock advanced features and higher limits.
+          </p>
+          <button
+            onClick={() => setProModalOpen(true)}
+            style={{
+              width: "100%",
+              padding: "7px 12px",
+              backgroundColor: "#ffffff",
+              border: "1px solid #cbd5e1",
+              borderRadius: "8px",
+              color: "#0f172a",
+              fontSize: "12px",
+              fontWeight: 700,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: "4px",
+              transition: "all 0.15s ease",
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#f8fafc")}
+            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#ffffff")}
+          >
+            View Plans →
+          </button>
+        </div>
+      </aside>
+
+      {/* ======================================================== */}
+      {/* 2. MAIN DASHBOARD CONTENT AREA                           */}
+      {/* ======================================================== */}
+      <main
+        style={{
+          flex: 1,
+          overflowY: "auto",
+          padding: "24px 32px 40px 32px",
+          display: "flex",
+          flexDirection: "column",
+          gap: "20px",
+        }}
+      >
+        {/* Top Header Row Matching Screenshot */}
+        <header
+          style={{
+            display: "flex",
+            alignItems: "flex-start",
+            justifyContent: "space-between",
+            flexWrap: "wrap",
             gap: "16px",
           }}
         >
-          {/* Card 1: Total reviews */}
+          <div>
+            <h1
+              style={{
+                margin: 0,
+                fontSize: "26px",
+                fontWeight: "800",
+                color: "#0f172a",
+                letterSpacing: "-0.5px",
+              }}
+            >
+              {greeting}, Admin 👋
+            </h1>
+            <p style={{ margin: "4px 0 0 0", fontSize: "14px", color: "#64748b" }}>
+              Here's what's happening with your AI review system today.
+            </p>
+          </div>
+
+          {/* Right Header Controls: Date Picker, Notification Bell, Admin Chip */}
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            {/* Date Range Selector Dropdown */}
+            <div style={{ position: "relative" }} onClick={(e) => e.stopPropagation()}>
+              <button
+                onClick={() => setDateDropdownOpen(!dateDropdownOpen)}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  padding: "8px 14px",
+                  borderRadius: "10px",
+                  backgroundColor: "#ffffff",
+                  border: "1px solid #e2e8f0",
+                  color: "#334155",
+                  fontSize: "13px",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  boxShadow: "0 1px 2px rgba(0,0,0,0.03)",
+                }}
+              >
+                <span>📅</span>
+                <span>{dateRange}</span>
+                <span style={{ fontSize: "10px", color: "#94a3b8" }}>▾</span>
+              </button>
+
+              {dateDropdownOpen && (
+                <div
+                  style={{
+                    position: "absolute",
+                    top: "100%",
+                    right: 0,
+                    marginTop: "6px",
+                    backgroundColor: "#ffffff",
+                    border: "1px solid #e2e8f0",
+                    borderRadius: "10px",
+                    boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.1)",
+                    width: "160px",
+                    zIndex: 50,
+                    overflow: "hidden",
+                  }}
+                >
+                  {["Last 7 days", "Last 30 days", "Last 90 days", "Last 1 year"].map((item) => (
+                    <div
+                      key={item}
+                      onClick={() => {
+                        setDateRange(item);
+                        if (item === "Last 7 days" || item === "Last 30 days") setTimeframe("30d");
+                        else if (item === "Last 90 days") setTimeframe("90d");
+                        else setTimeframe("1y");
+                        setDateDropdownOpen(false);
+                      }}
+                      style={{
+                        padding: "8px 14px",
+                        fontSize: "12.5px",
+                        fontWeight: dateRange === item ? 700 : 500,
+                        color: dateRange === item ? "#2563eb" : "#334155",
+                        backgroundColor: dateRange === item ? "#eff6ff" : "transparent",
+                        cursor: "pointer",
+                      }}
+                      onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#f8fafc")}
+                      onMouseLeave={(e) =>
+                        (e.currentTarget.style.backgroundColor = dateRange === item ? "#eff6ff" : "transparent")
+                      }
+                    >
+                      {item}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Notification Bell */}
+            <button
+              onClick={() => navigate("/app/reviews")}
+              title="Notifications"
+              style={{
+                width: "38px",
+                height: "38px",
+                borderRadius: "10px",
+                backgroundColor: "#ffffff",
+                border: "1px solid #e2e8f0",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "#64748b",
+                cursor: "pointer",
+                boxShadow: "0 1px 2px rgba(0,0,0,0.03)",
+              }}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+                <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+              </svg>
+            </button>
+
+            {/* Admin Avatar Chip */}
+            <div
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "8px",
+                padding: "4px 10px 4px 5px",
+                borderRadius: "20px",
+                backgroundColor: "#ffffff",
+                border: "1px solid #e2e8f0",
+                cursor: "pointer",
+              }}
+            >
+              <div
+                style={{
+                  width: "28px",
+                  height: "28px",
+                  borderRadius: "50%",
+                  backgroundColor: "#334155",
+                  color: "#ffffff",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontWeight: "bold",
+                  fontSize: "13px",
+                }}
+              >
+                A
+              </div>
+              <span style={{ fontSize: "13px", fontWeight: 700, color: "#1e293b" }}>Admin</span>
+              <span style={{ fontSize: "10px", color: "#94a3b8" }}>▾</span>
+            </div>
+          </div>
+        </header>
+
+        {/* ======================================================== */}
+        {/* ROW 1: 4 TOP KPI CARDS (MATCHING REFERENCE EXACTLY)      */}
+        {/* ======================================================== */}
+        <section
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+            gap: "16px",
+          }}
+        >
+          {/* Card 1: Total Reviews */}
           <div
             style={{
-              background: "#ffffff",
+              backgroundColor: "#ffffff",
               border: "1px solid #e2e8f0",
-              borderRadius: "14px",
-              padding: "20px",
+              borderRadius: "16px",
+              padding: "20px 22px",
               display: "flex",
               flexDirection: "column",
               justifyContent: "space-between",
-              boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
+              boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
+              minHeight: "150px",
             }}
           >
             <div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
-                <span style={{ fontSize: "14px", fontWeight: "600", color: "#64748b" }}>Total reviews</span>
-                <div style={{ width: 34, height: 34, borderRadius: 8, background: "#e0f2fe", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <Icon source={ChatIcon} tone="info" />
-                </div>
+              <div
+                style={{
+                  width: "32px",
+                  height: "32px",
+                  borderRadius: "8px",
+                  backgroundColor: "#eff6ff",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: "#2563eb",
+                  marginBottom: "12px",
+                }}
+              >
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                </svg>
               </div>
-              <div style={{ fontSize: "32px", fontWeight: "800", color: "#0f172a", lineHeight: 1.2 }}>
+              <div style={{ fontSize: "13px", fontWeight: "600", color: "#64748b", marginBottom: "4px" }}>
+                Total Reviews
+              </div>
+              <div style={{ fontSize: "32px", fontWeight: "800", color: "#0f172a", lineHeight: 1.1 }}>
                 {data.totalReviews}
               </div>
-              <div style={{ marginTop: "6px" }}>
-                <span
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 3,
-                    background: data.isWeeklyPositive ? "#dcfce7" : "#f1f5f9",
-                    color: data.isWeeklyPositive ? "#166534" : "#475569",
-                    padding: "2px 8px",
-                    borderRadius: "12px",
-                    fontSize: "12px",
-                    fontWeight: "700",
-                  }}
-                >
-                  {data.isWeeklyPositive && <Icon source={ArrowUpIcon} />} {data.weeklyGrowthText}
-                </span>
-              </div>
             </div>
-            <div style={{ marginTop: "14px" }}>
-              <Sparkline points={data.sparklines.total} color="#22c55e" />
+
+            <div
+              style={{
+                display: "flex",
+                alignItems: "flex-end",
+                justifyContent: "space-between",
+                marginTop: "12px",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "4px",
+                  fontSize: "12px",
+                  color: data.isMonthlyPositive ? "#10b981" : "#64748b",
+                  fontWeight: 600,
+                }}
+              >
+                {data.isMonthlyPositive && (
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <polyline points="18 15 12 9 6 15" />
+                  </svg>
+                )}
+                <span>{data.monthlyGrowthText}</span>
+              </div>
+              <div>
+                <SparklineWave points={data.sparklines.total} color="#22c55e" />
+              </div>
             </div>
           </div>
 
-          {/* Card 2: Average rating */}
+          {/* Card 2: Average Rating */}
           <div
             style={{
-              background: "#ffffff",
+              backgroundColor: "#ffffff",
               border: "1px solid #e2e8f0",
-              borderRadius: "14px",
-              padding: "20px",
+              borderRadius: "16px",
+              padding: "20px 22px",
               display: "flex",
               flexDirection: "column",
               justifyContent: "space-between",
-              boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
+              boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
+              minHeight: "150px",
             }}
           >
             <div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
-                <span style={{ fontSize: "14px", fontWeight: "600", color: "#64748b" }}>Average rating</span>
-                <div style={{ width: 34, height: 34, borderRadius: 8, background: "#fef3c7", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <Icon source={StarFilledIcon} tone="warning" />
-                </div>
+              <div
+                style={{
+                  width: "32px",
+                  height: "32px",
+                  borderRadius: "8px",
+                  backgroundColor: "#fef3c7",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: "#d97706",
+                  marginBottom: "12px",
+                }}
+              >
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor">
+                  <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                </svg>
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "32px", fontWeight: "800", color: "#0f172a", lineHeight: 1.2 }}>
-                <span>{data.averageRating}</span>
-                <span style={{ color: "#f59e0b", fontSize: "18px", letterSpacing: "1px" }}>★★★★★</span>
+              <div style={{ fontSize: "13px", fontWeight: "600", color: "#64748b", marginBottom: "4px" }}>
+                Average Rating
               </div>
-              <div style={{ marginTop: "6px" }}>
-                <span
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 3,
-                    background: data.isRatingPositive ? "#dcfce7" : "#f1f5f9",
-                    color: data.isRatingPositive ? "#166534" : "#475569",
-                    padding: "2px 8px",
-                    borderRadius: "12px",
-                    fontSize: "12px",
-                    fontWeight: "700",
-                  }}
-                >
-                  {data.isRatingPositive && <Icon source={ArrowUpIcon} />} {data.ratingDiffText}
-                </span>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", lineHeight: 1.1 }}>
+                <span style={{ fontSize: "32px", fontWeight: "800", color: "#0f172a" }}>{data.averageRating}</span>
+                <span style={{ color: "#f59e0b", fontSize: "18px", letterSpacing: "1.5px" }}>★★★★★</span>
               </div>
             </div>
-            <div style={{ marginTop: "14px" }}>
-              <Sparkline points={data.sparklines.rating} color="#f59e0b" />
+
+            <div
+              style={{
+                display: "flex",
+                alignItems: "flex-end",
+                justifyContent: "space-between",
+                marginTop: "12px",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "4px",
+                  fontSize: "12px",
+                  color: data.isRatingPositive ? "#10b981" : "#64748b",
+                  fontWeight: 600,
+                }}
+              >
+                {data.isRatingPositive && (
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <polyline points="18 15 12 9 6 15" />
+                  </svg>
+                )}
+                <span>{data.ratingDiffText}</span>
+              </div>
+              <div>
+                <SparklineWave points={data.sparklines.rating} color="#f59e0b" />
+              </div>
             </div>
           </div>
 
-          {/* Card 3: Published reviews rate */}
+          {/* Card 3: Published Reviews */}
           <div
             style={{
-              background: "#ffffff",
+              backgroundColor: "#ffffff",
               border: "1px solid #e2e8f0",
-              borderRadius: "14px",
-              padding: "20px",
+              borderRadius: "16px",
+              padding: "20px 22px",
               display: "flex",
               flexDirection: "column",
               justifyContent: "space-between",
-              boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
+              boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
+              minHeight: "150px",
             }}
           >
             <div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
-                <span style={{ fontSize: "14px", fontWeight: "600", color: "#64748b" }}>Published reviews</span>
-                <div style={{ width: 34, height: 34, borderRadius: 8, background: "#dcfce7", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <Icon source={CheckCircleIcon} tone="success" />
-                </div>
+              <div
+                style={{
+                  width: "32px",
+                  height: "32px",
+                  borderRadius: "8px",
+                  backgroundColor: "#eff6ff",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: "#2563eb",
+                  marginBottom: "12px",
+                }}
+              >
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                  <polyline points="9 12 11 14 15 10" />
+                </svg>
               </div>
-              <div style={{ fontSize: "32px", fontWeight: "800", color: "#0f172a", lineHeight: 1.2 }}>
-                {data.totalReviews > 0 ? Math.round((data.publishedReviews / data.totalReviews) * 100) : 100}%
+              <div style={{ fontSize: "13px", fontWeight: "600", color: "#64748b", marginBottom: "4px" }}>
+                Published Reviews
               </div>
-              <div style={{ marginTop: "6px" }}>
-                <span style={{ display: "inline-block", background: "#e0f2fe", color: "#0369a1", padding: "2px 8px", borderRadius: "12px", fontSize: "12px", fontWeight: "600" }}>
-                  {data.publishedReviews} published of {data.totalReviews} total
-                </span>
+              <div style={{ fontSize: "32px", fontWeight: "800", color: "#0f172a", lineHeight: 1.1 }}>
+                {data.publishedReviews} <span style={{ fontSize: "20px", color: "#94a3b8", fontWeight: 600 }}>/ {data.totalReviews}</span>
               </div>
             </div>
-            <div style={{ marginTop: "14px" }}>
-              <Sparkline points={data.sparklines.requests} color="#3b82f6" />
+
+            <div style={{ marginTop: "12px" }}>
+              <div style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, marginBottom: "8px" }}>
+                {publishedPercentage}% published
+              </div>
+              {/* Full Width Blue Progress Bar */}
+              <div style={{ width: "100%", height: "5px", backgroundColor: "#e2e8f0", borderRadius: "3px", overflow: "hidden" }}>
+                <div
+                  style={{
+                    width: `${publishedPercentage}%`,
+                    height: "100%",
+                    backgroundColor: "#2563eb",
+                    borderRadius: "3px",
+                    transition: "width 0.4s ease",
+                  }}
+                />
+              </div>
             </div>
           </div>
 
-          {/* Card 4: Awaiting approval (Highlighted Yellow Accent) */}
+          {/* Card 4: Pending Approval */}
           <div
             style={{
-              background: "#ffffff",
-              border: "2px solid #f59e0b",
-              borderRadius: "14px",
-              padding: "20px",
+              backgroundColor: "#ffffff",
+              border: "1px solid #e2e8f0",
+              borderRadius: "16px",
+              padding: "20px 22px",
               display: "flex",
               flexDirection: "column",
               justifyContent: "space-between",
-              boxShadow: "0 4px 12px rgba(245, 158, 11, 0.08)",
+              boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
+              minHeight: "150px",
             }}
           >
             <div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
-                <span style={{ fontSize: "14px", fontWeight: "600", color: "#78350f" }}>Awaiting approval</span>
-                <div style={{ width: 34, height: 34, borderRadius: 8, background: "#fef3c7", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <Icon source={ClockIcon} tone="warning" />
-                </div>
+              <div
+                style={{
+                  width: "32px",
+                  height: "32px",
+                  borderRadius: "8px",
+                  backgroundColor: "#f5f3ff",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: "#9333ea",
+                  marginBottom: "12px",
+                }}
+              >
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                  <circle cx="12" cy="12" r="10" />
+                  <polyline points="12 6 12 12 16 14" />
+                </svg>
               </div>
-              <div style={{ fontSize: "32px", fontWeight: "800", color: "#0f172a", lineHeight: 1.2 }}>
+              <div style={{ fontSize: "13px", fontWeight: "600", color: "#64748b", marginBottom: "4px" }}>
+                Pending Approval
+              </div>
+              <div style={{ fontSize: "32px", fontWeight: "800", color: "#0f172a", lineHeight: 1.1 }}>
                 {data.pendingReviews}
               </div>
             </div>
 
-            <div style={{ marginTop: "16px" }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "flex-end",
+                justifyContent: "space-between",
+                marginTop: "12px",
+              }}
+            >
               <button
                 onClick={() => {
-                  setTableFilter("pending");
-                  const el = document.getElementById("reviews-table-card");
-                  if (el) el.scrollIntoView({ behavior: "smooth" });
+                  setSourceFilter("all");
+                  navigate("/app/reviews");
                 }}
                 style={{
-                  width: "100%",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: "6px",
-                  padding: "8px 14px",
-                  borderRadius: "8px",
-                  border: "1px solid #cbd5e1",
-                  background: "#ffffff",
-                  color: "#0f172a",
-                  fontSize: "13px",
-                  fontWeight: "700",
-                  cursor: "pointer",
-                  transition: "all 0.15s ease",
-                }}
-                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#f8fafc")}
-                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#ffffff")}
-              >
-                Review now <Icon source={ArrowRightIcon} />
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* ======================================================== */}
-        {/* ROW 2: REVIEWS OVER TIME (CHART) & REVIEWS BY SOURCE     */}
-        {/* ======================================================== */}
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))",
-            gap: "16px",
-          }}
-        >
-          {/* Reviews Over Time Chart */}
-          <div
-            style={{
-              background: "#ffffff",
-              border: "1px solid #e2e8f0",
-              borderRadius: "14px",
-              padding: "24px",
-              boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
-            }}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
-              <Text as="h2" variant="headingMd" fontWeight="bold">
-                Reviews over time
-              </Text>
-
-              {/* Timeframe Filter Buttons Matching Screenshot */}
-              <div style={{ display: "flex", gap: "6px", background: "#f1f5f9", padding: "3px", borderRadius: "8px" }}>
-                {(["30d", "90d", "1y"] as const).map((t) => {
-                  const labels = { "30d": "30 days", "90d": "90 days", "1y": "1 year" };
-                  const isActive = timeframe === t;
-                  return (
-                    <button
-                      key={t}
-                      onClick={() => setTimeframe(t)}
-                      style={{
-                        padding: "5px 12px",
-                        border: "none",
-                        borderRadius: "6px",
-                        background: isActive ? "#ffffff" : "transparent",
-                        color: isActive ? "#2563eb" : "#64748b",
-                        fontWeight: isActive ? "700" : "500",
-                        fontSize: "12px",
-                        cursor: "pointer",
-                        boxShadow: isActive ? "0 1px 2px rgba(0,0,0,0.06)" : "none",
-                        transition: "all 0.15s ease",
-                      }}
-                    >
-                      {labels[t]}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            <ReviewsOverTimeChart data={(data.chartData as any)[timeframe]} />
-          </div>
-
-          {/* Reviews by Source Donut */}
-          <div
-            style={{
-              background: "#ffffff",
-              border: "1px solid #e2e8f0",
-              borderRadius: "14px",
-              padding: "24px",
-              boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
-            }}
-          >
-            <div style={{ marginBottom: "16px" }}>
-              <Text as="h2" variant="headingMd" fontWeight="bold">
-                Reviews by source
-              </Text>
-            </div>
-            <ReviewsBySourceDonut sources={data.sourcesBreakdown} />
-          </div>
-        </div>
-
-        {/* ======================================================== */}
-        {/* ROW 3: RATING BREAKDOWN & SETUP CHECKLIST                */}
-        {/* ======================================================== */}
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))",
-            gap: "16px",
-          }}
-        >
-          {/* Rating Breakdown */}
-          <div
-            style={{
-              background: "#ffffff",
-              border: "1px solid #e2e8f0",
-              borderRadius: "14px",
-              padding: "24px",
-              boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
-            }}
-          >
-            <div style={{ marginBottom: "18px" }}>
-              <Text as="h2" variant="headingMd" fontWeight="bold">
-                Rating breakdown
-              </Text>
-            </div>
-
-            <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-              {data.starBreakdown.map((row: any) => (
-                <div key={row.stars} style={{ display: "flex", alignItems: "center", gap: "12px", fontSize: "13px" }}>
-                  <span style={{ fontWeight: 600, color: "#334155", width: "24px" }}>{row.stars} ★</span>
-
-                  {/* Horizontal Bar */}
-                  <div style={{ flex: 1, height: "10px", backgroundColor: "#f1f5f9", borderRadius: "5px", overflow: "hidden" }}>
-                    <div
-                      style={{
-                        width: `${row.percentage}%`,
-                        height: "100%",
-                        backgroundColor: "#f59e0b",
-                        borderRadius: "5px",
-                        transition: "width 0.3s ease",
-                      }}
-                    />
-                  </div>
-
-                  <span style={{ fontWeight: 600, color: "#475569", width: "36px", textAlign: "right" }}>
-                    {row.percentage}%
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Setup Checklist Stepper */}
-          <div
-            style={{
-              background: "#ffffff",
-              border: "1px solid #e2e8f0",
-              borderRadius: "14px",
-              padding: "24px",
-              boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "18px" }}>
-              <Text as="h2" variant="headingMd" fontWeight="bold">
-                Setup checklist
-              </Text>
-              <span
-                style={{
-                  backgroundColor: "#dbeafe",
-                  color: "#1d4ed8",
-                  padding: "2px 8px",
-                  borderRadius: "12px",
+                  background: "none",
+                  border: "none",
+                  padding: 0,
                   fontSize: "12px",
-                  fontWeight: "700",
+                  fontWeight: 700,
+                  color: "#2563eb",
+                  cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "4px",
                 }}
               >
-                {data.checklist.completedCount} of {data.checklist.totalCount}
-              </span>
-            </div>
-
-            <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-              {data.checklist.items.map((item: any) => (
-                <div
-                  key={item.id}
-                  onClick={() => navigate(item.href)}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    padding: "6px 0",
-                    cursor: "pointer",
-                  }}
-                >
-                  <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                    {item.completed ? (
-                      <span style={{ color: "#16a34a", display: "flex", alignItems: "center" }}>
-                        <Icon source={CheckCircleIcon} tone="success" />
-                      </span>
-                    ) : (
-                      <span
-                        style={{
-                          width: "20px",
-                          height: "20px",
-                          borderRadius: "50%",
-                          border: "2px solid #cbd5e1",
-                          display: "inline-block",
-                        }}
-                      />
-                    )}
-                    <span
-                      style={{
-                        fontSize: "14px",
-                        fontWeight: item.completed ? "600" : "500",
-                        color: item.completed ? "#0f172a" : "#475569",
-                      }}
-                    >
-                      {item.title}
-                    </span>
-                  </div>
-
-                  {!item.completed && (
-                    <span
-                      style={{
-                        backgroundColor: "#fef3c7",
-                        color: "#b45309",
-                        padding: "2px 8px",
-                        borderRadius: "6px",
-                        fontSize: "11px",
-                        fontWeight: "700",
-                      }}
-                    >
-                      Next
-                    </span>
-                  )}
-                </div>
-              ))}
+                <span>View review queue</span>
+                <span>→</span>
+              </button>
+              <div>
+                <SparklineWave points={data.sparklines.pending} color="#c084fc" />
+              </div>
             </div>
           </div>
-        </div>
+        </section>
 
         {/* ======================================================== */}
-        {/* ROW 4: RECENT REVIEWS & MODERATION TABLE                 */}
+        {/* ROW 2 & 3: MAIN DUAL-COLUMN GRID (MATCHING REFERENCE)    */}
         {/* ======================================================== */}
-        <div
-          id="reviews-table-card"
+        <section
           style={{
-            background: "#ffffff",
-            border: "1px solid #e2e8f0",
-            borderRadius: "14px",
-            padding: "24px",
-            boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
+            display: "grid",
+            gridTemplateColumns: "minmax(0, 1fr) 290px",
+            gap: "20px",
+            alignItems: "start",
           }}
         >
-          {/* Header & Tabs Matching Screenshot */}
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              flexWrap: "wrap",
-              gap: "12px",
-              marginBottom: "18px",
-            }}
-          >
-            {/* Filter Tabs */}
-            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-              <button
-                onClick={() => handleTabChange("published")}
+          {/* LEFT SECTION (Review Performance, Sources, Rating Breakdown, Latest Reviews) */}
+          <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+            {/* Top Sub-Row: Performance Chart (60%) & Reviews by Source (40%) */}
+            <div style={{ display: "grid", gridTemplateColumns: "1.45fr 1fr", gap: "20px" }}>
+              {/* Review Performance Area Chart Card */}
+              <div
+                id="review-performance-card"
                 style={{
-                  padding: "6px 14px",
-                  borderRadius: "8px",
-                  border: "none",
-                  backgroundColor: tableFilter === "published" ? "#dbeafe" : "#f1f5f9",
-                  color: tableFilter === "published" ? "#1e40af" : "#475569",
-                  fontSize: "13px",
-                  fontWeight: "700",
-                  cursor: "pointer",
-                  transition: "all 0.15s ease",
+                  backgroundColor: "#ffffff",
+                  border: "1px solid #e2e8f0",
+                  borderRadius: "16px",
+                  padding: "22px 24px",
+                  boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
                 }}
               >
-                Published {data.publishedReviews}
-              </button>
+                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: "16px" }}>
+                  <div>
+                    <h2 style={{ margin: 0, fontSize: "16px", fontWeight: "800", color: "#0f172a" }}>
+                      Review Performance
+                    </h2>
+                    <p style={{ margin: "4px 0 0 0", fontSize: "12.5px", color: "#64748b" }}>
+                      Track your review activity and customer feedback over time.
+                    </p>
+                  </div>
 
-              <button
-                onClick={() => handleTabChange("pending")}
-                style={{
-                  padding: "6px 14px",
-                  borderRadius: "8px",
-                  border: "none",
-                  backgroundColor: tableFilter === "pending" ? "#fef3c7" : "#f1f5f9",
-                  color: tableFilter === "pending" ? "#b45309" : "#475569",
-                  fontSize: "13px",
-                  fontWeight: "700",
-                  cursor: "pointer",
-                  transition: "all 0.15s ease",
-                }}
-              >
-                Pending {data.pendingReviews}
-              </button>
-
-              <button
-                onClick={() => handleTabChange("ai_drafts")}
-                style={{
-                  padding: "6px 14px",
-                  borderRadius: "8px",
-                  border: "none",
-                  backgroundColor: tableFilter === "ai_drafts" ? "#f3e8ff" : "#f1f5f9",
-                  color: tableFilter === "ai_drafts" ? "#7e22ce" : "#475569",
-                  fontSize: "13px",
-                  fontWeight: "700",
-                  cursor: "pointer",
-                  transition: "all 0.15s ease",
-                }}
-              >
-                AI drafts (private) {data.aiGeneratedCount}
-              </button>
-            </div>
-
-            {/* Right Action Buttons */}
-            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-              {data.totalReviews > 0 && (
-                <button
-                  onClick={handlePromptDeleteAll}
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: "6px",
-                    padding: "6px 12px",
-                    borderRadius: "8px",
-                    border: "1px solid #fecaca",
-                    backgroundColor: "#fff1f2",
-                    color: "#b91c1c",
-                    fontSize: "13px",
-                    fontWeight: "700",
-                    cursor: "pointer",
-                    transition: "all 0.15s ease",
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = "#fee2e2";
-                    e.currentTarget.style.borderColor = "#f87171";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = "#fff1f2";
-                    e.currentTarget.style.borderColor = "#fecaca";
-                  }}
-                >
-                  <Icon source={DeleteIcon} tone="critical" />
-                  Delete All Reviews
-                </button>
-              )}
-
-              <button
-                onClick={() => navigate("/app/reviews")}
-                style={{
-                  background: "transparent",
-                  border: "none",
-                  color: "#2563eb",
-                  fontSize: "13px",
-                  fontWeight: "700",
-                  cursor: "pointer",
-                  padding: "6px 8px",
-                }}
-              >
-                View all
-              </button>
-            </div>
-          </div>
-
-          {/* Bulk Selection Action Bar */}
-          {selectedIds.size > 0 && (
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                flexWrap: "wrap",
-                gap: "10px",
-                padding: "10px 16px",
-                marginBottom: "14px",
-                backgroundColor: "#eff6ff",
-                border: "1px solid #bfdbfe",
-                borderRadius: "10px",
-                color: "#1e40af",
-                fontSize: "13px",
-                fontWeight: 600,
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                <span style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
-                  <span
-                    style={{
-                      width: "18px",
-                      height: "18px",
-                      borderRadius: "4px",
-                      backgroundColor: "#2563eb",
-                      color: "#ffffff",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      fontSize: "11px",
-                      fontWeight: "bold",
-                    }}
-                  >
-                    ✓
-                  </span>
-                  <strong>{selectedIds.size}</strong> review{selectedIds.size > 1 ? "s" : ""} selected
-                </span>
-
-                {selectedIds.size < totalReviewsCount && (
-                  <button
-                    onClick={handleSelectAllFiltered}
-                    style={{
-                      background: "none",
-                      border: "none",
-                      color: "#1d4ed8",
-                      fontSize: "13px",
-                      fontWeight: 600,
-                      cursor: "pointer",
-                      textDecoration: "underline",
-                      padding: 0,
-                    }}
-                  >
-                    Select all {totalReviewsCount} {tableFilter === "ai_drafts" ? "AI draft" : tableFilter} reviews
-                  </button>
-                )}
-              </div>
-
-              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                <button
-                  onClick={handleClearSelection}
-                  style={{
-                    background: "#ffffff",
-                    border: "1px solid #cbd5e1",
-                    borderRadius: "6px",
-                    padding: "5px 12px",
-                    fontSize: "12px",
-                    fontWeight: 600,
-                    color: "#475569",
-                    cursor: "pointer",
-                  }}
-                >
-                  Deselect
-                </button>
-
-                <button
-                  onClick={handlePromptDeleteSelected}
-                  style={{
-                    background: "#ef4444",
-                    border: "none",
-                    borderRadius: "6px",
-                    padding: "5px 14px",
-                    fontSize: "12px",
-                    fontWeight: 700,
-                    color: "#ffffff",
-                    cursor: "pointer",
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: "4px",
-                    boxShadow: "0 1px 2px rgba(239, 68, 68, 0.2)",
-                  }}
-                >
-                  <Icon source={DeleteIcon} />
-                  Delete Selected ({selectedIds.size})
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Table Container */}
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: "13px" }}>
-              <thead>
-                <tr style={{ borderBottom: "1px solid #e2e8f0", color: "#64748b", fontWeight: 600 }}>
-                  <th style={{ padding: "12px 14px", width: "40px" }}>
-                    <input
-                      type="checkbox"
-                      checked={isAllCurrentPageSelected}
-                      ref={(el) => {
-                        if (el) el.indeterminate = isSomeCurrentPageSelected;
-                      }}
-                      onChange={handleToggleSelectAll}
-                      style={{ width: "16px", height: "16px", cursor: "pointer", accentColor: "#2563eb" }}
-                      title="Select all on this page"
-                    />
-                  </th>
-                  <th style={{ padding: "12px 14px" }}>Reviewer</th>
-                  <th style={{ padding: "12px 14px" }}>Rating</th>
-                  <th style={{ padding: "12px 14px" }}>Review</th>
-                  <th style={{ padding: "12px 14px" }}>Source</th>
-                  <th style={{ padding: "12px 14px" }}>Status</th>
-                  <th style={{ padding: "12px 14px", textAlign: "right" }}>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {paginatedReviews.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} style={{ padding: "28px", textAlign: "center", color: "#94a3b8" }}>
-                      No reviews found in this view.
-                    </td>
-                  </tr>
-                ) : (
-                  paginatedReviews.map((r: any) => {
-                    const starsStr = "★".repeat(r.rating || 5) + "☆".repeat(Math.max(0, 5 - (r.rating || 5)));
-                    const isAmazon = (r.source || "").includes("AMAZON");
-                    const isFlipkart = (r.source || "").includes("FLIPKART");
-                    const isAlibaba = (r.source || "").includes("ALIBABA");
-                    const isAi = r.isAiGenerated;
-
-                    const sourceLabel = isAmazon
-                      ? "Amazon"
-                      : isFlipkart
-                      ? "Flipkart"
-                      : isAlibaba
-                      ? "Alibaba"
-                      : isAi
-                      ? "AI draft"
-                      : "Store order";
-
-                    const sourceBadgeStyle = isAmazon
-                      ? { bg: "#fef3c7", color: "#b45309" }
-                      : isFlipkart
-                      ? { bg: "#e0f2fe", color: "#0369a1" }
-                      : isAlibaba
-                      ? { bg: "#f1f5f9", color: "#475569" }
-                      : isAi
-                      ? { bg: "#f3e8ff", color: "#7e22ce" }
-                      : { bg: "#dcfce7", color: "#166534" };
-
-                    const isChecked = selectedIds.has(r.id);
-
-                    return (
-                      <tr
-                        key={r.id}
-                        style={{
-                          borderBottom: "1px solid #f1f5f9",
-                          backgroundColor: isChecked ? "#f0f9ff" : "transparent",
-                          transition: "background 0.15s ease",
-                        }}
-                        onMouseEnter={(e) => {
-                          if (!isChecked) e.currentTarget.style.backgroundColor = "#f8fafc";
-                        }}
-                        onMouseLeave={(e) => {
-                          if (!isChecked) e.currentTarget.style.backgroundColor = "transparent";
-                        }}
-                      >
-                        <td style={{ padding: "12px 14px", width: "40px" }}>
-                          <input
-                            type="checkbox"
-                            checked={isChecked}
-                            onChange={() => handleToggleSelectOne(r.id)}
-                            style={{ width: "16px", height: "16px", cursor: "pointer", accentColor: "#2563eb" }}
-                          />
-                        </td>
-                        <td style={{ padding: "12px 14px", fontWeight: 700, color: "#0f172a" }}>
-                          {r.reviewerName}
-                        </td>
-                        <td style={{ padding: "12px 14px", color: "#f59e0b", letterSpacing: "1px", fontSize: "14px" }}>
-                          {starsStr}
-                        </td>
-                        <td style={{ padding: "12px 14px", color: "#334155", maxWidth: "340px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          {r.bodyShort}
-                        </td>
-                        <td style={{ padding: "12px 14px" }}>
-                          <span
-                            style={{
-                              backgroundColor: sourceBadgeStyle.bg,
-                              color: sourceBadgeStyle.color,
-                              padding: "3px 8px",
-                              borderRadius: "6px",
-                              fontSize: "12px",
-                              fontWeight: "600",
-                            }}
-                          >
-                            {sourceLabel}
-                          </span>
-                        </td>
-                        <td style={{ padding: "12px 14px" }}>
-                          <span
-                            style={{
-                              backgroundColor: r.isPublished ? "#dcfce7" : "#fef3c7",
-                              color: r.isPublished ? "#166534" : "#b45309",
-                              padding: "3px 8px",
-                              borderRadius: "6px",
-                              fontSize: "12px",
-                              fontWeight: "600",
-                            }}
-                          >
-                            {r.isPublished ? "Published" : "Pending"}
-                          </span>
-                        </td>
-                        <td style={{ padding: "12px 14px", textAlign: "right" }}>
-                          <div style={{ display: "inline-flex", gap: "6px" }}>
-                            <button
-                              title={r.isPublished ? "Hide / Unpublish" : "Publish"}
-                              onClick={() => handleTogglePublish(r.id)}
-                              style={{
-                                background: "none",
-                                border: "none",
-                                cursor: "pointer",
-                                padding: "4px",
-                                borderRadius: "4px",
-                                color: "#475569",
-                              }}
-                            >
-                              <Icon source={r.isPublished ? HideIcon : ViewIcon} />
-                            </button>
-                            <button
-                              title="Delete Review"
-                              onClick={() => handlePromptDeleteOne(r.id, r.reviewerName)}
-                              style={{
-                                background: "none",
-                                border: "none",
-                                cursor: "pointer",
-                                padding: "4px",
-                                borderRadius: "4px",
-                                color: "#ef4444",
-                              }}
-                            >
-                              <Icon source={DeleteIcon} />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Pagination Toolbar */}
-          {totalReviewsCount > 0 && (
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                flexWrap: "wrap",
-                gap: "12px",
-                marginTop: "18px",
-                paddingTop: "14px",
-                borderTop: "1px solid #f1f5f9",
-                fontSize: "13px",
-                color: "#64748b",
-              }}
-            >
-              {/* Left: Showing X-Y of Z & rows per page */}
-              <div style={{ display: "flex", alignItems: "center", gap: "14px", flexWrap: "wrap" }}>
-                <span>
-                  Showing <strong style={{ color: "#0f172a" }}>{startIndex + 1}</strong>–<strong style={{ color: "#0f172a" }}>{endIndex}</strong> of <strong style={{ color: "#0f172a" }}>{totalReviewsCount}</strong> reviews
-                </span>
-
-                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                  <span>Per page:</span>
+                  {/* 30 days Dropdown button */}
                   <select
-                    value={pageSize}
-                    onChange={(e) => {
-                      setPageSize(Number(e.target.value));
-                      setCurrentPage(1);
-                    }}
+                    value={timeframe}
+                    onChange={(e) => setTimeframe(e.target.value as any)}
                     style={{
-                      padding: "3px 8px",
-                      borderRadius: "6px",
-                      border: "1px solid #cbd5e1",
+                      padding: "6px 12px",
+                      borderRadius: "8px",
+                      border: "1px solid #e2e8f0",
                       backgroundColor: "#ffffff",
                       fontSize: "12px",
                       fontWeight: 600,
                       color: "#334155",
                       cursor: "pointer",
+                      outline: "none",
                     }}
                   >
-                    <option value={10}>10</option>
-                    <option value={20}>20</option>
-                    <option value={50}>50</option>
+                    <option value="30d">30 days</option>
+                    <option value="90d">90 days</option>
+                    <option value="1y">1 year</option>
                   </select>
+                </div>
+
+                <ReviewPerformanceChart data={(data.chartData as any)[timeframe]} timeframe={timeframe} />
+              </div>
+
+              {/* Reviews by Source Donut Card */}
+              <div
+                style={{
+                  backgroundColor: "#ffffff",
+                  border: "1px solid #e2e8f0",
+                  borderRadius: "16px",
+                  padding: "22px 24px",
+                  boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
+                }}
+              >
+                <h2 style={{ margin: "0 0 16px 0", fontSize: "16px", fontWeight: "800", color: "#0f172a" }}>
+                  Reviews by Source
+                </h2>
+                <ReviewsBySourceDonut sources={data.sourcesBreakdown} total={data.totalReviews} />
+              </div>
+            </div>
+
+            {/* Bottom Sub-Row: Rating Breakdown & Latest Reviews */}
+            <div style={{ display: "grid", gridTemplateColumns: "240px minmax(0, 1fr)", gap: "20px" }}>
+              {/* Rating Breakdown Card */}
+              <div
+                style={{
+                  backgroundColor: "#ffffff",
+                  border: "1px solid #e2e8f0",
+                  borderRadius: "16px",
+                  padding: "22px 20px",
+                  boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
+                }}
+              >
+                <h2 style={{ margin: "0 0 18px 0", fontSize: "16px", fontWeight: "800", color: "#0f172a" }}>
+                  Rating Breakdown
+                </h2>
+
+                <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                  {data.starBreakdown.map((row: any) => (
+                    <div key={row.stars} style={{ display: "flex", alignItems: "center", gap: "10px", fontSize: "12.5px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "2px", width: "24px", fontWeight: 700, color: "#334155" }}>
+                        <span>{row.stars}</span>
+                        <span style={{ color: "#f59e0b", fontSize: "11px" }}>★</span>
+                      </div>
+
+                      {/* Horizontal Blue Bar */}
+                      <div style={{ flex: 1, height: "8px", backgroundColor: "#f1f5f9", borderRadius: "4px", overflow: "hidden" }}>
+                        <div
+                          style={{
+                            width: `${row.percentage}%`,
+                            height: "100%",
+                            backgroundColor: "#2563eb",
+                            borderRadius: "4px",
+                            transition: "width 0.3s ease",
+                          }}
+                        />
+                      </div>
+
+                      <div style={{ width: "32px", textAlign: "right", fontWeight: 700, color: "#64748b", fontSize: "12px" }}>
+                        {row.percentage}%
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
 
-              {/* Right: Previous / Next & Page Numbers */}
-              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                <button
-                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                  disabled={safeCurrentPage <= 1}
-                  style={{
-                    padding: "5px 12px",
-                    borderRadius: "6px",
-                    border: "1px solid #e2e8f0",
-                    backgroundColor: safeCurrentPage <= 1 ? "#f8fafc" : "#ffffff",
-                    color: safeCurrentPage <= 1 ? "#94a3b8" : "#334155",
-                    fontSize: "12px",
-                    fontWeight: 600,
-                    cursor: safeCurrentPage <= 1 ? "not-allowed" : "pointer",
-                  }}
-                >
-                  Previous
-                </button>
+              {/* Latest Reviews Card */}
+              <div
+                style={{
+                  backgroundColor: "#ffffff",
+                  border: "1px solid #e2e8f0",
+                  borderRadius: "16px",
+                  padding: "22px 24px",
+                  boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
+                  display: "flex",
+                  flexDirection: "column",
+                  justifyContent: "space-between",
+                }}
+              >
+                <div>
+                  {/* Header & View All */}
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "14px" }}>
+                    <h2 style={{ margin: 0, fontSize: "16px", fontWeight: "800", color: "#0f172a" }}>
+                      Latest Reviews
+                    </h2>
+                    <button
+                      onClick={() => navigate("/app/reviews")}
+                      style={{
+                        background: "none",
+                        border: "none",
+                        padding: 0,
+                        fontSize: "13px",
+                        fontWeight: 700,
+                        color: "#2563eb",
+                        cursor: "pointer",
+                      }}
+                    >
+                      View all →
+                    </button>
+                  </div>
 
-                {Array.from({ length: totalPages }, (_, i) => i + 1)
-                  .filter((p) => {
-                    return p === 1 || p === totalPages || Math.abs(p - safeCurrentPage) <= 1;
-                  })
-                  .map((p, idx, arr) => {
-                    const prev = arr[idx - 1];
-                    const showEllipsis = prev && p - prev > 1;
-                    return (
-                      <span key={p} style={{ display: "inline-flex", alignItems: "center" }}>
-                        {showEllipsis && <span style={{ padding: "0 4px", color: "#94a3b8" }}>...</span>}
+                  {/* Filter Tabs / Pills Matching Screenshot */}
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap", marginBottom: "16px" }}>
+                    {[
+                      { key: "all", label: `All (${data.sourceCounts.all})` },
+                      { key: "alibaba", label: `Alibaba (${data.sourceCounts.alibaba})` },
+                      { key: "flipkart", label: `Flipkart (${data.sourceCounts.flipkart})` },
+                      { key: "amazon", label: `Amazon (${data.sourceCounts.amazon})` },
+                      { key: "ai_drafts", label: `AI Drafts (${data.sourceCounts.ai_drafts})` },
+                    ].map((tab) => {
+                      const isActive = sourceFilter === tab.key;
+                      return (
                         <button
-                          onClick={() => setCurrentPage(p)}
+                          key={tab.key}
+                          onClick={() => {
+                            setSourceFilter(tab.key);
+                            setCurrentPage(1);
+                          }}
                           style={{
-                            minWidth: "30px",
-                            height: "30px",
-                            borderRadius: "6px",
-                            border: safeCurrentPage === p ? "none" : "1px solid #e2e8f0",
-                            backgroundColor: safeCurrentPage === p ? "#2563eb" : "#ffffff",
-                            color: safeCurrentPage === p ? "#ffffff" : "#475569",
-                            fontSize: "12px",
-                            fontWeight: 700,
+                            padding: "6px 14px",
+                            borderRadius: "8px",
+                            border: "none",
+                            backgroundColor: isActive ? "#eff6ff" : "#f8fafc",
+                            color: isActive ? "#2563eb" : "#64748b",
+                            fontSize: "12.5px",
+                            fontWeight: isActive ? 700 : 500,
                             cursor: "pointer",
+                            transition: "all 0.15s ease",
                           }}
                         >
-                          {p}
+                          {tab.label}
                         </button>
-                      </span>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
 
-                <button
-                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                  disabled={safeCurrentPage >= totalPages}
+                  {/* Reviews Table */}
+                  <div style={{ overflowX: "auto" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: "13px" }}>
+                      <thead>
+                        <tr style={{ borderBottom: "1px solid #f1f5f9", color: "#94a3b8", fontSize: "12px", fontWeight: 600 }}>
+                          <th style={{ padding: "8px 10px" }}>Reviewer</th>
+                          <th style={{ padding: "8px 10px" }}>Rating</th>
+                          <th style={{ padding: "8px 10px" }}>Review</th>
+                          <th style={{ padding: "8px 10px" }}>Source</th>
+                          <th style={{ padding: "8px 10px" }}>Status</th>
+                          <th style={{ padding: "8px 10px", textAlign: "right" }}>Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {paginatedReviews.length === 0 ? (
+                          <tr>
+                            <td colSpan={6} style={{ padding: "24px", textAlign: "center", color: "#94a3b8" }}>
+                              No reviews found in this filter.
+                            </td>
+                          </tr>
+                        ) : (
+                          paginatedReviews.map((r: any) => {
+                            const isAmazon = (r.source || "").toUpperCase().includes("AMAZON");
+                            const isFlipkart = (r.source || "").toUpperCase().includes("FLIPKART");
+                            const isAlibaba = (r.source || "").toUpperCase().includes("ALIBABA");
+                            const isAi = r.isAiGenerated || (r.source || "").toUpperCase().includes("AI");
+
+                            const sourceLabel = isAmazon
+                              ? "Amazon"
+                              : isFlipkart
+                              ? "Flipkart"
+                              : isAlibaba
+                              ? "Alibaba"
+                              : isAi
+                              ? "AI Drafts"
+                              : "Store orders";
+
+                            const sourceColor = isAmazon
+                              ? "#f59e0b"
+                              : isFlipkart
+                              ? "#0284c7"
+                              : isAlibaba
+                              ? "#2563eb"
+                              : isAi
+                              ? "#9333ea"
+                              : "#16a34a";
+
+                            const initials = getInitials(r.reviewerName);
+
+                            return (
+                              <tr
+                                key={r.id}
+                                style={{
+                                  borderBottom: "1px solid #f8fafc",
+                                  transition: "background 0.15s ease",
+                                }}
+                                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#fcfdff")}
+                                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+                              >
+                                {/* Reviewer with Circular Avatar */}
+                                <td style={{ padding: "10px" }}>
+                                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                                    <div
+                                      style={{
+                                        width: "28px",
+                                        height: "28px",
+                                        borderRadius: "50%",
+                                        backgroundColor: "#f1f5f9",
+                                        color: "#475569",
+                                        display: "flex",
+                                        alignItems: "center",
+                                        justifyContent: "center",
+                                        fontSize: "11px",
+                                        fontWeight: 800,
+                                        flexShrink: 0,
+                                      }}
+                                    >
+                                      {initials}
+                                    </div>
+                                    <span style={{ fontWeight: 700, color: "#0f172a", whiteSpace: "nowrap" }}>
+                                      {r.reviewerName}
+                                    </span>
+                                  </div>
+                                </td>
+
+                                {/* Rating */}
+                                <td style={{ padding: "10px", color: "#f59e0b", letterSpacing: "1px", whiteSpace: "nowrap" }}>
+                                  {"★".repeat(r.rating || 5)}
+                                </td>
+
+                                {/* Review snippet */}
+                                <td
+                                  style={{
+                                    padding: "10px",
+                                    color: "#475569",
+                                    maxWidth: "240px",
+                                    overflow: "hidden",
+                                    textOverflow: "ellipsis",
+                                    whiteSpace: "nowrap",
+                                  }}
+                                  title={r.bodyShort}
+                                >
+                                  {r.bodyShort}
+                                </td>
+
+                                {/* Source */}
+                                <td style={{ padding: "10px", whiteSpace: "nowrap" }}>
+                                  <span style={{ color: sourceColor, fontWeight: 600, fontSize: "12.5px" }}>
+                                    {sourceLabel}
+                                  </span>
+                                </td>
+
+                                {/* Status */}
+                                <td style={{ padding: "10px", whiteSpace: "nowrap" }}>
+                                  <span
+                                    style={{
+                                      backgroundColor: r.isPublished ? "#ecfdf5" : "#fef3c7",
+                                      color: r.isPublished ? "#10b981" : "#b45309",
+                                      padding: "3px 8px",
+                                      borderRadius: "6px",
+                                      fontSize: "11.5px",
+                                      fontWeight: 700,
+                                    }}
+                                  >
+                                    {r.isPublished ? "Published" : "Pending"}
+                                  </span>
+                                </td>
+
+                                {/* Three dots Action Menu */}
+                                <td style={{ padding: "10px", textAlign: "right", position: "relative" }}>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setOpenActionId(openActionId === r.id ? null : r.id);
+                                    }}
+                                    style={{
+                                      background: "none",
+                                      border: "none",
+                                      padding: "4px 8px",
+                                      cursor: "pointer",
+                                      fontSize: "16px",
+                                      color: "#64748b",
+                                      borderRadius: "4px",
+                                    }}
+                                  >
+                                    ⋮
+                                  </button>
+
+                                  {openActionId === r.id && (
+                                    <div
+                                      onClick={(e) => e.stopPropagation()}
+                                      style={{
+                                        position: "absolute",
+                                        right: 0,
+                                        top: "100%",
+                                        marginTop: "4px",
+                                        backgroundColor: "#ffffff",
+                                        border: "1px solid #e2e8f0",
+                                        borderRadius: "8px",
+                                        boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.1)",
+                                        zIndex: 30,
+                                        minWidth: "140px",
+                                        textAlign: "left",
+                                        overflow: "hidden",
+                                      }}
+                                    >
+                                      <button
+                                        onClick={() => handleTogglePublish(r.id)}
+                                        style={{
+                                          width: "100%",
+                                          padding: "8px 12px",
+                                          border: "none",
+                                          background: "none",
+                                          textAlign: "left",
+                                          fontSize: "12.5px",
+                                          fontWeight: 600,
+                                          color: "#334155",
+                                          cursor: "pointer",
+                                          display: "flex",
+                                          alignItems: "center",
+                                          gap: "6px",
+                                        }}
+                                        onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#f8fafc")}
+                                        onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+                                      >
+                                        {r.isPublished ? "Hide / Unpublish" : "Publish Review"}
+                                      </button>
+                                      <button
+                                        onClick={() => handlePromptDeleteOne(r.id, r.reviewerName)}
+                                        style={{
+                                          width: "100%",
+                                          padding: "8px 12px",
+                                          border: "none",
+                                          background: "none",
+                                          textAlign: "left",
+                                          fontSize: "12.5px",
+                                          fontWeight: 600,
+                                          color: "#ef4444",
+                                          cursor: "pointer",
+                                          display: "flex",
+                                          alignItems: "center",
+                                          gap: "6px",
+                                        }}
+                                        onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#fef2f2")}
+                                        onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+                                      >
+                                        Delete Review
+                                      </button>
+                                    </div>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Table Footer with Showing X-Y and Pagination Matching Screenshot */}
+                <div
                   style={{
-                    padding: "5px 12px",
-                    borderRadius: "6px",
-                    border: "1px solid #e2e8f0",
-                    backgroundColor: safeCurrentPage >= totalPages ? "#f8fafc" : "#ffffff",
-                    color: safeCurrentPage >= totalPages ? "#94a3b8" : "#334155",
-                    fontSize: "12px",
-                    fontWeight: 600,
-                    cursor: safeCurrentPage >= totalPages ? "not-allowed" : "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    paddingTop: "16px",
+                    borderTop: "1px solid #f1f5f9",
+                    marginTop: "12px",
+                    fontSize: "12.5px",
+                    color: "#94a3b8",
                   }}
                 >
-                  Next
+                  <div>
+                    Showing{" "}
+                    <strong style={{ color: "#334155" }}>
+                      {totalReviewsCount > 0 ? `${startIndex + 1}-${endIndex}` : "0"}
+                    </strong>{" "}
+                    of <strong style={{ color: "#334155" }}>{totalReviewsCount}</strong> reviews
+                  </div>
+
+                  {/* Pagination Buttons: < 1 2 3 4 5 ... N > */}
+                  <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                    <button
+                      onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                      disabled={safeCurrentPage <= 1}
+                      style={{
+                        width: "28px",
+                        height: "28px",
+                        borderRadius: "6px",
+                        border: "1px solid #e2e8f0",
+                        backgroundColor: "#ffffff",
+                        color: safeCurrentPage <= 1 ? "#cbd5e1" : "#475569",
+                        cursor: safeCurrentPage <= 1 ? "not-allowed" : "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontSize: "12px",
+                        fontWeight: 600,
+                      }}
+                    >
+                      ‹
+                    </button>
+
+                    {Array.from({ length: totalPages }, (_, i) => i + 1)
+                      .filter((p) => {
+                        return p === 1 || p === totalPages || (p >= safeCurrentPage - 2 && p <= safeCurrentPage + 2);
+                      })
+                      .map((p, idx, arr) => {
+                        const prev = arr[idx - 1];
+                        const showEllipsis = prev && p - prev > 1;
+                        return (
+                          <span key={p} style={{ display: "inline-flex", alignItems: "center" }}>
+                            {showEllipsis && <span style={{ padding: "0 4px", color: "#94a3b8" }}>...</span>}
+                            <button
+                              onClick={() => setCurrentPage(p)}
+                              style={{
+                                width: "28px",
+                                height: "28px",
+                                borderRadius: "6px",
+                                border: safeCurrentPage === p ? "none" : "1px solid #e2e8f0",
+                                backgroundColor: safeCurrentPage === p ? "#2563eb" : "#ffffff",
+                                color: safeCurrentPage === p ? "#ffffff" : "#475569",
+                                fontSize: "12px",
+                                fontWeight: 700,
+                                cursor: "pointer",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                              }}
+                            >
+                              {p}
+                            </button>
+                          </span>
+                        );
+                      })}
+
+                    <button
+                      onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                      disabled={safeCurrentPage >= totalPages}
+                      style={{
+                        width: "28px",
+                        height: "28px",
+                        borderRadius: "6px",
+                        border: "1px solid #e2e8f0",
+                        backgroundColor: "#ffffff",
+                        color: safeCurrentPage >= totalPages ? "#cbd5e1" : "#475569",
+                        cursor: safeCurrentPage >= totalPages ? "not-allowed" : "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontSize: "12px",
+                        fontWeight: 600,
+                      }}
+                    >
+                      ›
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* RIGHT SIDEBAR (AI Assistant, Quick Actions, Setup Progress) */}
+          <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+            {/* Card 1: AI Review Assistant */}
+            <div
+              style={{
+                backgroundColor: "#ffffff",
+                border: "1px solid #e2e8f0",
+                borderRadius: "16px",
+                padding: "20px",
+                boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
+              }}
+            >
+              <div
+                onClick={() => navigate("/app/ai-generator")}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  cursor: "pointer",
+                  marginBottom: "8px",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <span style={{ color: "#7c3aed", fontSize: "16px" }}>✦</span>
+                  <span style={{ fontSize: "14.5px", fontWeight: 800, color: "#0f172a" }}>AI Review Assistant</span>
+                </div>
+                <span style={{ color: "#94a3b8", fontSize: "14px" }}>›</span>
+              </div>
+              <p style={{ margin: "0 0 16px 0", fontSize: "12.5px", color: "#64748b", lineHeight: 1.4 }}>
+                Let AI help you create, manage and optimize your reviews.
+              </p>
+
+              {/* Banner button: Generate review summary */}
+              <div
+                onClick={() => setAiSummaryModalOpen(true)}
+                style={{
+                  backgroundColor: "#f5f3ff",
+                  border: "1px solid #ede9fe",
+                  borderRadius: "10px",
+                  padding: "10px 14px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  cursor: "pointer",
+                  transition: "all 0.15s ease",
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#ede9fe")}
+                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#f5f3ff")}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <span style={{ color: "#7c3aed", fontSize: "14px" }}>✦</span>
+                  <span style={{ fontSize: "12.5px", fontWeight: 700, color: "#6d28d9" }}>
+                    Generate review summary
+                  </span>
+                </div>
+                <span style={{ color: "#7c3aed", fontSize: "14px" }}>›</span>
+              </div>
+            </div>
+
+            {/* Card 2: Quick Actions */}
+            <div
+              style={{
+                backgroundColor: "#ffffff",
+                border: "1px solid #e2e8f0",
+                borderRadius: "16px",
+                padding: "20px",
+                boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "14px" }}>
+                <span style={{ color: "#0f172a", fontSize: "14px" }}>⚡</span>
+                <span style={{ fontSize: "14.5px", fontWeight: 800, color: "#0f172a" }}>Quick Actions</span>
+              </div>
+
+              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                {/* Action 1: View review queue */}
+                <div
+                  onClick={() => navigate("/app/reviews")}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    padding: "8px 10px",
+                    borderRadius: "10px",
+                    cursor: "pointer",
+                    transition: "all 0.15s ease",
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#f8fafc")}
+                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                    <div
+                      style={{
+                        width: "32px",
+                        height: "32px",
+                        borderRadius: "8px",
+                        backgroundColor: "#eff6ff",
+                        color: "#2563eb",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: "13px", fontWeight: 700, color: "#0f172a" }}>View review queue</div>
+                      <div style={{ fontSize: "11.5px", color: "#64748b" }}>Check pending reviews</div>
+                    </div>
+                  </div>
+                  <span style={{ color: "#94a3b8", fontSize: "14px" }}>›</span>
+                </div>
+
+                {/* Action 2: Manage widget */}
+                <div
+                  onClick={() => navigate("/app/widget-settings")}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    padding: "8px 10px",
+                    borderRadius: "10px",
+                    cursor: "pointer",
+                    transition: "all 0.15s ease",
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#f8fafc")}
+                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                    <div
+                      style={{
+                        width: "32px",
+                        height: "32px",
+                        borderRadius: "8px",
+                        backgroundColor: "#eff6ff",
+                        color: "#2563eb",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <circle cx="12" cy="12" r="3" />
+                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: "13px", fontWeight: 700, color: "#0f172a" }}>Manage widget</div>
+                      <div style={{ fontSize: "11.5px", color: "#64748b" }}>Edit appearance & settings</div>
+                    </div>
+                  </div>
+                  <span style={{ color: "#94a3b8", fontSize: "14px" }}>›</span>
+                </div>
+
+                {/* Action 3: Import reviews */}
+                <div
+                  onClick={() => navigate("/app/import-reviews")}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    padding: "8px 10px",
+                    borderRadius: "10px",
+                    cursor: "pointer",
+                    transition: "all 0.15s ease",
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#f8fafc")}
+                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                    <div
+                      style={{
+                        width: "32px",
+                        height: "32px",
+                        borderRadius: "8px",
+                        backgroundColor: "#eff6ff",
+                        color: "#2563eb",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                        <polyline points="7 10 12 15 17 10" />
+                        <line x1="12" y1="15" x2="12" y2="3" />
+                      </svg>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: "13px", fontWeight: 700, color: "#0f172a" }}>Import reviews</div>
+                      <div style={{ fontSize: "11.5px", color: "#64748b" }}>Add marketplace reviews</div>
+                    </div>
+                  </div>
+                  <span style={{ color: "#94a3b8", fontSize: "14px" }}>›</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Card 3: Setup Progress */}
+            <div
+              style={{
+                backgroundColor: "#ffffff",
+                border: "1px solid #e2e8f0",
+                borderRadius: "16px",
+                padding: "20px",
+                boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
+                <span style={{ fontSize: "14.5px", fontWeight: 800, color: "#0f172a" }}>Setup Progress</span>
+                <span style={{ fontSize: "12px", fontWeight: 700, color: "#64748b" }}>
+                  {data.checklist.completedCount} of {data.checklist.totalCount} completed
+                </span>
+              </div>
+
+              {/* Checklist items */}
+              <div style={{ display: "flex", flexDirection: "column", gap: "12px", marginBottom: "18px" }}>
+                {data.checklist.items.map((item: any) => (
+                  <div
+                    key={item.id}
+                    onClick={() => navigate(item.href)}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "10px",
+                      cursor: "pointer",
+                      fontSize: "13px",
+                      color: "#334155",
+                      fontWeight: 500,
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: "18px",
+                        height: "18px",
+                        borderRadius: "50%",
+                        backgroundColor: item.completed ? "#10b981" : "#e2e8f0",
+                        color: "#ffffff",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontSize: "11px",
+                        fontWeight: "bold",
+                        flexShrink: 0,
+                      }}
+                    >
+                      ✓
+                    </div>
+                    <span>{item.title}</span>
+                  </div>
+                ))}
+              </div>
+
+              {/* View setup guide link button */}
+              <button
+                onClick={() => navigate("/app/widget-settings")}
+                style={{
+                  width: "100%",
+                  padding: "8px 14px",
+                  borderRadius: "8px",
+                  border: "1px solid #e2e8f0",
+                  backgroundColor: "#ffffff",
+                  color: "#334155",
+                  fontSize: "12.5px",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "6px",
+                  transition: "all 0.15s ease",
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#f8fafc")}
+                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#ffffff")}
+              >
+                <span>View setup guide</span>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                  <polyline points="15 3 21 3 21 9" />
+                  <line x1="10" y1="14" x2="21" y2="3" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </section>
+
+        {/* ======================================================== */}
+        {/* MODAL: UPGRADE TO PRO                                    */}
+        {/* ======================================================== */}
+        {proModalOpen && (
+          <div
+            style={{
+              position: "fixed",
+              inset: 0,
+              backgroundColor: "rgba(15, 23, 42, 0.6)",
+              backdropFilter: "blur(3px)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              zIndex: 9999,
+              padding: "16px",
+            }}
+            onClick={() => setProModalOpen(false)}
+          >
+            <div
+              style={{
+                backgroundColor: "#ffffff",
+                borderRadius: "20px",
+                maxWidth: "500px",
+                width: "100%",
+                padding: "28px",
+                boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.2)",
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "12px" }}>
+                <span style={{ fontSize: "24px" }}>👑</span>
+                <h3 style={{ margin: 0, fontSize: "19px", fontWeight: "800", color: "#0f172a" }}>
+                  Upgrade to Pro Ecosystem
+                </h3>
+              </div>
+              <p style={{ margin: "0 0 18px 0", fontSize: "13.5px", color: "#64748b", lineHeight: 1.5 }}>
+                Get unlimited marketplace reviews import, automated Claude & Gemini review generation, real-time storefront syncing, and priority support.
+              </p>
+              <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginBottom: "22px", fontSize: "13px", color: "#334155" }}>
+                <div>✓ Unlimited review imports from Amazon, Flipkart & Alibaba</div>
+                <div>✓ Multi-provider AI review generation (Claude 3.5 & Gemini 2.0)</div>
+                <div>✓ Custom badge layouts & responsive carousel widgets</div>
+                <div>✓ Direct SEO rich snippet integration</div>
+              </div>
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+                <button
+                  onClick={() => setProModalOpen(false)}
+                  style={{
+                    padding: "8px 16px",
+                    borderRadius: "8px",
+                    border: "1px solid #cbd5e1",
+                    backgroundColor: "#ffffff",
+                    color: "#475569",
+                    fontSize: "13px",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  Close
+                </button>
+                <button
+                  onClick={() => {
+                    setProModalOpen(false);
+                    navigate("/app/widget-settings");
+                  }}
+                  style={{
+                    padding: "8px 20px",
+                    borderRadius: "8px",
+                    border: "none",
+                    backgroundColor: "#2563eb",
+                    color: "#ffffff",
+                    fontSize: "13px",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                  }}
+                >
+                  Explore Settings
                 </button>
               </div>
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
-        {/* Confirmation Modal Popup for Deletion */}
+        {/* ======================================================== */}
+        {/* MODAL: AI REVIEW SUMMARY PREVIEW                         */}
+        {/* ======================================================== */}
+        {aiSummaryModalOpen && (
+          <div
+            style={{
+              position: "fixed",
+              inset: 0,
+              backgroundColor: "rgba(15, 23, 42, 0.6)",
+              backdropFilter: "blur(3px)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              zIndex: 9999,
+              padding: "16px",
+            }}
+            onClick={() => setAiSummaryModalOpen(false)}
+          >
+            <div
+              style={{
+                backgroundColor: "#ffffff",
+                borderRadius: "20px",
+                maxWidth: "520px",
+                width: "100%",
+                padding: "26px",
+                boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.2)",
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "12px" }}>
+                <span style={{ fontSize: "20px", color: "#7c3aed" }}>✦</span>
+                <h3 style={{ margin: 0, fontSize: "18px", fontWeight: "800", color: "#0f172a" }}>
+                  AI Review Sentiment Summary
+                </h3>
+              </div>
+              <p style={{ margin: "0 0 16px 0", fontSize: "13.5px", color: "#64748b", lineHeight: 1.5 }}>
+                Based on your {data.totalReviews} customer reviews across Alibaba, Flipkart, Amazon, and AI Drafts:
+              </p>
+              <div
+                style={{
+                  backgroundColor: "#f8fafc",
+                  border: "1px solid #e2e8f0",
+                  borderRadius: "12px",
+                  padding: "16px",
+                  marginBottom: "20px",
+                  fontSize: "13px",
+                  color: "#334155",
+                  lineHeight: 1.6,
+                }}
+              >
+                <div style={{ fontWeight: 700, color: "#1e293b", marginBottom: "6px" }}>
+                  🌟 Overall Store Sentiment: Exceptional ({data.averageRating} ★)
+                </div>
+                <div>
+                  • <strong>Product Quality:</strong> Customers frequently praise soft textures, high fabric density, and accurate sizing.
+                </div>
+                <div>
+                  • <strong>Marketplace Trust:</strong> Verified imports from Alibaba and Amazon reinforce strong social proof.
+                </div>
+                <div>
+                  • <strong>Publication Rate:</strong> {publishedPercentage}% of collected reviews are currently live on storefront.
+                </div>
+              </div>
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+                <button
+                  onClick={() => setAiSummaryModalOpen(false)}
+                  style={{
+                    padding: "8px 16px",
+                    borderRadius: "8px",
+                    border: "1px solid #cbd5e1",
+                    backgroundColor: "#ffffff",
+                    color: "#475569",
+                    fontSize: "13px",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  Close
+                </button>
+                <button
+                  onClick={() => {
+                    setAiSummaryModalOpen(false);
+                    navigate("/app/ai-generator");
+                  }}
+                  style={{
+                    padding: "8px 18px",
+                    borderRadius: "8px",
+                    border: "none",
+                    backgroundColor: "#7c3aed",
+                    color: "#ffffff",
+                    fontSize: "13px",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                  }}
+                >
+                  Launch AI Generator →
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ======================================================== */}
+        {/* MODAL: DELETE CONFIRMATION                               */}
+        {/* ======================================================== */}
         {deleteModal.open && (
           <div
             style={{
@@ -1757,7 +2653,7 @@ export default function DynamicReviewDashboard() {
                 maxWidth: "460px",
                 width: "100%",
                 padding: "24px",
-                boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.2), 0 10px 10px -5px rgba(0, 0, 0, 0.08)",
+                boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.2)",
                 border: "1px solid #f1f5f9",
               }}
               onClick={(e) => e.stopPropagation()}
@@ -1846,35 +2742,79 @@ export default function DynamicReviewDashboard() {
             </div>
           </div>
         )}
-      </BlockStack>
-    </Page>
+      </main>
+    </div>
   );
 }
 
+// Error Boundary for resilient experience
 export function ErrorBoundary() {
   const error = useRouteError();
   const navigate = useNavigate();
 
   return (
-    <Page title="Dynamic Review Ecosystem Dashboard">
-      <Card>
-        <BlockStack gap="400">
-          <Text as="h2" variant="headingMd" tone="critical">
-            Dashboard Loading Notice
-          </Text>
-          <Text as="p" variant="bodyMd" tone="subdued">
-            {error instanceof Error ? error.message : "The dashboard encountered a momentary connection interruption."}
-          </Text>
-          <InlineStack gap="300">
-            <Button variant="primary" onClick={() => window.location.reload()}>
-              Reload Dashboard
-            </Button>
-            <Button onClick={() => navigate("/app/reviews")}>
-              View Reviews List
-            </Button>
-          </InlineStack>
-        </BlockStack>
-      </Card>
-    </Page>
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        minHeight: "80vh",
+        padding: "24px",
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+      }}
+    >
+      <div
+        style={{
+          maxWidth: "480px",
+          width: "100%",
+          backgroundColor: "#ffffff",
+          borderRadius: "16px",
+          padding: "32px",
+          boxShadow: "0 10px 25px -5px rgba(0,0,0,0.1)",
+          border: "1px solid #e2e8f0",
+          textAlign: "center",
+        }}
+      >
+        <div style={{ fontSize: "36px", marginBottom: "14px" }}>⚠️</div>
+        <h2 style={{ margin: "0 0 8px 0", fontSize: "20px", fontWeight: "800", color: "#0f172a" }}>
+          Dashboard Temporarily Unavailable
+        </h2>
+        <p style={{ margin: "0 0 24px 0", fontSize: "14px", color: "#64748b", lineHeight: 1.5 }}>
+          {error instanceof Error ? error.message : "A momentary connection interruption occurred while loading dashboard data."}
+        </p>
+        <div style={{ display: "flex", justifyContent: "center", gap: "12px" }}>
+          <button
+            onClick={() => window.location.reload()}
+            style={{
+              padding: "10px 20px",
+              borderRadius: "10px",
+              border: "none",
+              backgroundColor: "#2563eb",
+              color: "#ffffff",
+              fontSize: "13px",
+              fontWeight: 700,
+              cursor: "pointer",
+            }}
+          >
+            Reload Dashboard
+          </button>
+          <button
+            onClick={() => navigate("/app/reviews")}
+            style={{
+              padding: "10px 18px",
+              borderRadius: "10px",
+              border: "1px solid #cbd5e1",
+              backgroundColor: "#ffffff",
+              color: "#334155",
+              fontSize: "13px",
+              fontWeight: 600,
+              cursor: "pointer",
+            }}
+          >
+            View Reviews
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
