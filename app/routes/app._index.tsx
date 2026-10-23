@@ -300,11 +300,39 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const hasMarketplaceReviews = importedCount > 0;
   const isWidgetConfigured = Boolean(settings?.widgetLayoutStyle);
 
+  const themeEditorUrl = shop
+    ? `https://${shop}/admin/themes/current/editor?context=apps`
+    : "https://admin.shopify.com";
+
   const checklistItems = [
-    { id: "widget", title: "Enable popup widget", completed: isWidgetEnabled, href: "/app/widget-settings" },
-    { id: "import", title: "Import marketplace reviews", completed: hasMarketplaceReviews, href: "/app/import-reviews" },
-    { id: "ai", title: "Connect AI provider", completed: hasAiKey, href: "/app/ai-settings" },
-    { id: "widget_settings", title: "Configure widget settings", completed: isWidgetConfigured, href: "/app/widget-settings" },
+    {
+      id: "enable_widget",
+      title: "Enable popup widget",
+      completed: isWidgetEnabled,
+      href: themeEditorUrl,
+      isExternal: true,
+    },
+    {
+      id: "import",
+      title: "Import marketplace reviews",
+      completed: hasMarketplaceReviews,
+      href: "/app/import-reviews",
+      isExternal: false,
+    },
+    {
+      id: "ai",
+      title: "Connect AI provider",
+      completed: hasAiKey,
+      href: "/app/ai-settings",
+      isExternal: false,
+    },
+    {
+      id: "widget_settings",
+      title: "Configure widget settings",
+      completed: isWidgetConfigured,
+      href: "/app/widget-settings",
+      isExternal: false,
+    },
   ];
   const completedChecklistCount = checklistItems.filter((c) => c.completed).length;
 
@@ -355,6 +383,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
       pending: sparklinePending,
     },
     adminName,
+    themeEditorUrl,
+    shop,
   });
 }
 
@@ -796,6 +826,9 @@ export default function DynamicReviewDashboard() {
 
   // AI Review Summary Modal state
   const [aiSummaryModalOpen, setAiSummaryModalOpen] = useState<boolean>(false);
+
+  // Step-by-step Setup Guide Modal state
+  const [setupGuideModalOpen, setSetupGuideModalOpen] = useState<boolean>(false);
 
   // Confirmation modal popup state
   const [deleteModal, setDeleteModal] = useState<{
@@ -2111,42 +2144,53 @@ export default function DynamicReviewDashboard() {
               {data.checklist.items.map((item: any) => (
                 <div
                   key={item.id}
-                  onClick={() => navigate(item.href)}
+                  onClick={() => {
+                    if (item.isExternal || item.id === "enable_widget") {
+                      window.open(item.href || (data as any).themeEditorUrl, "_blank");
+                    } else {
+                      navigate(item.href);
+                    }
+                  }}
                   style={{
                     display: "flex",
                     alignItems: "center",
-                    gap: "10px",
+                    justifyContent: "space-between",
                     cursor: "pointer",
                     fontSize: "13px",
                     color: "#334155",
                     fontWeight: 500,
                   }}
                 >
-                  <div
-                    style={{
-                      width: "18px",
-                      height: "18px",
-                      borderRadius: "50%",
-                      backgroundColor: item.completed ? "#10b981" : "#e2e8f0",
-                      color: "#ffffff",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      fontSize: "11px",
-                      fontWeight: "bold",
-                      flexShrink: 0,
-                    }}
-                  >
-                    ✓
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                    <div
+                      style={{
+                        width: "18px",
+                        height: "18px",
+                        borderRadius: "50%",
+                        backgroundColor: item.completed ? "#10b981" : "#e2e8f0",
+                        color: "#ffffff",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontSize: "11px",
+                        fontWeight: "bold",
+                        flexShrink: 0,
+                      }}
+                    >
+                      ✓
+                    </div>
+                    <span>{item.title}</span>
                   </div>
-                  <span>{item.title}</span>
+                  {item.isExternal && (
+                    <span style={{ fontSize: "11px", color: "#94a3b8" }}>↗</span>
+                  )}
                 </div>
               ))}
             </div>
 
             {/* View setup guide link button */}
             <button
-              onClick={() => navigate("/app/widget-settings")}
+              onClick={() => setSetupGuideModalOpen(true)}
               style={{
                 width: "100%",
                 padding: "8px 14px",
@@ -2274,6 +2318,316 @@ export default function DynamicReviewDashboard() {
                 }}
               >
                 Launch AI Generator →
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* MODAL: STEP-BY-STEP SETUP GUIDE                           */}
+      {/* ======================================================== */}
+      {setupGuideModalOpen && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            backgroundColor: "rgba(15, 23, 42, 0.65)",
+            backdropFilter: "blur(3px)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 9999,
+            padding: "16px",
+          }}
+          onClick={() => setSetupGuideModalOpen(false)}
+        >
+          <div
+            style={{
+              backgroundColor: "#ffffff",
+              borderRadius: "20px",
+              maxWidth: "600px",
+              width: "100%",
+              padding: "28px",
+              boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.2)",
+              maxHeight: "90vh",
+              overflowY: "auto",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "8px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <span style={{ fontSize: "22px" }}>🚀</span>
+                <h3 style={{ margin: 0, fontSize: "19px", fontWeight: "800", color: "#0f172a" }}>
+                  Store Setup & Onboarding Guide
+                </h3>
+              </div>
+              <button
+                onClick={() => setSetupGuideModalOpen(false)}
+                style={{
+                  border: "none",
+                  backgroundColor: "transparent",
+                  fontSize: "20px",
+                  color: "#94a3b8",
+                  cursor: "pointer",
+                  padding: "4px 8px",
+                  lineHeight: 1,
+                }}
+              >
+                ✕
+              </button>
+            </div>
+            <p style={{ margin: "0 0 20px 0", fontSize: "13.5px", color: "#64748b", lineHeight: 1.5 }}>
+              Follow these simple steps to start displaying live social proof, importing verified feedback, and engaging shoppers with dynamic popups.
+            </p>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: "14px", marginBottom: "24px" }}>
+              {/* Step 1 */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: "14px",
+                  padding: "14px 16px",
+                  backgroundColor: "#f8fafc",
+                  borderRadius: "12px",
+                  border: "1px solid #e2e8f0",
+                }}
+              >
+                <div
+                  style={{
+                    width: "28px",
+                    height: "28px",
+                    borderRadius: "50%",
+                    backgroundColor: data.checklist.items.find((i: any) => i.id === "enable_widget")?.completed ? "#10b981" : "#2563eb",
+                    color: "#ffffff",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: "13px",
+                    fontWeight: 700,
+                    flexShrink: 0,
+                  }}
+                >
+                  {data.checklist.items.find((i: any) => i.id === "enable_widget")?.completed ? "✓" : "1"}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: "14px", fontWeight: 700, color: "#0f172a", marginBottom: "3px" }}>
+                    1. Enable popup widget in Shopify Theme
+                  </div>
+                  <div style={{ fontSize: "12.5px", color: "#64748b", lineHeight: 1.4, marginBottom: "8px" }}>
+                    Activate the app embed extension in your live theme so reviews can appear seamlessly on your store pages.
+                  </div>
+                  <button
+                    onClick={() => {
+                      window.open(data.themeEditorUrl, "_blank");
+                    }}
+                    style={{
+                      padding: "6px 12px",
+                      borderRadius: "6px",
+                      border: "none",
+                      backgroundColor: "#2563eb",
+                      color: "#ffffff",
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "6px",
+                    }}
+                  >
+                    Open Theme Customizer ↗
+                  </button>
+                </div>
+              </div>
+
+              {/* Step 2 */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: "14px",
+                  padding: "14px 16px",
+                  backgroundColor: "#f8fafc",
+                  borderRadius: "12px",
+                  border: "1px solid #e2e8f0",
+                }}
+              >
+                <div
+                  style={{
+                    width: "28px",
+                    height: "28px",
+                    borderRadius: "50%",
+                    backgroundColor: data.checklist.items.find((i: any) => i.id === "import")?.completed ? "#10b981" : "#2563eb",
+                    color: "#ffffff",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: "13px",
+                    fontWeight: 700,
+                    flexShrink: 0,
+                  }}
+                >
+                  {data.checklist.items.find((i: any) => i.id === "import")?.completed ? "✓" : "2"}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: "14px", fontWeight: 700, color: "#0f172a", marginBottom: "3px" }}>
+                    2. Import marketplace reviews
+                  </div>
+                  <div style={{ fontSize: "12.5px", color: "#64748b", lineHeight: 1.4, marginBottom: "8px" }}>
+                    Import verified customer reviews from Alibaba, AliExpress, Amazon, Flipkart, or your CSV spreadsheets.
+                  </div>
+                  <button
+                    onClick={() => {
+                      setSetupGuideModalOpen(false);
+                      navigate("/app/import-reviews");
+                    }}
+                    style={{
+                      padding: "6px 12px",
+                      borderRadius: "6px",
+                      border: "1px solid #cbd5e1",
+                      backgroundColor: "#ffffff",
+                      color: "#1e293b",
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Go to Import Reviews →
+                  </button>
+                </div>
+              </div>
+
+              {/* Step 3 */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: "14px",
+                  padding: "14px 16px",
+                  backgroundColor: "#f8fafc",
+                  borderRadius: "12px",
+                  border: "1px solid #e2e8f0",
+                }}
+              >
+                <div
+                  style={{
+                    width: "28px",
+                    height: "28px",
+                    borderRadius: "50%",
+                    backgroundColor: data.checklist.items.find((i: any) => i.id === "ai")?.completed ? "#10b981" : "#2563eb",
+                    color: "#ffffff",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: "13px",
+                    fontWeight: 700,
+                    flexShrink: 0,
+                  }}
+                >
+                  {data.checklist.items.find((i: any) => i.id === "ai")?.completed ? "✓" : "3"}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: "14px", fontWeight: 700, color: "#0f172a", marginBottom: "3px" }}>
+                    3. Connect AI provider
+                  </div>
+                  <div style={{ fontSize: "12.5px", color: "#64748b", lineHeight: 1.4, marginBottom: "8px" }}>
+                    Connect OpenAI, Google Gemini, or Claude to automatically generate realistic reviews and smart summaries.
+                  </div>
+                  <button
+                    onClick={() => {
+                      setSetupGuideModalOpen(false);
+                      navigate("/app/ai-settings");
+                    }}
+                    style={{
+                      padding: "6px 12px",
+                      borderRadius: "6px",
+                      border: "1px solid #cbd5e1",
+                      backgroundColor: "#ffffff",
+                      color: "#1e293b",
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Go to AI Settings →
+                  </button>
+                </div>
+              </div>
+
+              {/* Step 4 */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: "14px",
+                  padding: "14px 16px",
+                  backgroundColor: "#f8fafc",
+                  borderRadius: "12px",
+                  border: "1px solid #e2e8f0",
+                }}
+              >
+                <div
+                  style={{
+                    width: "28px",
+                    height: "28px",
+                    borderRadius: "50%",
+                    backgroundColor: data.checklist.items.find((i: any) => i.id === "widget_settings")?.completed ? "#10b981" : "#2563eb",
+                    color: "#ffffff",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: "13px",
+                    fontWeight: 700,
+                    flexShrink: 0,
+                  }}
+                >
+                  {data.checklist.items.find((i: any) => i.id === "widget_settings")?.completed ? "✓" : "4"}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: "14px", fontWeight: 700, color: "#0f172a", marginBottom: "3px" }}>
+                    4. Configure widget settings
+                  </div>
+                  <div style={{ fontSize: "12.5px", color: "#64748b", lineHeight: 1.4, marginBottom: "8px" }}>
+                    Customize widget position (bottom-left, bottom-right), delay intervals, display duration, and styling.
+                  </div>
+                  <button
+                    onClick={() => {
+                      setSetupGuideModalOpen(false);
+                      navigate("/app/widget-settings");
+                    }}
+                    style={{
+                      padding: "6px 12px",
+                      borderRadius: "6px",
+                      border: "1px solid #cbd5e1",
+                      backgroundColor: "#ffffff",
+                      color: "#1e293b",
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Configure Widget Settings →
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+              <button
+                onClick={() => setSetupGuideModalOpen(false)}
+                style={{
+                  padding: "9px 20px",
+                  borderRadius: "8px",
+                  border: "none",
+                  backgroundColor: "#0f172a",
+                  color: "#ffffff",
+                  fontSize: "13px",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                Done
               </button>
             </div>
           </div>
