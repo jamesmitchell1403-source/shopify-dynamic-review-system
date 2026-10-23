@@ -1455,6 +1455,29 @@ export default function ReviewsPage() {
                 </svg>
                 <span>More filters</span>
               </button>
+
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmModal({ open: true, type: "all" })}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  padding: "10px 14px",
+                  borderRadius: "8px",
+                  border: "1px solid #fecaca",
+                  backgroundColor: "#fef2f2",
+                  color: "#dc2626",
+                  fontSize: "13px",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  transition: "all 0.15s ease",
+                  whiteSpace: "nowrap",
+                }}
+                title="Permanently delete all reviews from store"
+              >
+                <span>🗑</span> Delete All Reviews
+              </button>
             </div>
           </div>
 
@@ -1642,9 +1665,39 @@ export default function ReviewsPage() {
                     fontSize: "13px",
                     fontWeight: 600,
                     cursor: "pointer",
+                    transition: "all 0.15s ease",
                   }}
+                  title={`Delete ${selectedIds.size} selected review(s)`}
                 >
-                  <span>🗑</span> Delete
+                  <span>🗑</span> Delete Selected ({selectedIds.size})
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setDeleteConfirmModal({
+                      open: true,
+                      type: "all",
+                    })
+                  }
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    padding: "6px 14px",
+                    borderRadius: "6px",
+                    border: "1px solid #dc2626",
+                    backgroundColor: "#dc2626",
+                    color: "#ffffff",
+                    fontSize: "13px",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    boxShadow: "0 1px 2px rgba(220, 38, 38, 0.25)",
+                    transition: "all 0.15s ease",
+                  }}
+                  title={`Permanently delete all ${totalShopReviewsCount || totalReviewsCount} reviews from store`}
+                >
+                  <span>🗑</span> Delete All ({totalShopReviewsCount || totalReviewsCount})
                 </button>
 
                 <button
@@ -2216,7 +2269,7 @@ export default function ReviewsPage() {
           primaryAction={{
             content:
               deleteConfirmModal.type === "all"
-                ? "Yes, Delete All Reviews"
+                ? `Yes, Delete All (${totalShopReviewsCount || totalReviewsCount}) Reviews`
                 : deleteConfirmModal.type === "selected"
                 ? `Yes, Delete ${deleteConfirmModal.count || selectedIds.size} Reviews`
                 : "Yes, Delete Review",
@@ -2234,7 +2287,7 @@ export default function ReviewsPage() {
             <div style={{ padding: "8px 0" }}>
               {deleteConfirmModal.type === "all" ? (
                 <p style={{ color: "#b91c1c", fontWeight: 600, fontSize: "14px" }}>
-                  ⚠️ Warning: This will permanently delete ALL {totalReviewsCount} reviews from your store. This action cannot be undone. Are you sure you wish to proceed?
+                  ⚠️ Warning: This will permanently delete ALL {totalShopReviewsCount || totalReviewsCount} reviews from your store. This action cannot be undone. Are you sure you wish to proceed?
                 </p>
               ) : deleteConfirmModal.type === "selected" ? (
                 <p style={{ color: "#334155", fontSize: "14px" }}>
