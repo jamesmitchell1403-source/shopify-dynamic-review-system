@@ -335,6 +335,7 @@ export async function action({ request }: ActionFunctionArgs) {
             mediaOption: mediaOption || "image",
           },
           provider,
+          admin,
         );
 
         const reviewsToSave = result.reviews.slice(0, countPerProduct);
@@ -453,6 +454,7 @@ export async function action({ request }: ActionFunctionArgs) {
         mediaOption: mediaOption || "image",
       },
       provider,
+      admin,
     );
 
     // Log the AI generation job for audit/cost tracking

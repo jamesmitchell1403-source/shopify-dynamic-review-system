@@ -328,27 +328,28 @@ export default function AiGeneratorPage() {
       description: "Fast, multimodal vision analysis & high-speed review generation.",
     },
     {
+      id: "openai",
+      name: "ChatGPT (OpenAI)",
+      model: "gpt-4o-mini",
+      hasKey: aiConfig.hasOpenaiKey,
+      description: "Reliable, well-structured product ratings and review headlines.",
+    },
+    {
       id: "claude",
       name: "Anthropic Claude",
       model: "claude-3-5-sonnet",
       hasKey: aiConfig.hasClaudeKey,
       description: "Nuanced, high-fidelity customer feedback with authentic human phrasing.",
     },
-    {
-      id: "openai",
-      name: "ChatGPT OpenAI",
-      model: "gpt-4o-mini",
-      hasKey: aiConfig.hasOpenaiKey,
-      description: "Reliable, well-structured product ratings and review headlines.",
-    },
   ], [aiConfig]);
 
-  // Determine initial selected engine (first available engine with a saved key)
+  // Determine initial selected engine
   const getInitialActiveProvider = () => {
-    if (aiConfig.hasGeminiKey) return "gemini";
-    if (aiConfig.hasClaudeKey) return "claude";
-    if (aiConfig.hasOpenaiKey) return "openai";
-    return "";
+    if (aiConfig?.defaultProvider) return aiConfig.defaultProvider;
+    if (aiConfig?.hasGeminiKey) return "gemini";
+    if (aiConfig?.hasOpenaiKey) return "openai";
+    if (aiConfig?.hasClaudeKey) return "claude";
+    return "gemini";
   };
 
   // ==============================================================
@@ -475,7 +476,14 @@ export default function AiGeneratorPage() {
   // Trigger Bulk AI Generation
   const handleBulkGenerateAll = async () => {
     if (!bulkProvider) {
-      setBulkErrorMessage("Please select an available AI engine before generating reviews.");
+      setBulkErrorMessage("Please select an AI provider from the dropdown before generating reviews.");
+      return;
+    }
+
+    if (!selectedBulkEngine?.hasKey) {
+      setBulkErrorMessage(
+        `Selected AI Provider (${selectedBulkEngine?.name || bulkProvider}) does not have an API key configured. Please configure your API key in AI Settings to enable review generation.`,
+      );
       return;
     }
 
@@ -1517,29 +1525,6 @@ export default function AiGeneratorPage() {
         {/* ============================================================== */}
         {selectedTab === 0 && (
           <div>
-            {/* HORIZONTAL STEP PROGRESS BAR */}
-            <div className="rg-stepper-bar">
-              <div className="rg-step-node">
-                <div className="rg-step-circle active">1</div>
-                <span className="rg-step-label active">Scope</span>
-              </div>
-              <div className="rg-step-line" />
-              <div className="rg-step-node">
-                <div className="rg-step-circle">2</div>
-                <span className="rg-step-label">Settings</span>
-              </div>
-              <div className="rg-step-line" />
-              <div className="rg-step-node">
-                <div className="rg-step-circle">3</div>
-                <span className="rg-step-label">Summary</span>
-              </div>
-              <div className="rg-step-line" />
-              <div className="rg-step-node">
-                <div className="rg-step-circle">4</div>
-                <span className="rg-step-label">Generate</span>
-              </div>
-            </div>
-
             {bulkErrorMessage && (
               <div style={{ marginBottom: "16px" }}>
                 <Banner tone="critical" title="Generation Error">
@@ -1678,39 +1663,17 @@ export default function AiGeneratorPage() {
                         </select>
                       </div>
 
-                      <div style={{ marginBottom: "18px" }}>
-                        <label className="rg-field-label">Language</label>
+                      <div style={{ marginBottom: "16px" }}>
+                        <label className="rg-field-label">Rating</label>
                         <select
                           className="rg-modern-select"
-                          value={bulkLanguage}
-                          onChange={(e) => setBulkLanguage(e.target.value)}
+                          value={ratingRange}
+                          onChange={(e) => setRatingRange(e.target.value)}
                         >
-                          <option value="en">English</option>
-                          <option value="es">Spanish</option>
-                          <option value="fr">French</option>
-                          <option value="de">German</option>
-                          <option value="it">Italian</option>
-                          <option value="ja">Japanese</option>
-                          <option value="hi">Hindi</option>
+                          <option value="4–5 stars">4–5 stars</option>
+                          <option value="5 stars only">5 stars only</option>
+                          <option value="3–5 stars">3–5 stars</option>
                         </select>
-                      </div>
-
-                      {/* Toggle: Include review titles */}
-                      <div
-                        className="rg-toggle-row"
-                        onClick={() => setIncludeTitles(!includeTitles)}
-                      >
-                        <div className={`rg-pill-switch ${includeTitles ? "on" : ""}`}>
-                          <div className="rg-pill-switch-handle" />
-                        </div>
-                        <div>
-                          <div style={{ fontSize: "13px", fontWeight: 600, color: "#111827" }}>
-                            Include review titles
-                          </div>
-                          <div style={{ fontSize: "11.5px", color: "#6b7280" }}>
-                            Generate short, compelling titles.
-                          </div>
-                        </div>
                       </div>
                     </div>
 
@@ -1732,22 +1695,10 @@ export default function AiGeneratorPage() {
                         </div>
                       </div>
 
-                      <div style={{ marginBottom: "18px" }}>
-                        <label className="rg-field-label">Rating</label>
-                        <select
-                          className="rg-modern-select"
-                          value={ratingRange}
-                          onChange={(e) => setRatingRange(e.target.value)}
-                        >
-                          <option value="4–5 stars">4–5 stars</option>
-                          <option value="5 stars only">5 stars only</option>
-                          <option value="3–5 stars">3–5 stars</option>
-                        </select>
-                      </div>
-
                       {/* Toggle: Use verified buyer tag */}
                       <div
                         className="rg-toggle-row"
+                        style={{ marginTop: "18px" }}
                         onClick={() => setUseVerifiedBuyerTag(!useVerifiedBuyerTag)}
                       >
                         <div className={`rg-pill-switch ${useVerifiedBuyerTag ? "on" : ""}`}>
@@ -1860,72 +1811,27 @@ export default function AiGeneratorPage() {
                   <h2 className="rg-card-heading">Create reviews</h2>
                   <p className="rg-card-subheading">Generate AI reviews for your selected products.</p>
 
-                  {/* Connected AI Engine Box */}
-                  <div
-                    style={{
-                      background: "#ffffff",
-                      border: "1px solid #e5e7eb",
-                      borderRadius: "10px",
-                      padding: "12px 16px",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      marginBottom: "14px",
-                    }}
-                  >
-                    <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                      {/* Gemini multi-color sparkle icon */}
-                      <div
-                        style={{
-                          width: "36px",
-                          height: "36px",
-                          borderRadius: "8px",
-                          background: "linear-gradient(135deg, #e0e7ff 0%, #fae8ff 100%)",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          flexShrink: 0,
-                        }}
-                      >
-                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-                          <path
-                            d="M12 2C12 7.5 7.5 12 2 12C7.5 12 12 16.5 12 22C12 16.5 16.5 12 22 12C16.5 12 12 7.5 12 2Z"
-                            fill="url(#geminiGradient)"
-                          />
-                          <defs>
-                            <linearGradient id="geminiGradient" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
-                              <stop stopColor="#3b82f6" />
-                              <stop offset="0.5" stopColor="#8b5cf6" />
-                              <stop offset="1" stopColor="#ec4899" />
-                            </linearGradient>
-                          </defs>
-                        </svg>
-                      </div>
-
-                      <div>
-                        <div style={{ fontSize: "14.5px", fontWeight: 700, color: "#111827" }}>
-                          {selectedBulkEngine?.name || "Google Gemini"}
-                        </div>
-                        <div style={{ fontSize: "12px", color: "#6b7280" }}>
-                          Advanced AI for natural, high-quality reviews.
-                        </div>
-                      </div>
-                    </div>
-
-                    <div>
+                  {/* AI Provider Dropdown Selector */}
+                  <div style={{ marginBottom: "16px" }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "6px" }}>
+                      <label className="rg-field-label" style={{ margin: 0, fontWeight: 600 }}>
+                        Select AI Provider
+                      </label>
                       {selectedBulkEngine?.hasKey ? (
                         <span
                           style={{
                             background: "#dcfce7",
                             color: "#15803d",
-                            fontSize: "12px",
+                            fontSize: "11.5px",
                             fontWeight: 600,
-                            padding: "3px 12px",
+                            padding: "2px 8px",
                             borderRadius: "9999px",
-                            display: "inline-block",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "4px",
                           }}
                         >
-                          Ready
+                          <span style={{ fontSize: "8px" }}>●</span> Connected & Ready
                         </span>
                       ) : (
                         <Link
@@ -1933,16 +1839,94 @@ export default function AiGeneratorPage() {
                           style={{
                             background: "#fef3c7",
                             color: "#b45309",
-                            fontSize: "12px",
+                            fontSize: "11px",
                             fontWeight: 600,
-                            padding: "3px 10px",
+                            padding: "2px 8px",
                             borderRadius: "9999px",
                             textDecoration: "none",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "4px",
                           }}
                         >
-                          Add Key →
+                          ⚠️ Missing API Key (Configure in AI Settings →)
                         </Link>
                       )}
+                    </div>
+
+                    <select
+                      className="rg-modern-select"
+                      value={bulkProvider}
+                      onChange={(e) => setBulkProvider(e.target.value)}
+                      style={{
+                        height: "44px",
+                        fontSize: "14px",
+                        fontWeight: 600,
+                        color: "#0f172a",
+                        backgroundColor: "#ffffff",
+                        borderColor: selectedBulkEngine?.hasKey ? "#cbd5e1" : "#f59e0b",
+                      }}
+                    >
+                      <option value="gemini">Google Gemini</option>
+                      <option value="openai">ChatGPT (OpenAI)</option>
+                      <option value="claude">Anthropic Claude</option>
+                    </select>
+
+                    {/* Active Provider Info Badge */}
+                    <div
+                      style={{
+                        marginTop: "8px",
+                        padding: "8px 12px",
+                        background: "#f8fafc",
+                        border: "1px solid #e2e8f0",
+                        borderRadius: "8px",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        fontSize: "12px",
+                        color: "#64748b",
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        {bulkProvider === "gemini" && (
+                          <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: "20px", height: "20px", borderRadius: "5px", background: "linear-gradient(135deg, #3b82f6, #8b5cf6)" }}>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="white"><path d="M12 2C12 7.5 7.5 12 2 12C7.5 12 12 16.5 12 22C12 16.5 16.5 12 22 12C16.5 12 12 7.5 12 2Z"/></svg>
+                          </span>
+                        )}
+                        {bulkProvider === "openai" && (
+                          <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: "20px", height: "20px", borderRadius: "5px", background: "#10a37f", color: "#ffffff", fontWeight: 700, fontSize: "11px" }}>
+                            ✦
+                          </span>
+                        )}
+                        {bulkProvider === "claude" && (
+                          <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: "20px", height: "20px", borderRadius: "5px", background: "#d97706", color: "#ffffff", fontWeight: 700, fontSize: "11px" }}>
+                            ◈
+                          </span>
+                        )}
+                        <span>
+                          {bulkProvider === "gemini"
+                            ? "Advanced AI for natural, high-quality reviews."
+                            : bulkProvider === "openai"
+                            ? "Structured product ratings and authentic customer headlines."
+                            : "Nuanced feedback with high-fidelity, human phrasing."}
+                        </span>
+                      </div>
+
+                      <span
+                        style={{
+                          fontFamily: "monospace",
+                          fontSize: "11px",
+                          fontWeight: 600,
+                          color: "#334155",
+                          background: "#ffffff",
+                          padding: "2px 6px",
+                          borderRadius: "4px",
+                          border: "1px solid #cbd5e1",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {selectedBulkEngine?.model || (bulkProvider === "openai" ? "gpt-4o-mini" : bulkProvider === "claude" ? "claude-3-5-sonnet" : "gemini-2.0-flash")}
+                      </span>
                     </div>
                   </div>
 
@@ -1976,7 +1960,7 @@ export default function AiGeneratorPage() {
                   <button
                     type="button"
                     className="rg-btn-primary-blue"
-                    disabled={bulkLoading || !selectedBulkEngine?.hasKey || filteredProducts.length === 0}
+                    disabled={bulkLoading || filteredProducts.length === 0}
                     onClick={handleBulkGenerateAll}
                   >
                     <span>✦</span>
@@ -2013,66 +1997,6 @@ export default function AiGeneratorPage() {
                 </div>
               </div>
             </div>
-
-            {/* AUDIT HISTORY ACCORDION */}
-            <div style={{ marginTop: "24px", textAlign: "right" }}>
-              <button
-                type="button"
-                className="rg-btn-secondary-white"
-                style={{ width: "auto", display: "inline-flex", fontSize: "12px", padding: "6px 14px" }}
-                onClick={() => setShowAuditHistory(!showAuditHistory)}
-              >
-                {showAuditHistory ? "Hide Generation History ▲" : "View Audit History & Past Jobs ▼"}
-              </button>
-            </div>
-
-            {showAuditHistory && (
-              <div
-                style={{
-                  marginTop: "14px",
-                  background: "#ffffff",
-                  border: "1px solid #e5e7eb",
-                  borderRadius: "10px",
-                  padding: "16px",
-                }}
-              >
-                <h4 style={{ margin: "0 0 10px 0", fontSize: "14px", fontWeight: 600, color: "#111827" }}>
-                  Recent AI Review Generation History
-                </h4>
-                {recentJobs.length === 0 ? (
-                  <p style={{ margin: 0, fontSize: "13px", color: "#6b7280" }}>
-                    No previous generation jobs recorded. Once you generate reviews, logs will be visible here.
-                  </p>
-                ) : (
-                  <div style={{ overflowX: "auto" }}>
-                    <table style={{ width: "100%", fontSize: "12.5px", borderCollapse: "collapse" }}>
-                      <thead>
-                        <tr style={{ borderBottom: "1px solid #e5e7eb", color: "#6b7280", textAlign: "left" }}>
-                          <th style={{ padding: "8px" }}>Date</th>
-                          <th style={{ padding: "8px" }}>Engine</th>
-                          <th style={{ padding: "8px" }}>Reviews Generated</th>
-                          <th style={{ padding: "8px" }}>Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {recentJobs.map((job) => (
-                          <tr key={job.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                            <td style={{ padding: "8px" }}>{new Date(job.createdAt).toLocaleString()}</td>
-                            <td style={{ padding: "8px", textTransform: "capitalize" }}>{job.provider}</td>
-                            <td style={{ padding: "8px", fontWeight: 600 }}>{job.resultCount} reviews</td>
-                            <td style={{ padding: "8px" }}>
-                              <span style={{ background: "#dcfce7", color: "#15803d", padding: "2px 8px", borderRadius: "9999px", fontSize: "11px", fontWeight: 600 }}>
-                                {job.status}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            )}
 
             {/* ================= EDIT SCOPE MODAL ================= */}
             {editScopeModalOpen && (

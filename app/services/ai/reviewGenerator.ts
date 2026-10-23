@@ -8,12 +8,13 @@ export async function generateReviewsForShop(
   shopDomain: string,
   input: ReviewGenInput,
   preferredProvider?: "claude" | "gemini" | "openai",
+  admin?: any,
 ): Promise<{
   reviews: GeneratedReview[];
   providerUsed: string;
   modelUsed: string;
 }> {
-  const config = await getShopAIConfig(shopDomain);
+  const config = await getShopAIConfig(shopDomain, admin);
   const activeProvider = preferredProvider || config.defaultProvider;
 
   const claude = new ClaudeProvider();
@@ -55,8 +56,14 @@ export async function generateReviewsForShop(
 
   try {
     if (!primaryKey) {
+      const providerLabel =
+        activeProvider === "gemini"
+          ? "Google Gemini"
+          : activeProvider === "openai"
+          ? "ChatGPT (OpenAI)"
+          : "Anthropic Claude";
       throw new Error(
-        `Selected AI Provider (${activeProvider.toUpperCase()}) does not have an API key configured in AI Settings. Please add a valid API key to enable review generation.`,
+        `Selected AI Provider (${providerLabel}) does not have an API key configured. Please configure your API key in AI Settings to enable review generation.`,
       );
     }
 
@@ -71,6 +78,9 @@ export async function generateReviewsForShop(
       modelUsed: getModelName(primary.providerName),
     };
   } catch (primaryError: any) {
+    if (preferredProvider && !primaryKey) {
+      throw primaryError;
+    }
     console.warn(
       `Primary AI Provider (${primary.providerName}) failed: ${primaryError?.message}. Attempting fallback...`,
     );
