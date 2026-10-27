@@ -75,6 +75,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
           }
         }
         shop {
+          name
           currencyCode
           myshopifyDomain
         }
@@ -88,6 +89,16 @@ export async function loader({ request }: LoaderFunctionArgs) {
     }
     if (gqlData?.data?.shop?.myshopifyDomain) {
       myshopifyDomain = gqlData.data.shop.myshopifyDomain;
+    }
+
+    let shopName = "My Store";
+    if (gqlData?.data?.shop?.name) {
+      shopName = gqlData.data.shop.name;
+    } else {
+      shopName = (myshopifyDomain || shop || "My Store")
+        .replace(".myshopify.com", "")
+        .replace(/-/g, " ")
+        .replace(/\b\w/g, (c: string) => c.toUpperCase());
     }
 
     if (rawNodes.length > 0) {
@@ -126,9 +137,15 @@ export async function loader({ request }: LoaderFunctionArgs) {
     console.warn("Could not fetch sample reviews:", err);
   }
 
+  let finalShopName = (myshopifyDomain || shop || "My Store")
+    .replace(".myshopify.com", "")
+    .replace(/-/g, " ")
+    .replace(/\b\w/g, (c: string) => c.toUpperCase());
+
   return json({
     settings,
     shop,
+    shopName: finalShopName,
     currencyCode,
     myshopifyDomain,
     products: storefrontProducts,
@@ -191,7 +208,7 @@ export async function action({ request }: ActionFunctionArgs) {
 }
 
 export default function WidgetSettingsPage() {
-  const { settings, shop, currencyCode, myshopifyDomain, products, reviews } = useLoaderData<typeof loader>();
+  const { settings, shop, shopName, currencyCode, myshopifyDomain, products, reviews } = useLoaderData<typeof loader>();
   const submit = useSubmit();
   const navigation = useNavigation();
 
@@ -880,110 +897,484 @@ export default function WidgetSettingsPage() {
 
             {/* Storefront Canvas Box (Desktop vs Mobile) */}
             {previewDevice === "desktop" ? (
-              <div className="canvas-box">
-                {/* Product Page (PDP) Layout */}
-                <div style={{ display: "flex", gap: "24px", flexWrap: "wrap", alignItems: "flex-start" }}>
-                  {/* Left: Product Image */}
-                  <div
-                    style={{
-                      flex: "1 1 210px",
-                      maxWidth: "260px",
-                      height: "220px",
-                      background: "#f8fafc",
-                      border: "1px solid #e2e8f0",
-                      borderRadius: "10px",
-                      display: "flex",
-                      flexDirection: "column",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      overflow: "hidden",
-                    }}
-                  >
-                    {activeProduct.imageUrl ? (
-                      <img
-                        src={activeProduct.imageUrl}
-                        alt={activeProduct.title}
-                        style={{
-                          width: "100%",
-                          height: "100%",
-                          objectFit: "cover",
-                          borderRadius: "9px",
-                        }}
-                      />
-                    ) : (
-                      <>
-                        <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                          <rect x="3" y="3" width="18" height="18" rx="3" />
-                          <circle cx="8.5" cy="8.5" r="1.5" />
-                          <polyline points="21 15 16 10 5 21" />
-                        </svg>
-                        <span style={{ fontSize: "12px", color: "#94a3b8", marginTop: "8px", fontWeight: 500 }}>
-                          Product image placeholder
-                        </span>
-                      </>
-                    )}
+              <div
+                style={{
+                  width: "100%",
+                  background: "#ffffff",
+                  border: "1px solid #cbd5e1",
+                  borderRadius: "14px",
+                  boxShadow: "0 10px 25px -5px rgba(15, 23, 42, 0.08), 0 8px 10px -6px rgba(15, 23, 42, 0.04)",
+                  overflow: "hidden",
+                  position: "relative",
+                }}
+              >
+                {/* 1. Realistic Browser Chrome Bar */}
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    padding: "10px 16px",
+                    background: "#f1f5f9",
+                    borderBottom: "1px solid #e2e8f0",
+                  }}
+                >
+                  {/* Window Action Dots */}
+                  <div style={{ display: "flex", gap: "7px", alignItems: "center" }}>
+                    <span style={{ width: "11px", height: "11px", borderRadius: "50%", background: "#ef4444", display: "inline-block" }} />
+                    <span style={{ width: "11px", height: "11px", borderRadius: "50%", background: "#f59e0b", display: "inline-block" }} />
+                    <span style={{ width: "11px", height: "11px", borderRadius: "50%", background: "#10b981", display: "inline-block" }} />
                   </div>
 
-                  {/* Right: Product Info */}
-                  <div style={{ flex: "1 1 200px" }}>
-                    <div style={{ display: "inline-flex", alignItems: "center", gap: "5px", fontSize: "11px", fontWeight: 600, color: "#16a34a", background: "#f0fdf4", border: "1px solid #bbf7d0", padding: "2px 8px", borderRadius: "9999px", marginBottom: "8px" }}>
-                      ● In stock, ready to ship
-                    </div>
-                    <h3 style={{ fontSize: "18px", fontWeight: 700, color: "#0f172a", margin: "0 0 6px 0", lineHeight: 1.3 }}>
-                      {activeProduct.title}
-                    </h3>
-                    <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "10px" }}>
-                      <span style={{ color: "#f59e0b", fontSize: "13px", letterSpacing: "1px" }}>
-                        {"★".repeat(previewReview.rating)}{"☆".repeat(5 - previewReview.rating)}
-                      </span>
-                      <span style={{ color: "#64748b", fontSize: "12.5px" }}>
-                        ({reviews?.length ? reviews.length : 48} reviews)
-                      </span>
-                    </div>
-                    <div style={{ fontSize: "19px", fontWeight: 700, color: "#0f172a", marginBottom: "16px" }}>
-                      {formatPrice(activeProduct.price, currencyCode)}
-                    </div>
+                  {/* Address Bar */}
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "7px",
+                      background: "#ffffff",
+                      border: "1px solid #cbd5e1",
+                      borderRadius: "7px",
+                      padding: "4px 14px",
+                      fontSize: "11.5px",
+                      color: "#475569",
+                      maxWidth: "460px",
+                      width: "100%",
+                      boxShadow: "0 1px 2px rgba(0,0,0,0.03)",
+                    }}
+                  >
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                    </svg>
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 500 }}>
+                      https://{myshopifyDomain || shop}/products/{activeProduct.handle}
+                    </span>
+                  </div>
 
-                    <button
-                      type="button"
-                      style={{
-                        width: "100%",
-                        padding: "10px 16px",
-                        borderRadius: "7px",
-                        background: "#1e293b",
-                        border: "none",
-                        color: "#ffffff",
-                        fontSize: "13px",
-                        fontWeight: 600,
-                        cursor: "default",
-                        marginBottom: "14px",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        gap: "8px",
-                      }}
-                    >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <circle cx="9" cy="21" r="1" />
-                        <circle cx="20" cy="21" r="1" />
-                        <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" />
-                      </svg>
-                      Add to cart
-                    </button>
-
-                    {/* Skeleton placeholder bars */}
-                    <div style={{ height: "8px", background: "#e2e8f0", borderRadius: "4px", width: "85%", marginBottom: "8px" }} />
-                    <div style={{ height: "8px", background: "#e2e8f0", borderRadius: "4px", width: "60%" }} />
+                  {/* Refresh Icon */}
+                  <div style={{ color: "#94a3b8" }}>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="23 4 23 10 17 10" />
+                      <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+                    </svg>
                   </div>
                 </div>
 
-                {/* Floating Review Popup Widget (Desktop) */}
+                {/* 2. Scrollable Website Content Area */}
+                <div
+                  style={{
+                    maxHeight: "560px",
+                    overflowY: "auto",
+                    position: "relative",
+                    background: "#ffffff",
+                  }}
+                >
+                  {/* Website Announcement Bar */}
+                  <div
+                    style={{
+                      background: "#0f172a",
+                      color: "#ffffff",
+                      padding: "7px 16px",
+                      textAlign: "center",
+                      fontSize: "11px",
+                      fontWeight: 600,
+                      letterSpacing: "0.5px",
+                    }}
+                  >
+                    ✨ FREE SHIPPING ON ORDERS OVER $50 • 30-DAY SATISFACTION GUARANTEE
+                  </div>
+
+                  {/* Store Header & Navigation */}
+                  <header
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      padding: "14px 24px",
+                      borderBottom: "1px solid #f1f5f9",
+                      background: "#ffffff",
+                      position: "sticky",
+                      top: 0,
+                      zIndex: 8,
+                    }}
+                  >
+                    <div style={{ fontSize: "16px", fontWeight: 800, color: "#0f172a", letterSpacing: "1px", textTransform: "uppercase" }}>
+                      {shopName}
+                    </div>
+
+                    <nav style={{ display: "flex", gap: "20px", fontSize: "12.5px", fontWeight: 600, color: "#334155" }}>
+                      <span style={{ color: "#2563eb", cursor: "pointer" }}>Home</span>
+                      <span style={{ cursor: "pointer" }}>Shop Catalog</span>
+                      <span style={{ cursor: "pointer" }}>Best Sellers</span>
+                      <span style={{ cursor: "pointer" }}>Reviews</span>
+                      <span style={{ cursor: "pointer" }}>About Us</span>
+                    </nav>
+
+                    <div style={{ display: "flex", alignItems: "center", gap: "14px", color: "#0f172a" }}>
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <circle cx="11" cy="11" r="8" />
+                        <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                      </svg>
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                        <circle cx="12" cy="7" r="4" />
+                      </svg>
+                      <div style={{ position: "relative" }}>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <circle cx="9" cy="21" r="1" />
+                          <circle cx="20" cy="21" r="1" />
+                          <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" />
+                        </svg>
+                        <span style={{
+                          position: "absolute",
+                          top: "-6px",
+                          right: "-8px",
+                          background: "#2563eb",
+                          color: "#ffffff",
+                          fontSize: "9px",
+                          fontWeight: 700,
+                          width: "14px",
+                          height: "14px",
+                          borderRadius: "50%",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}>
+                          1
+                        </span>
+                      </div>
+                    </div>
+                  </header>
+
+                  {/* Breadcrumb Trail */}
+                  <div style={{ padding: "12px 24px 0 24px", fontSize: "11px", color: "#64748b", display: "flex", alignItems: "center", gap: "6px" }}>
+                    <span>Home</span>
+                    <span>/</span>
+                    <span>Catalog</span>
+                    <span>/</span>
+                    <span style={{ color: "#0f172a", fontWeight: 600 }}>{activeProduct.title}</span>
+                  </div>
+
+                  {/* Main Product Layout (Shopify Dawn Style) */}
+                  <div style={{ padding: "18px 24px 30px 24px", display: "grid", gridTemplateColumns: "1.1fr 1fr", gap: "28px", alignItems: "start" }}>
+                    {/* Left: Product Media Gallery */}
+                    <div>
+                      {/* Main Featured Image with Bestseller Badge */}
+                      <div
+                        style={{
+                          position: "relative",
+                          width: "100%",
+                          height: "300px",
+                          background: "#f8fafc",
+                          borderRadius: "10px",
+                          border: "1px solid #e2e8f0",
+                          overflow: "hidden",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
+                      >
+                        {activeProduct.imageUrl ? (
+                          <img
+                            src={activeProduct.imageUrl}
+                            alt={activeProduct.title}
+                            style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                          />
+                        ) : (
+                          <div style={{ textAlign: "center", color: "#94a3b8" }}>
+                            <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                              <rect x="3" y="3" width="18" height="18" rx="3" />
+                              <circle cx="8.5" cy="8.5" r="1.5" />
+                              <polyline points="21 15 16 10 5 21" />
+                            </svg>
+                            <div style={{ fontSize: "12px", marginTop: "6px" }}>Product Image</div>
+                          </div>
+                        )}
+                        <span
+                          style={{
+                            position: "absolute",
+                            top: "10px",
+                            left: "10px",
+                            background: "#2563eb",
+                            color: "#ffffff",
+                            fontSize: "10px",
+                            fontWeight: 700,
+                            padding: "3px 8px",
+                            borderRadius: "4px",
+                            letterSpacing: "0.5px",
+                            textTransform: "uppercase",
+                          }}
+                        >
+                          Bestseller
+                        </span>
+                      </div>
+
+                      {/* Thumbnail Gallery Row */}
+                      <div style={{ display: "flex", gap: "10px", marginTop: "10px" }}>
+                        {[1, 2, 3].map((idx) => (
+                          <div
+                            key={idx}
+                            style={{
+                              width: "60px",
+                              height: "60px",
+                              borderRadius: "6px",
+                              border: idx === 1 ? "2px solid #2563eb" : "1px solid #e2e8f0",
+                              background: "#f8fafc",
+                              overflow: "hidden",
+                              cursor: "pointer",
+                            }}
+                          >
+                            {activeProduct.imageUrl ? (
+                              <img src={activeProduct.imageUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", opacity: idx === 1 ? 1 : 0.7 }} />
+                            ) : (
+                              <div style={{ width: "100%", height: "100%", background: "#f1f5f9" }} />
+                            )}
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Trust Badges */}
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "1fr 1fr 1fr",
+                          gap: "8px",
+                          marginTop: "16px",
+                          padding: "10px",
+                          background: "#f8fafc",
+                          borderRadius: "8px",
+                          border: "1px solid #f1f5f9",
+                          textAlign: "center",
+                        }}
+                      >
+                        <div>
+                          <div style={{ fontSize: "15px" }}>🚚</div>
+                          <div style={{ fontSize: "10px", fontWeight: 600, color: "#334155", marginTop: "2px" }}>Free Shipping</div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: "15px" }}>🛡️</div>
+                          <div style={{ fontSize: "10px", fontWeight: 600, color: "#334155", marginTop: "2px" }}>Quality Tested</div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: "15px" }}>🔄</div>
+                          <div style={{ fontSize: "10px", fontWeight: 600, color: "#334155", marginTop: "2px" }}>30-Day Returns</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Right: Product Buy Box */}
+                    <div>
+                      {/* Vendor */}
+                      <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "1px", marginBottom: "4px" }}>
+                        {shopName} Official
+                      </div>
+
+                      {/* Title */}
+                      <h1 style={{ fontSize: "19px", fontWeight: 800, color: "#0f172a", margin: "0 0 6px 0", lineHeight: 1.3 }}>
+                        {activeProduct.title}
+                      </h1>
+
+                      {/* Star Rating summary */}
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px" }}>
+                        <div style={{ color: "#f59e0b", fontSize: "13px", letterSpacing: "1px" }}>
+                          {"★".repeat(previewReview.rating)}{"☆".repeat(5 - previewReview.rating)}
+                        </div>
+                        <span style={{ fontSize: "12px", fontWeight: 600, color: "#0f172a" }}>
+                          {previewReview.rating}.0
+                        </span>
+                        <span style={{ color: "#64748b", fontSize: "12px" }}>•</span>
+                        <span style={{ fontSize: "12px", color: "#2563eb", textDecoration: "underline", cursor: "pointer" }}>
+                          {reviews?.length ? reviews.length : 48} customer reviews
+                        </span>
+                      </div>
+
+                      {/* Price Block */}
+                      <div style={{ display: "flex", alignItems: "baseline", gap: "10px", marginBottom: "12px" }}>
+                        <span style={{ fontSize: "22px", fontWeight: 800, color: "#0f172a" }}>
+                          {formatPrice(activeProduct.price, currencyCode)}
+                        </span>
+                        <span style={{ fontSize: "13px", color: "#94a3b8", textDecoration: "line-through" }}>
+                          {formatPrice(Number(activeProduct.price) * 1.25, currencyCode)}
+                        </span>
+                        <span
+                          style={{
+                            background: "#fee2e2",
+                            color: "#dc2626",
+                            fontSize: "10.5px",
+                            fontWeight: 700,
+                            padding: "2px 7px",
+                            borderRadius: "9999px",
+                          }}
+                        >
+                          Save 20%
+                        </span>
+                      </div>
+
+                      {/* Stock Availability */}
+                      <div style={{ display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "11px", fontWeight: 600, color: "#16a34a", background: "#f0fdf4", border: "1px solid #bbf7d0", padding: "2px 8px", borderRadius: "9999px", marginBottom: "14px" }}>
+                        <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "#16a34a" }} />
+                        In stock, ready to dispatch
+                      </div>
+
+                      {/* Options / Variants */}
+                      <div style={{ marginBottom: "14px" }}>
+                        <div style={{ fontSize: "11.5px", fontWeight: 600, color: "#0f172a", marginBottom: "6px" }}>
+                          Options: <span style={{ fontWeight: 400, color: "#475569" }}>Standard Pack</span>
+                        </div>
+                        <div style={{ display: "flex", gap: "7px" }}>
+                          <span style={{ padding: "4px 10px", borderRadius: "6px", border: "2px solid #2563eb", background: "#eff6ff", color: "#2563eb", fontSize: "11px", fontWeight: 600 }}>Standard</span>
+                          <span style={{ padding: "4px 10px", borderRadius: "6px", border: "1px solid #cbd5e1", background: "#ffffff", color: "#334155", fontSize: "11px", fontWeight: 500 }}>Deluxe</span>
+                          <span style={{ padding: "4px 10px", borderRadius: "6px", border: "1px solid #cbd5e1", background: "#ffffff", color: "#334155", fontSize: "11px", fontWeight: 500 }}>Bundle Set</span>
+                        </div>
+                      </div>
+
+                      {/* Quantity & Add to Cart */}
+                      <div style={{ display: "flex", gap: "8px", marginBottom: "8px" }}>
+                        <div style={{ display: "inline-flex", alignItems: "center", border: "1px solid #cbd5e1", borderRadius: "6px", background: "#ffffff" }}>
+                          <button type="button" style={{ border: "none", background: "none", padding: "6px 10px", cursor: "pointer", fontSize: "13px", color: "#475569" }}>-</button>
+                          <span style={{ padding: "0 6px", fontSize: "12px", fontWeight: 600, color: "#0f172a" }}>1</span>
+                          <button type="button" style={{ border: "none", background: "none", padding: "6px 10px", cursor: "pointer", fontSize: "13px", color: "#475569" }}>+</button>
+                        </div>
+
+                        <button
+                          type="button"
+                          style={{
+                            flex: 1,
+                            padding: "9px 16px",
+                            background: "#0f172a",
+                            color: "#ffffff",
+                            border: "none",
+                            borderRadius: "6px",
+                            fontSize: "12.5px",
+                            fontWeight: 700,
+                            cursor: "default",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            gap: "7px",
+                            boxShadow: "0 2px 4px rgba(15, 23, 42, 0.15)",
+                          }}
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <circle cx="9" cy="21" r="1" />
+                            <circle cx="20" cy="21" r="1" />
+                            <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" />
+                          </svg>
+                          Add to cart
+                        </button>
+                      </div>
+
+                      {/* Buy with Shop Pay */}
+                      <button
+                        type="button"
+                        style={{
+                          width: "100%",
+                          padding: "9px 16px",
+                          background: "#5a31f4",
+                          color: "#ffffff",
+                          border: "none",
+                          borderRadius: "6px",
+                          fontSize: "12.5px",
+                          fontWeight: 700,
+                          cursor: "default",
+                          marginBottom: "14px",
+                          boxShadow: "0 2px 5px rgba(90, 49, 244, 0.2)",
+                        }}
+                      >
+                        Buy with Shop Pay
+                      </button>
+
+                      {/* Delivery prompt */}
+                      <div style={{ fontSize: "11px", color: "#475569", display: "flex", alignItems: "center", gap: "6px", marginBottom: "14px" }}>
+                        <span>🚚</span>
+                        <span>Order within <strong>3 hours</strong> for delivery by <strong>Friday</strong></span>
+                      </div>
+
+                      {/* Accordions */}
+                      <div style={{ borderTop: "1px solid #e2e8f0" }}>
+                        <div style={{ padding: "8px 0", borderBottom: "1px solid #f1f5f9", display: "flex", justifyContent: "space-between", fontSize: "11.5px", fontWeight: 600, color: "#0f172a" }}>
+                          <span>Product Details & Care</span>
+                          <span>−</span>
+                        </div>
+                        <div style={{ padding: "3px 0 8px 0", fontSize: "11px", color: "#64748b", lineHeight: 1.5 }}>
+                          Crafted with exceptional care and premium quality materials for everyday comfort and lasting durability. Curated by {shopName}.
+                        </div>
+
+                        <div style={{ padding: "8px 0", borderBottom: "1px solid #f1f5f9", display: "flex", justifyContent: "space-between", fontSize: "11.5px", fontWeight: 600, color: "#0f172a" }}>
+                          <span>Shipping & Free Returns</span>
+                          <span>+</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Customer Rating Banner */}
+                  <div
+                    style={{
+                      margin: "0 24px 24px 24px",
+                      padding: "14px 18px",
+                      background: "#f8fafc",
+                      borderRadius: "8px",
+                      border: "1px solid #e2e8f0",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontSize: "12.5px", fontWeight: 700, color: "#0f172a" }}>
+                        Customer Rating: 4.9 out of 5 stars
+                      </div>
+                      <div style={{ fontSize: "11px", color: "#64748b", marginTop: "2px" }}>
+                        Based on verified customer reviews on this store
+                      </div>
+                    </div>
+                    <div style={{ color: "#f59e0b", fontSize: "15px", letterSpacing: "2px" }}>
+                      ★★★★★
+                    </div>
+                  </div>
+
+                  {/* Storefront Footer */}
+                  <footer
+                    style={{
+                      background: "#0f172a",
+                      color: "#94a3b8",
+                      padding: "20px 24px",
+                      fontSize: "10.5px",
+                      borderTop: "1px solid #1e293b",
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px", marginBottom: "12px" }}>
+                      <div>
+                        <div style={{ fontSize: "12px", fontWeight: 700, color: "#ffffff", marginBottom: "2px" }}>
+                          {shopName}
+                        </div>
+                        <div>Your trusted destination for premium storefront essentials.</div>
+                      </div>
+                      <div style={{ display: "flex", gap: "12px", color: "#cbd5e1" }}>
+                        <span>Search</span>
+                        <span>Privacy Policy</span>
+                        <span>Terms</span>
+                        <span>Contact</span>
+                      </div>
+                    </div>
+                    <div style={{ borderTop: "1px solid #1e293b", paddingTop: "10px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div>© 2026, {shopName}. Powered by Shopify</div>
+                      <div style={{ display: "flex", gap: "6px", fontSize: "9.5px", color: "#64748b" }}>
+                        <span>VISA</span> • <span>MASTERCARD</span> • <span>AMEX</span> • <span>PAYPAL</span> • <span>APPLE PAY</span>
+                      </div>
+                    </div>
+                  </footer>
+                </div>
+
+                {/* 3. Floating Review Popup Widget Pinned to Corner */}
                 {enabled && (
                   <div
                     style={{
                       position: "absolute",
                       bottom: position.includes("bottom") ? "20px" : "auto",
-                      top: position.includes("top") ? "20px" : "auto",
+                      top: position.includes("top") ? "65px" : "auto",
                       left: position.includes("left") ? "20px" : "auto",
                       right: position.includes("right") ? "20px" : "auto",
                       width: layoutStyle === "layout-4" ? "320px" : "290px",
@@ -991,8 +1382,8 @@ export default function WidgetSettingsPage() {
                       borderRadius: layoutStyle === "layout-4" ? "9999px" : "12px",
                       padding: layoutStyle === "layout-4" ? "12px 18px" : "14px 16px",
                       border: layoutStyle === "layout-3" ? "1px solid #334155" : "1px solid #e2e8f0",
-                      boxShadow: "0 8px 24px rgba(0, 0, 0, 0.08)",
-                      zIndex: 10,
+                      boxShadow: "0 10px 28px rgba(0, 0, 0, 0.16)",
+                      zIndex: 25,
                       transition: "all 0.2s ease",
                     }}
                   >
@@ -1166,7 +1557,7 @@ export default function WidgetSettingsPage() {
                       gap: "8px",
                       backdropFilter: "blur(4px)",
                       boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
-                      zIndex: 10,
+                      zIndex: 30,
                     }}
                   >
                     <span style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#ef4444" }} />
@@ -1179,93 +1570,163 @@ export default function WidgetSettingsPage() {
               <div style={{ display: "flex", justifyContent: "center", width: "100%", padding: "10px 0", background: "#f8fafc", borderRadius: "12px", border: "1px solid #e2e8f0" }}>
                 <div
                   style={{
-                    width: "350px",
+                    width: "360px",
                     maxWidth: "100%",
-                    minHeight: "510px",
+                    height: "580px",
                     background: "#ffffff",
                     borderRadius: "32px",
                     border: "8px solid #1e293b",
-                    boxShadow: "0 20px 40px -10px rgba(15, 23, 42, 0.2)",
+                    boxShadow: "0 20px 40px -10px rgba(15, 23, 42, 0.25)",
                     position: "relative",
-                    padding: "16px 14px",
                     overflow: "hidden",
+                    display: "flex",
+                    flexDirection: "column",
                     boxSizing: "border-box",
                   }}
                 >
-                  {/* Smartphone Top Notch */}
+                  {/* Smartphone Top Speaker Notch */}
                   <div
                     style={{
-                      width: "70px",
+                      width: "80px",
                       height: "12px",
                       background: "#1e293b",
                       borderRadius: "0 0 10px 10px",
-                      margin: "-16px auto 12px auto",
+                      margin: "0 auto 8px auto",
+                      zIndex: 30,
                     }}
                   />
 
-                  {/* Mobile Product Card */}
-                  <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-                    <div
-                      style={{
-                        width: "100%",
-                        height: "160px",
-                        background: "#f8fafc",
-                        border: "1px solid #e2e8f0",
-                        borderRadius: "8px",
-                        overflow: "hidden",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                      }}
-                    >
-                      {activeProduct.imageUrl ? (
-                        <img
-                          src={activeProduct.imageUrl}
-                          alt={activeProduct.title}
-                          style={{
-                            width: "100%",
-                            height: "100%",
-                            objectFit: "cover",
-                          }}
-                        />
-                      ) : (
-                        <span style={{ fontSize: "11px", color: "#94a3b8" }}>Product image</span>
-                      )}
+                  {/* Scrollable Mobile Website Area */}
+                  <div style={{ flex: 1, overflowY: "auto", position: "relative" }}>
+                    {/* Mobile Announcement Bar */}
+                    <div style={{ background: "#0f172a", color: "#ffffff", padding: "5px 10px", textAlign: "center", fontSize: "10px", fontWeight: 600 }}>
+                      ✨ FREE SHIPPING OVER $50
                     </div>
 
-                    <div>
-                      <div style={{ fontSize: "10px", fontWeight: 600, color: "#16a34a", marginBottom: "3px" }}>
-                        ● In stock
-                      </div>
-                      <h4 style={{ fontSize: "15px", fontWeight: 700, color: "#0f172a", margin: "0 0 4px 0", lineHeight: 1.3 }}>
-                        {activeProduct.title}
-                      </h4>
-                      <div style={{ display: "flex", alignItems: "center", gap: "5px", marginBottom: "6px" }}>
-                        <span style={{ color: "#f59e0b", fontSize: "11.5px" }}>
-                          {"★".repeat(previewReview.rating)}
-                        </span>
-                        <span style={{ color: "#64748b", fontSize: "11px" }}>
-                          ({reviews?.length ? reviews.length : 48})
-                        </span>
-                      </div>
-                      <div style={{ fontSize: "16px", fontWeight: 700, color: "#0f172a", marginBottom: "10px" }}>
-                        {formatPrice(activeProduct.price, currencyCode)}
-                      </div>
-                      <button
-                        type="button"
+                    {/* Mobile Store Header */}
+                    <header style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", borderBottom: "1px solid #f1f5f9", background: "#ffffff" }}>
+                      <span style={{ fontSize: "16px", cursor: "pointer" }}>☰</span>
+                      <span style={{ fontSize: "14px", fontWeight: 800, color: "#0f172a", letterSpacing: "1px" }}>{shopName}</span>
+                      <span style={{ fontSize: "16px", cursor: "pointer" }}>🛒</span>
+                    </header>
+
+                    {/* Mobile Breadcrumb */}
+                    <div style={{ padding: "8px 14px 0 14px", fontSize: "10px", color: "#64748b" }}>
+                      Home / Catalog / <span style={{ color: "#0f172a", fontWeight: 600 }}>{activeProduct.title}</span>
+                    </div>
+
+                    {/* Mobile Product Content */}
+                    <div style={{ padding: "12px 14px 24px 14px" }}>
+                      {/* Product Image */}
+                      <div
                         style={{
+                          position: "relative",
                           width: "100%",
-                          padding: "8px 12px",
-                          borderRadius: "6px",
-                          background: "#1e293b",
-                          border: "none",
-                          color: "#ffffff",
-                          fontSize: "12px",
-                          fontWeight: 600,
+                          height: "200px",
+                          background: "#f8fafc",
+                          borderRadius: "10px",
+                          border: "1px solid #e2e8f0",
+                          overflow: "hidden",
+                          marginBottom: "12px",
                         }}
                       >
-                        Add to cart
-                      </button>
+                        {activeProduct.imageUrl ? (
+                          <img
+                            src={activeProduct.imageUrl}
+                            alt={activeProduct.title}
+                            style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                          />
+                        ) : (
+                          <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#94a3b8", fontSize: "11px" }}>
+                            Product Image
+                          </div>
+                        )}
+                        <span
+                          style={{
+                            position: "absolute",
+                            top: "8px",
+                            left: "8px",
+                            background: "#2563eb",
+                            color: "#ffffff",
+                            fontSize: "9px",
+                            fontWeight: 700,
+                            padding: "2px 6px",
+                            borderRadius: "4px",
+                            textTransform: "uppercase",
+                          }}
+                        >
+                          Bestseller
+                        </span>
+                      </div>
+
+                      {/* Mobile Product Details */}
+                      <div>
+                        <div style={{ fontSize: "9.5px", fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                          {shopName} Official
+                        </div>
+                        <h4 style={{ fontSize: "15px", fontWeight: 700, color: "#0f172a", margin: "2px 0 6px 0", lineHeight: 1.3 }}>
+                          {activeProduct.title}
+                        </h4>
+
+                        <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "8px" }}>
+                          <span style={{ color: "#f59e0b", fontSize: "12px" }}>
+                            {"★".repeat(previewReview.rating)}
+                          </span>
+                          <span style={{ color: "#64748b", fontSize: "11px" }}>
+                            ({reviews?.length ? reviews.length : 48} reviews)
+                          </span>
+                        </div>
+
+                        <div style={{ display: "flex", alignItems: "baseline", gap: "8px", marginBottom: "10px" }}>
+                          <span style={{ fontSize: "18px", fontWeight: 800, color: "#0f172a" }}>
+                            {formatPrice(activeProduct.price, currencyCode)}
+                          </span>
+                          <span style={{ fontSize: "12px", color: "#94a3b8", textDecoration: "line-through" }}>
+                            {formatPrice(Number(activeProduct.price) * 1.25, currencyCode)}
+                          </span>
+                          <span style={{ background: "#fee2e2", color: "#dc2626", fontSize: "9.5px", fontWeight: 700, padding: "1px 5px", borderRadius: "9999px" }}>
+                            Save 20%
+                          </span>
+                        </div>
+
+                        <button
+                          type="button"
+                          style={{
+                            width: "100%",
+                            padding: "9px 14px",
+                            borderRadius: "6px",
+                            background: "#0f172a",
+                            border: "none",
+                            color: "#ffffff",
+                            fontSize: "12.5px",
+                            fontWeight: 700,
+                            marginBottom: "8px",
+                          }}
+                        >
+                          Add to cart
+                        </button>
+
+                        <button
+                          type="button"
+                          style={{
+                            width: "100%",
+                            padding: "9px 14px",
+                            borderRadius: "6px",
+                            background: "#5a31f4",
+                            border: "none",
+                            color: "#ffffff",
+                            fontSize: "12px",
+                            fontWeight: 700,
+                            marginBottom: "12px",
+                          }}
+                        >
+                          Buy with Shop Pay
+                        </button>
+
+                        <div style={{ fontSize: "10.5px", color: "#64748b", lineHeight: 1.4, borderTop: "1px solid #f1f5f9", paddingTop: "8px" }}>
+                          🚚 Free shipping & 30-day returns guaranteed.
+                        </div>
+                      </div>
                     </div>
                   </div>
 
@@ -1275,15 +1736,15 @@ export default function WidgetSettingsPage() {
                       style={{
                         position: "absolute",
                         bottom: position.includes("bottom") ? "14px" : "auto",
-                        top: position.includes("top") ? "24px" : "auto",
+                        top: position.includes("top") ? "36px" : "auto",
                         left: "12px",
                         right: "12px",
                         background: layoutStyle === "layout-3" ? "#0f172a" : "#ffffff",
                         borderRadius: layoutStyle === "layout-4" ? "9999px" : "10px",
                         padding: layoutStyle === "layout-4" ? "10px 14px" : "11px 12px",
                         border: layoutStyle === "layout-3" ? "1px solid #334155" : "1px solid #e2e8f0",
-                        boxShadow: "0 6px 18px rgba(0, 0, 0, 0.12)",
-                        zIndex: 10,
+                        boxShadow: "0 8px 24px rgba(0, 0, 0, 0.16)",
+                        zIndex: 35,
                       }}
                     >
                       <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
