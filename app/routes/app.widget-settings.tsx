@@ -1,10 +1,7 @@
 import { json, LoaderFunctionArgs, ActionFunctionArgs } from "@remix-run/node";
 import { useLoaderData, useSubmit, useNavigation } from "@remix-run/react";
 import { useState } from "react";
-import {
-  Page,
-  Banner,
-} from "@shopify/polaris";
+import { Page, Banner } from "@shopify/polaris";
 import { authenticate } from "../shopify.server";
 import db, { ensureTablesExist } from "../db.server";
 import { ensureReviewsAndSettingsRestored, syncSettingsToShopify } from "../services/reviewPersistence.server";
@@ -30,10 +27,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
           shop,
           widgetPosition: "bottom-left",
           widgetLayoutStyle: "layout-1",
-          widgetDelaySeconds: 4,
-          widgetDisplayDuration: 8,
-          widgetRotationInterval: 5,
-          widgetMaxPerSession: 6,
+          widgetDelaySeconds: 1,
+          widgetDisplayDuration: 10,
+          widgetRotationInterval: 2,
+          widgetMaxPerSession: 20,
           widgetEnabled: true,
         },
       });
@@ -44,10 +41,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
       shop,
       widgetPosition: "bottom-left",
       widgetLayoutStyle: "layout-1",
-      widgetDelaySeconds: 4,
-      widgetDisplayDuration: 8,
-      widgetRotationInterval: 5,
-      widgetMaxPerSession: 6,
+      widgetDelaySeconds: 1,
+      widgetDisplayDuration: 10,
+      widgetRotationInterval: 2,
+      widgetMaxPerSession: 20,
       widgetEnabled: true,
     };
   }
@@ -62,10 +59,10 @@ export async function action({ request }: ActionFunctionArgs) {
   const formData = await request.formData();
   const widgetPosition = (formData.get("widgetPosition") as string) || "bottom-left";
   const widgetLayoutStyle = (formData.get("widgetLayoutStyle") as string) || "layout-1";
-  const widgetDelaySeconds = parseInt((formData.get("widgetDelaySeconds") as string) || "4", 10);
-  const widgetDisplayDuration = parseInt((formData.get("widgetDisplayDuration") as string) || "8", 10);
-  const widgetRotationInterval = parseInt((formData.get("widgetRotationInterval") as string) || "5", 10);
-  const widgetMaxPerSession = parseInt((formData.get("widgetMaxPerSession") as string) || "6", 10);
+  const widgetDelaySeconds = parseInt((formData.get("widgetDelaySeconds") as string) || "1", 10);
+  const widgetDisplayDuration = parseInt((formData.get("widgetDisplayDuration") as string) || "10", 10);
+  const widgetRotationInterval = parseInt((formData.get("widgetRotationInterval") as string) || "2", 10);
+  const widgetMaxPerSession = parseInt((formData.get("widgetMaxPerSession") as string) || "20", 10);
   const widgetEnabled = formData.get("widgetEnabled") === "true";
 
   const updatedSettings = await db.shopSettings.upsert({
@@ -118,10 +115,10 @@ export default function WidgetSettingsPage() {
   const [enabled, setEnabled] = useState<boolean>(settings.widgetEnabled ?? true);
   const [layoutStyle, setLayoutStyle] = useState<string>(settings.widgetLayoutStyle || "layout-1");
   const [position, setPosition] = useState<string>(settings.widgetPosition || "bottom-left");
-  const [delay, setDelay] = useState<number>(settings.widgetDelaySeconds ?? 4);
-  const [duration, setDuration] = useState<number>(settings.widgetDisplayDuration ?? 8);
-  const [rotation, setRotation] = useState<number>(settings.widgetRotationInterval ?? 5);
-  const [maxPerSession, setMaxPerSession] = useState<number>(settings.widgetMaxPerSession ?? 6);
+  const [delay, setDelay] = useState<number>(settings.widgetDelaySeconds ?? 1);
+  const [duration, setDuration] = useState<number>(settings.widgetDisplayDuration ?? 10);
+  const [rotation, setRotation] = useState<number>(settings.widgetRotationInterval ?? 2);
+  const [maxPerSession, setMaxPerSession] = useState<number>(settings.widgetMaxPerSession ?? 20);
 
   const [savedSuccess, setSavedSuccess] = useState<boolean>(false);
 
@@ -140,50 +137,48 @@ export default function WidgetSettingsPage() {
     setTimeout(() => setSavedSuccess(false), 3000);
   };
 
-  // Layout cards options
-  const layoutOptions = [
-    { id: "layout-1", label: "Classic" },
-    { id: "layout-2", label: "Photo" },
-    { id: "layout-3", label: "Social" },
-    { id: "layout-4", label: "Pill" },
-    { id: "layout-5", label: "Product" },
-  ];
+  const positionLabelMap: Record<string, string> = {
+    "bottom-left": "Bottom left",
+    "bottom-right": "Bottom right",
+    "top-left": "Top left",
+    "top-right": "Top right",
+  };
 
-  // Screen position options
-  const positionOptions = [
-    {
-      id: "bottom-left",
-      label: "Bottom left",
-      recommended: true,
-      boxPosition: "bottom-left",
-    },
-    {
-      id: "bottom-right",
-      label: "Bottom right",
-      recommended: false,
-      boxPosition: "bottom-right",
-    },
-    {
-      id: "top-left",
-      label: "Top left",
-      recommended: false,
-      boxPosition: "top-left",
-    },
-    {
-      id: "top-right",
-      label: "Top right",
-      recommended: false,
-      boxPosition: "top-right",
-    },
-  ];
-
-  // Human-readable active position label for badge
-  const activePositionLabel = positionOptions.find((p) => p.id === position)?.label || "Bottom left";
+  const activePositionLabel = positionLabelMap[position] || "Bottom left";
 
   return (
-    <Page fullWidth title="Review popup widget">
+    <Page fullWidth>
       <style>{`
-        .widget-switch-track {
+        /* 100% Full Width Edge-to-Edge Container */
+        .widget-settings-container {
+          width: 100% !important;
+          max-width: 100% !important;
+          margin: 0 !important;
+          padding: 8px 24px 64px 24px !important;
+          box-sizing: border-box !important;
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+          color: #0f172a;
+        }
+
+        /* Top Header Card */
+        .header-card {
+          width: 100% !important;
+          background: #ffffff;
+          border: 1px solid #e2e8f0;
+          border-radius: 14px;
+          padding: 18px 24px;
+          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          margin-bottom: 24px;
+          flex-wrap: wrap;
+          gap: 16px;
+          box-sizing: border-box;
+        }
+
+        /* Toggle Switch */
+        .switch-track {
           width: 48px;
           height: 26px;
           border-radius: 9999px;
@@ -194,421 +189,365 @@ export default function WidgetSettingsPage() {
           cursor: pointer;
           transition: background-color 0.2s ease;
         }
-        .widget-switch-track.active {
-          background: #16a34a;
+        .switch-track.active {
+          background: #22c55e;
         }
-        .widget-switch-thumb {
+        .switch-thumb {
           width: 22px;
           height: 22px;
           border-radius: 50%;
           background: #ffffff;
-          box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
           transition: transform 0.2s ease;
         }
-        .widget-switch-track.active .widget-switch-thumb {
+        .switch-track.active .switch-thumb {
           transform: translateX(22px);
         }
 
-        .layout-btn {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          gap: 8px;
-          padding: 12px 6px;
-          border-radius: 12px;
-          background: #ffffff;
-          border: 1px solid #e2e8f0;
-          cursor: pointer;
-          transition: all 0.15s ease;
-          color: #475569;
+        /* Main Two-Column Layout */
+        .main-grid {
+          display: grid;
+          grid-template-columns: 1fr 1.25fr;
+          gap: 24px;
+          align-items: start;
+          width: 100%;
         }
-        .layout-btn:hover {
-          border-color: #cbd5e1;
-        }
-        .layout-btn.active {
-          border: 2px solid #2563eb;
-          color: #2563eb;
-          box-shadow: 0 2px 8px rgba(37,99,235,0.08);
+        @media (max-width: 960px) {
+          .main-grid {
+            grid-template-columns: 1fr;
+          }
         }
 
-        .position-btn {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          padding: 12px 14px;
-          border-radius: 12px;
+        /* Settings Card */
+        .settings-card {
           background: #ffffff;
           border: 1px solid #e2e8f0;
-          cursor: pointer;
-          transition: all 0.15s ease;
-          text-align: left;
-        }
-        .position-btn:hover {
-          border-color: #cbd5e1;
-        }
-        .position-btn.active {
-          border: 2px solid #2563eb;
-          background: #eff6ff;
+          border-radius: 14px;
+          padding: 24px;
+          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+          box-sizing: border-box;
         }
 
-        .custom-range-slider {
+        .section-heading {
+          font-size: 17px;
+          font-weight: 700;
+          color: #0f172a;
+          margin: 0 0 18px 0;
+        }
+
+        .field-label {
+          display: block;
+          font-size: 13px;
+          font-weight: 600;
+          color: #0f172a;
+          margin-bottom: 6px;
+        }
+
+        .select-input {
+          width: 100%;
+          background: #ffffff;
+          border: 1px solid #cbd5e1;
+          border-radius: 8px;
+          padding: 9px 12px;
+          font-size: 13.5px;
+          color: #0f172a;
+          outline: none;
+          cursor: pointer;
+          transition: border-color 0.15s ease;
+        }
+        .select-input:focus {
+          border-color: #2563eb;
+          box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+        }
+
+        /* Modern Blue Progress Slider */
+        .blue-slider {
           -webkit-appearance: none;
           appearance: none;
           width: 100%;
-          height: 5px;
+          height: 6px;
           border-radius: 9999px;
-          background: #e2e8f0;
           outline: none;
           cursor: pointer;
-          margin: 8px 0;
+          margin: 0;
         }
-        .custom-range-slider::-webkit-slider-thumb {
+        .blue-slider::-webkit-slider-thumb {
           -webkit-appearance: none;
           appearance: none;
           width: 18px;
           height: 18px;
           border-radius: 50%;
-          background: #ffffff;
-          border: 2px solid #cbd5e1;
-          box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+          background: #2563eb;
           cursor: pointer;
-          transition: border-color 0.15s ease, transform 0.15s ease;
+          box-shadow: 0 1px 3px rgba(37, 99, 235, 0.4);
+          border: 2px solid #ffffff;
+          transition: transform 0.1s ease;
         }
-        .custom-range-slider::-webkit-slider-thumb:hover {
-          border-color: #2563eb;
-          transform: scale(1.1);
+        .blue-slider::-webkit-slider-thumb:hover {
+          transform: scale(1.15);
         }
 
-        .save-btn {
+        .slider-badge {
+          background: #f8fafc;
+          border: 1px solid #e2e8f0;
+          border-radius: 6px;
+          padding: 5px 12px;
+          font-size: 13px;
+          font-weight: 600;
+          color: #334155;
+          min-width: 56px;
+          text-align: center;
+          flex-shrink: 0;
+        }
+
+        .btn-save-blue {
           width: 100%;
-          background: #0f172a;
+          background: #2563eb;
           color: #ffffff;
-          font-weight: 700;
+          font-weight: 600;
           font-size: 14px;
-          padding: 12px 24px;
-          border-radius: 10px;
+          padding: 11px 24px;
+          border-radius: 8px;
           border: none;
           cursor: pointer;
           transition: background 0.15s ease;
+          box-shadow: 0 1px 3px rgba(37, 99, 235, 0.25);
         }
-        .save-btn:hover {
-          background: #1e293b;
+        .btn-save-blue:hover:not(:disabled) {
+          background: #1d4ed8;
+        }
+        .btn-save-blue:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
+        }
+
+        /* Preview Canvas */
+        .preview-outer-card {
+          background: #ffffff;
+          border: 1px solid #e2e8f0;
+          border-radius: 14px;
+          padding: 24px;
+          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+          box-sizing: border-box;
+        }
+
+        .canvas-box {
+          position: relative;
+          width: 100%;
+          min-height: 480px;
+          background: #ffffff;
+          border: 1px solid #e2e8f0;
+          border-radius: 12px;
+          padding: 26px;
+          box-sizing: border-box;
+          overflow: hidden;
         }
       `}</style>
 
-      <div style={{ maxWidth: "100%", width: "100%", margin: "0 auto", paddingBottom: "48px" }}>
+      <div className="widget-settings-container">
         {savedSuccess && (
           <div style={{ marginBottom: "20px" }}>
-            <Banner tone="success" title="Settings Saved">
-              <p>Your review popup widget settings have been saved successfully!</p>
+            <Banner tone="success" title="Settings Saved" onDismiss={() => setSavedSuccess(false)}>
+              <p>Your review popup widget settings have been saved and synced to your storefront!</p>
             </Banner>
           </div>
         )}
 
-        {/* 1. HEADER SECTION (Matching Reference Screenshot) */}
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            marginBottom: "24px",
-            flexWrap: "wrap",
-            gap: "16px",
-          }}
-        >
-          {/* Left Title with Blue Icon Badge */}
+        {/* 1. TOP HEADER CARD (Matches Reference Screenshot) */}
+        <div className="header-card">
           <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
             <div
               style={{
-                width: "48px",
-                height: "48px",
-                borderRadius: "14px",
-                background: "#dbeafe",
+                width: "44px",
+                height: "44px",
+                borderRadius: "12px",
+                background: "#eff6ff",
+                border: "1px solid #dbeafe",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
                 flexShrink: 0,
               }}
             >
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
                 <polygon points="12 8 13.09 10.26 15.5 10.61 13.75 12.31 14.18 14.7 12 13.55 9.82 14.7 10.25 12.31 8.5 10.61 10.91 10.26 12 8" fill="#2563eb" />
               </svg>
             </div>
             <div>
-              <h1 style={{ fontSize: "22px", fontWeight: 700, color: "#0f172a", margin: 0, lineHeight: 1.2 }}>
+              <h1 style={{ fontSize: "17px", fontWeight: 700, color: "#0f172a", margin: 0, lineHeight: 1.25 }}>
                 Review popup widget
               </h1>
-              <p style={{ fontSize: "14px", color: "#64748b", margin: "3px 0 0 0" }}>
-                Show real customer reviews on your product pages
+              <p style={{ fontSize: "13px", color: "#64748b", margin: "2px 0 0 0" }}>
+                Show real customer reviews on your product pages.
               </p>
             </div>
           </div>
 
-          {/* Right Widget Enabled Toggle Switch */}
           <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-            <span style={{ fontSize: "14px", fontWeight: 600, color: "#0f172a" }}>
+            <span style={{ fontSize: "13px", fontWeight: 600, color: "#0f172a" }}>
               Widget enabled
             </span>
             <div
-              className={`widget-switch-track ${enabled ? "active" : ""}`}
+              className={`switch-track ${enabled ? "active" : ""}`}
               onClick={() => setEnabled(!enabled)}
             >
-              <div className="widget-switch-thumb" />
+              <div className="switch-thumb" />
             </div>
           </div>
         </div>
 
         {/* 2. TWO-COLUMN MAIN LAYOUT */}
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))",
-            gap: "24px",
-            alignItems: "start",
-          }}
-        >
-          {/* LEFT COLUMN: Settings Controls */}
-          <div
-            style={{
-              background: "#ffffff",
-              border: "1px solid #e2e8f0",
-              borderRadius: "16px",
-              padding: "24px",
-              boxShadow: "0 1px 3px rgba(0,0,0,0.02)",
-            }}
-          >
-            {/* SECTION 1: Popup layout */}
-            <div>
-              <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#475569", marginBottom: "10px" }}>
-                Popup layout
-              </label>
+        <div className="main-grid">
+          {/* LEFT COLUMN: WIDGET SETTINGS */}
+          <div className="settings-card">
+            <h2 className="section-heading">Widget settings</h2>
 
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "8px" }}>
-                {layoutOptions.map((opt) => {
-                  const isActive = layoutStyle === opt.id;
-                  return (
-                    <button
-                      key={opt.id}
-                      type="button"
-                      className={`layout-btn ${isActive ? "active" : ""}`}
-                      onClick={() => setLayoutStyle(opt.id)}
-                    >
-                      {/* Miniature wireframe icon */}
-                      <div
-                        style={{
-                          width: "36px",
-                          height: "24px",
-                          borderRadius: "4px",
-                          background: isActive ? "#eff6ff" : "#f8fafc",
-                          border: isActive ? "1.5px solid #2563eb" : "1px solid #cbd5e1",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          padding: "2px",
-                        }}
-                      >
-                        {opt.id === "layout-1" && (
-                          <div style={{ width: "24px", height: "14px", background: "#ffffff", borderRadius: "3px", border: "1px solid #94a3b8", display: "flex", alignItems: "center", gap: "2px", padding: "1px" }}>
-                            <div style={{ width: "6px", height: "6px", borderRadius: "50%", background: "#3b82f6" }} />
-                            <div style={{ flex: 1, height: "2px", background: "#cbd5e1" }} />
-                          </div>
-                        )}
-                        {opt.id === "layout-2" && (
-                          <div style={{ width: "24px", height: "14px", background: "#ffffff", borderRadius: "3px", border: "1px solid #94a3b8", display: "flex", alignItems: "center", gap: "2px", padding: "1px" }}>
-                            <div style={{ width: "7px", height: "7px", borderRadius: "2px", background: "#f43f5e" }} />
-                            <div style={{ flex: 1, height: "2px", background: "#cbd5e1" }} />
-                          </div>
-                        )}
-                        {opt.id === "layout-3" && (
-                          <div style={{ width: "24px", height: "14px", background: "#0f172a", borderRadius: "3px", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                            <div style={{ width: "14px", height: "3px", background: "#f59e0b", borderRadius: "1px" }} />
-                          </div>
-                        )}
-                        {opt.id === "layout-4" && (
-                          <div style={{ width: "26px", height: "10px", borderRadius: "9999px", background: "#ffffff", border: "1px solid #94a3b8", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                            <div style={{ width: "14px", height: "2px", background: "#3b82f6" }} />
-                          </div>
-                        )}
-                        {opt.id === "layout-5" && (
-                          <div style={{ width: "24px", height: "14px", background: "#ffffff", borderRadius: "3px", border: "1px solid #94a3b8", display: "flex", alignItems: "center", gap: "2px", padding: "1px" }}>
-                            <div style={{ width: "6px", height: "8px", borderRadius: "2px", background: "#10b981" }} />
-                            <div style={{ flex: 1, height: "2px", background: "#cbd5e1" }} />
-                          </div>
-                        )}
-                      </div>
-                      <span style={{ fontSize: "12px", fontWeight: 600 }}>{opt.label}</span>
-                    </button>
-                  );
-                })}
+            {/* Row 1: Popup style & Position dropdowns side-by-side */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "26px" }}>
+              <div>
+                <label className="field-label" htmlFor="popup-style-select">
+                  Popup style
+                </label>
+                <select
+                  id="popup-style-select"
+                  className="select-input"
+                  value={layoutStyle}
+                  onChange={(e) => setLayoutStyle(e.target.value)}
+                >
+                  <option value="layout-1">Classic</option>
+                  <option value="layout-2">Photo</option>
+                  <option value="layout-3">Social</option>
+                  <option value="layout-4">Pill</option>
+                  <option value="layout-5">Product</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="field-label" htmlFor="position-select">
+                  Position
+                </label>
+                <select
+                  id="position-select"
+                  className="select-input"
+                  value={position}
+                  onChange={(e) => setPosition(e.target.value)}
+                >
+                  <option value="bottom-left">Bottom left</option>
+                  <option value="bottom-right">Bottom right</option>
+                  <option value="top-left">Top left</option>
+                  <option value="top-right">Top right</option>
+                </select>
               </div>
             </div>
 
-            {/* SECTION 2: Screen position */}
-            <div style={{ marginTop: "22px" }}>
-              <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#475569", marginBottom: "10px" }}>
-                Screen position
-              </label>
+            {/* Row 2: Display timing header */}
+            <h3 style={{ fontSize: "16px", fontWeight: 700, color: "#0f172a", margin: "0 0 18px 0" }}>
+              Display timing
+            </h3>
 
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
-                {positionOptions.map((pos) => {
-                  const isActive = position === pos.id;
-                  return (
-                    <button
-                      key={pos.id}
-                      type="button"
-                      className={`position-btn ${isActive ? "active" : ""}`}
-                      onClick={() => setPosition(pos.id)}
-                    >
-                      {/* Miniature browser window icon with position highlight */}
-                      <div
-                        style={{
-                          width: "42px",
-                          height: "28px",
-                          borderRadius: "5px",
-                          background: "#ffffff",
-                          border: isActive ? "1.5px solid #2563eb" : "1px solid #cbd5e1",
-                          position: "relative",
-                          flexShrink: 0,
-                          boxSizing: "border-box",
-                        }}
-                      >
-                        {/* Position dot/box inside */}
-                        <div
-                          style={{
-                            position: "absolute",
-                            width: "12px",
-                            height: "7px",
-                            borderRadius: "2px",
-                            background: isActive ? "#2563eb" : "#1e293b",
-                            bottom: pos.id.includes("bottom") ? "3px" : "auto",
-                            top: pos.id.includes("top") ? "3px" : "auto",
-                            left: pos.id.includes("left") ? "3px" : "auto",
-                            right: pos.id.includes("right") ? "3px" : "auto",
-                          }}
-                        />
-                      </div>
-
-                      {/* Label + Recommended Subtext */}
-                      <div>
-                        <div style={{ fontSize: "13px", fontWeight: 700, color: isActive ? "#1e40af" : "#0f172a" }}>
-                          {pos.label}
-                        </div>
-                        {pos.recommended && (
-                          <div style={{ fontSize: "11px", fontWeight: 500, color: "#3b82f6", marginTop: "1px" }}>
-                            Recommended
-                          </div>
-                        )}
-                      </div>
-                    </button>
-                  );
-                })}
+            {/* Slider 1: First popup after */}
+            <div style={{ marginBottom: "20px" }}>
+              <div style={{ fontSize: "13px", fontWeight: 500, color: "#0f172a", marginBottom: "8px" }}>
+                First popup after
               </div>
-            </div>
-
-            {/* SECTION 3: Timing */}
-            <div style={{ marginTop: "24px" }}>
-              <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#475569", marginBottom: "14px" }}>
-                Timing
-              </label>
-
-              {/* Slider 1: First popup after */}
-              <div style={{ marginBottom: "16px" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "13px" }}>
-                  <span style={{ color: "#0f172a", fontWeight: 500 }}>First popup after</span>
-                  <span style={{ color: "#0f172a", fontWeight: 700 }}>{delay} sec</span>
-                </div>
+              <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
                 <input
                   type="range"
                   min="1"
                   max="30"
                   step="1"
-                  className="custom-range-slider"
+                  className="blue-slider"
                   value={delay}
+                  style={{
+                    background: `linear-gradient(to right, #2563eb 0%, #2563eb ${((delay - 1) / 29) * 100}%, #e2e8f0 ${((delay - 1) / 29) * 100}%, #e2e8f0 100%)`,
+                  }}
                   onChange={(e) => setDelay(Number(e.target.value))}
                 />
+                <div className="slider-badge">{delay} sec</div>
               </div>
+            </div>
 
-              {/* Slider 2: Each review visible for */}
-              <div style={{ marginBottom: "16px" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "13px" }}>
-                  <span style={{ color: "#0f172a", fontWeight: 500 }}>Each review visible for</span>
-                  <span style={{ color: "#0f172a", fontWeight: 700 }}>{duration} sec</span>
-                </div>
+            {/* Slider 2: Each review visible for */}
+            <div style={{ marginBottom: "20px" }}>
+              <div style={{ fontSize: "13px", fontWeight: 500, color: "#0f172a", marginBottom: "8px" }}>
+                Each review visible for
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
                 <input
                   type="range"
                   min="3"
                   max="30"
                   step="1"
-                  className="custom-range-slider"
+                  className="blue-slider"
                   value={duration}
+                  style={{
+                    background: `linear-gradient(to right, #2563eb 0%, #2563eb ${((duration - 3) / 27) * 100}%, #e2e8f0 ${((duration - 3) / 27) * 100}%, #e2e8f0 100%)`,
+                  }}
                   onChange={(e) => setDuration(Number(e.target.value))}
                 />
+                <div className="slider-badge">{duration} sec</div>
               </div>
+            </div>
 
-              {/* Slider 3: Gap between popups */}
-              <div style={{ marginBottom: "16px" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "13px" }}>
-                  <span style={{ color: "#0f172a", fontWeight: 500 }}>Gap between popups</span>
-                  <span style={{ color: "#0f172a", fontWeight: 700 }}>{rotation} sec</span>
-                </div>
+            {/* Slider 3: Gap between popups */}
+            <div style={{ marginBottom: "20px" }}>
+              <div style={{ fontSize: "13px", fontWeight: 500, color: "#0f172a", marginBottom: "8px" }}>
+                Gap between popups
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
                 <input
                   type="range"
                   min="1"
                   max="20"
                   step="1"
-                  className="custom-range-slider"
+                  className="blue-slider"
                   value={rotation}
+                  style={{
+                    background: `linear-gradient(to right, #2563eb 0%, #2563eb ${((rotation - 1) / 19) * 100}%, #e2e8f0 ${((rotation - 1) / 19) * 100}%, #e2e8f0 100%)`,
+                  }}
                   onChange={(e) => setRotation(Number(e.target.value))}
                 />
+                <div className="slider-badge">{rotation} sec</div>
               </div>
+            </div>
 
-              {/* Slider 4: Max reviews per session */}
-              <div style={{ marginBottom: "16px" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "13px" }}>
-                  <span style={{ color: "#0f172a", fontWeight: 500 }}>Max reviews per session</span>
-                  <span style={{ color: "#0f172a", fontWeight: 700 }}>{maxPerSession}</span>
-                </div>
+            {/* Slider 4: Max reviews per session */}
+            <div style={{ marginBottom: "28px" }}>
+              <div style={{ fontSize: "13px", fontWeight: 500, color: "#0f172a", marginBottom: "8px" }}>
+                Max reviews per session
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
                 <input
                   type="range"
                   min="1"
                   max="25"
                   step="1"
-                  className="custom-range-slider"
+                  className="blue-slider"
                   value={maxPerSession}
+                  style={{
+                    background: `linear-gradient(to right, #2563eb 0%, #2563eb ${((maxPerSession - 1) / 24) * 100}%, #e2e8f0 ${((maxPerSession - 1) / 24) * 100}%, #e2e8f0 100%)`,
+                  }}
                   onChange={(e) => setMaxPerSession(Number(e.target.value))}
                 />
+                <div className="slider-badge">{maxPerSession}</div>
               </div>
             </div>
 
-            {/* ACTION BUTTON (Save Settings) */}
-            <div style={{ marginTop: "28px" }}>
-              <button
-                type="button"
-                className="save-btn"
-                style={{ width: "100%" }}
-                onClick={handleSave}
-                disabled={navigation.state === "submitting"}
-              >
-                {navigation.state === "submitting" ? "Saving..." : "Save settings"}
-              </button>
-            </div>
+            {/* Save Button */}
+            <button
+              type="button"
+              className="btn-save-blue"
+              onClick={handleSave}
+              disabled={navigation.state === "submitting"}
+            >
+              {navigation.state === "submitting" ? "Saving settings..." : "Save settings"}
+            </button>
           </div>
 
-          {/* RIGHT COLUMN: Live Storefront Preview */}
-          <div
-            style={{
-              background: "#ffffff",
-              border: "1px solid #e2e8f0",
-              borderRadius: "16px",
-              padding: "24px",
-              boxShadow: "0 1px 3px rgba(0,0,0,0.02)",
-              display: "flex",
-              flexDirection: "column",
-            }}
-          >
-            {/* Header: Title + Position Pill */}
+          {/* RIGHT COLUMN: LIVE STOREFRONT PREVIEW */}
+          <div className="preview-outer-card">
+            {/* Header: Title + Location Badge */}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
               <h2 style={{ fontSize: "17px", fontWeight: 700, color: "#0f172a", margin: 0 }}>
                 Live storefront preview
@@ -616,66 +555,64 @@ export default function WidgetSettingsPage() {
 
               <span
                 style={{
-                  background: "#dbeafe",
-                  color: "#1e40af",
+                  background: "#eff6ff",
+                  border: "1px solid #dbeafe",
+                  color: "#2563eb",
                   fontSize: "12px",
                   fontWeight: 600,
-                  padding: "4px 12px",
+                  padding: "4px 10px",
                   borderRadius: "9999px",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "5px",
                 }}
               >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+                  <circle cx="12" cy="10" r="3" />
+                </svg>
                 {activePositionLabel}
               </span>
             </div>
 
-            {/* Storefront Mock Canvas Container */}
-            <div
-              style={{
-                position: "relative",
-                width: "100%",
-                minHeight: "520px",
-                background: "#fbfcfe",
-                border: "1px solid #f1f5f9",
-                borderRadius: "14px",
-                padding: "26px",
-                boxSizing: "border-box",
-                overflow: "hidden",
-              }}
-            >
-              {/* Mock Product Page (PDP) */}
-              <div style={{ display: "flex", gap: "22px", flexWrap: "wrap", opacity: 0.9 }}>
-                {/* Product Image Placeholder Box */}
+            {/* Storefront Mock Canvas */}
+            <div className="canvas-box">
+              {/* Product Page (PDP) Layout */}
+              <div style={{ display: "flex", gap: "24px", flexWrap: "wrap", alignItems: "flex-start" }}>
+                {/* Left: Product Image Placeholder */}
                 <div
                   style={{
                     flex: "1 1 200px",
-                    height: "240px",
-                    background: "#ffffff",
+                    height: "220px",
+                    background: "#f8fafc",
                     border: "1px solid #e2e8f0",
-                    borderRadius: "12px",
+                    borderRadius: "10px",
                     display: "flex",
+                    flexDirection: "column",
                     alignItems: "center",
                     justifyContent: "center",
-                    color: "#94a3b8",
-                    fontSize: "14px",
-                    fontWeight: 500,
                   }}
                 >
-                  Product image
+                  <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="3" width="18" height="18" rx="3" />
+                    <circle cx="8.5" cy="8.5" r="1.5" />
+                    <polyline points="21 15 16 10 5 21" />
+                  </svg>
+                  <span style={{ fontSize: "12px", color: "#94a3b8", marginTop: "8px", fontWeight: 500 }}>
+                    Product image placeholder
+                  </span>
                 </div>
 
-                {/* Product Details Column */}
-                <div style={{ flex: "1 1 200px", display: "flex", flexDirection: "column" }}>
-                  <div style={{ fontSize: "11px", fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "4px" }}>
-                    MY STORE
-                  </div>
-                  <div style={{ fontSize: "18px", fontWeight: 700, color: "#0f172a", marginBottom: "6px" }}>
+                {/* Right: Product Info */}
+                <div style={{ flex: "1 1 200px" }}>
+                  <h3 style={{ fontSize: "18px", fontWeight: 700, color: "#0f172a", margin: "0 0 6px 0" }}>
                     6 piece towel set
+                  </h3>
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "10px" }}>
+                    <span style={{ color: "#f59e0b", fontSize: "13px", letterSpacing: "1px" }}>★★★★★</span>
+                    <span style={{ color: "#64748b", fontSize: "12.5px" }}>(48 reviews)</span>
                   </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "8px" }}>
-                    <span style={{ color: "#d97706", fontSize: "13px", letterSpacing: "1px" }}>★★★★★</span>
-                    <span style={{ color: "#64748b", fontSize: "12px" }}>(48 reviews)</span>
-                  </div>
-                  <div style={{ fontSize: "16px", fontWeight: 700, color: "#0f172a", marginBottom: "16px" }}>
+                  <div style={{ fontSize: "18px", fontWeight: 700, color: "#0f172a", marginBottom: "16px" }}>
                     $29.99
                   </div>
 
@@ -683,40 +620,27 @@ export default function WidgetSettingsPage() {
                     type="button"
                     style={{
                       width: "100%",
-                      padding: "10px",
-                      borderRadius: "8px",
-                      background: "#ffffff",
-                      border: "1px solid #cbd5e1",
-                      color: "#0f172a",
+                      padding: "10px 16px",
+                      borderRadius: "6px",
+                      background: "#1e293b",
+                      border: "none",
+                      color: "#ffffff",
                       fontSize: "13px",
                       fontWeight: 600,
-                      marginBottom: "8px",
                       cursor: "default",
+                      marginBottom: "14px",
                     }}
                   >
                     Add to cart
                   </button>
 
-                  <button
-                    type="button"
-                    style={{
-                      width: "100%",
-                      padding: "10px",
-                      borderRadius: "8px",
-                      background: "#0f172a",
-                      border: "1px solid #0f172a",
-                      color: "#ffffff",
-                      fontSize: "13px",
-                      fontWeight: 600,
-                      cursor: "default",
-                    }}
-                  >
-                    Buy it now
-                  </button>
+                  {/* Skeleton placeholder bars */}
+                  <div style={{ height: "8px", background: "#e2e8f0", borderRadius: "4px", width: "85%", marginBottom: "8px" }} />
+                  <div style={{ height: "8px", background: "#e2e8f0", borderRadius: "4px", width: "60%" }} />
                 </div>
               </div>
 
-              {/* Dynamic Floating Review Popup Widget (Placed dynamically by selected position) */}
+              {/* Floating Review Popup Widget */}
               {enabled && (
                 <div
                   style={{
@@ -725,31 +649,29 @@ export default function WidgetSettingsPage() {
                     top: position.includes("top") ? "20px" : "auto",
                     left: position.includes("left") ? "20px" : "auto",
                     right: position.includes("right") ? "20px" : "auto",
-                    width: layoutStyle === "layout-4" ? "320px" : "300px",
+                    width: layoutStyle === "layout-4" ? "320px" : "290px",
                     background: layoutStyle === "layout-3" ? "#0f172a" : "#ffffff",
-                    borderRadius: layoutStyle === "layout-4" ? "9999px" : "14px",
-                    padding: layoutStyle === "layout-4" ? "12px 18px" : "16px 18px",
+                    borderRadius: layoutStyle === "layout-4" ? "9999px" : "12px",
+                    padding: layoutStyle === "layout-4" ? "12px 18px" : "14px 16px",
                     border: layoutStyle === "layout-3" ? "1px solid #334155" : "1px solid #e2e8f0",
-                    boxShadow: "0 10px 25px rgba(0,0,0,0.08)",
+                    boxShadow: "0 8px 24px rgba(0, 0, 0, 0.08)",
                     zIndex: 10,
-                    transition: "all 0.25s ease",
-                    overflow: "hidden",
+                    transition: "all 0.2s ease",
                   }}
                 >
-                  {/* Layout 1: Classic (Matches Reference Screenshot) */}
+                  {/* Layout 1: Classic (Matches Reference Design) */}
                   {layoutStyle === "layout-1" && (
                     <>
-                      {/* Top Row: Avatar + Name/Stars + Close Icon */}
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "8px" }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "6px" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "9px" }}>
                           <div
                             style={{
-                              width: "36px",
-                              height: "36px",
+                              width: "32px",
+                              height: "32px",
                               borderRadius: "50%",
                               background: "#dbeafe",
                               color: "#1e40af",
-                              fontSize: "13px",
+                              fontSize: "12px",
                               fontWeight: 700,
                               display: "flex",
                               alignItems: "center",
@@ -760,96 +682,82 @@ export default function WidgetSettingsPage() {
                             PP
                           </div>
                           <div>
-                            <div style={{ fontSize: "14px", fontWeight: 700, color: "#0f172a" }}>
+                            <div style={{ fontSize: "13px", fontWeight: 700, color: "#0f172a" }}>
                               Priya P.
                             </div>
-                            <div style={{ color: "#d97706", fontSize: "12px", letterSpacing: "1px" }}>
+                            <div style={{ color: "#f59e0b", fontSize: "11px", letterSpacing: "1px" }}>
                               ★★★★★
                             </div>
                           </div>
                         </div>
 
-                        <span style={{ color: "#94a3b8", fontSize: "16px", cursor: "pointer", lineHeight: 1 }}>
-                          ×
+                        <span style={{ color: "#94a3b8", fontSize: "14px", cursor: "pointer", lineHeight: 1 }}>
+                          ✕
                         </span>
                       </div>
 
-                      {/* Review Text */}
-                      <div style={{ fontSize: "13px", color: "#1e293b", lineHeight: 1.4, marginBottom: "10px" }}>
+                      <div style={{ fontSize: "12.5px", color: "#334155", lineHeight: 1.4, margin: "6px 0 8px 0" }}>
                         Very soft and absorbent. Colour matches the photo.
                       </div>
 
-                      {/* Footer Badge: Verified purchase */}
                       <div>
                         <span
                           style={{
-                            background: "#dcfce7",
-                            color: "#166534",
+                            background: "#ecfdf5",
+                            color: "#059669",
                             fontSize: "11px",
                             fontWeight: 600,
-                            padding: "3px 10px",
+                            padding: "3px 9px",
                             borderRadius: "9999px",
-                            display: "inline-block",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "4px",
                           }}
                         >
-                          Verified purchase
+                          ✓ Verified purchase
                         </span>
                       </div>
-
-                      {/* Bottom Accent Timer Bar */}
-                      <div
-                        style={{
-                          position: "absolute",
-                          bottom: 0,
-                          left: 0,
-                          width: "60%",
-                          height: "3px",
-                          background: "#f59e0b",
-                        }}
-                      />
                     </>
                   )}
 
                   {/* Layout 2: Photo Spotlight */}
                   {layoutStyle === "layout-2" && (
-                    <>
-                      <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
-                        <div style={{ width: "48px", height: "48px", borderRadius: "8px", background: "#fef3c7", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "20px", flexShrink: 0 }}>
-                          🧺
-                        </div>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ fontSize: "13px", fontWeight: 700, color: "#0f172a" }}>
-                            Priya P. <span style={{ color: "#d97706", fontSize: "11px" }}>★★★★★</span>
-                          </div>
-                          <div style={{ fontSize: "12px", color: "#475569", marginTop: "2px", lineHeight: 1.3 }}>
-                            Very soft and absorbent towel set.
-                          </div>
-                          <span style={{ fontSize: "10px", color: "#166534", fontWeight: 600, marginTop: "4px", display: "inline-block" }}>
-                            Verified purchase
-                          </span>
-                        </div>
+                    <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+                      <div style={{ width: "42px", height: "42px", borderRadius: "8px", background: "#fef3c7", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "18px", flexShrink: 0 }}>
+                        🧺
                       </div>
-                    </>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: "12.5px", fontWeight: 700, color: "#0f172a" }}>
+                          Priya P. <span style={{ color: "#f59e0b", fontSize: "11px" }}>★★★★★</span>
+                        </div>
+                        <div style={{ fontSize: "11.5px", color: "#475569", marginTop: "1px", lineHeight: 1.3 }}>
+                          Very soft and absorbent towel set.
+                        </div>
+                        <span style={{ fontSize: "10px", color: "#059669", fontWeight: 600, marginTop: "2px", display: "inline-block" }}>
+                          ✓ Verified purchase
+                        </span>
+                      </div>
+                    </div>
                   )}
 
                   {/* Layout 3: Social / Dark Mode */}
                   {layoutStyle === "layout-3" && (
                     <>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
                         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                          <div style={{ width: "32px", height: "32px", borderRadius: "50%", background: "#334155", color: "#f8fafc", fontSize: "12px", fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                          <div style={{ width: "28px", height: "28px", borderRadius: "50%", background: "#334155", color: "#f8fafc", fontSize: "11px", fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>
                             PP
                           </div>
-                          <div style={{ fontSize: "13px", fontWeight: 700, color: "#ffffff" }}>
+                          <div style={{ fontSize: "12.5px", fontWeight: 700, color: "#ffffff" }}>
                             Priya P.
                           </div>
                         </div>
-                        <span style={{ color: "#f59e0b", fontSize: "12px" }}>★★★★★</span>
+                        <span style={{ color: "#f59e0b", fontSize: "11px" }}>★★★★★</span>
                       </div>
-                      <div style={{ fontSize: "12px", color: "#cbd5e1", lineHeight: 1.4, marginBottom: "8px" }}>
+                      <div style={{ fontSize: "12px", color: "#cbd5e1", lineHeight: 1.4, margin: "4px 0 6px 0" }}>
                         Very soft and absorbent. Colour matches the photo.
                       </div>
-                      <div style={{ fontSize: "10px", color: "#38bdf8", fontWeight: 600 }}>
+                      <div style={{ fontSize: "10.5px", color: "#38bdf8", fontWeight: 600 }}>
                         ✓ Verified purchase
                       </div>
                     </>
@@ -858,12 +766,12 @@ export default function WidgetSettingsPage() {
                   {/* Layout 4: Pill Card */}
                   {layoutStyle === "layout-4" && (
                     <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                      <div style={{ width: "32px", height: "32px", borderRadius: "50%", background: "#dbeafe", color: "#1e40af", fontSize: "12px", fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                      <div style={{ width: "30px", height: "30px", borderRadius: "50%", background: "#dbeafe", color: "#1e40af", fontSize: "11px", fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                         PP
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: "12px", fontWeight: 700, color: "#0f172a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                          Priya P. <span style={{ color: "#d97706", fontSize: "11px" }}>★★★★★</span>
+                          Priya P. <span style={{ color: "#f59e0b", fontSize: "11px" }}>★★★★★</span>
                         </div>
                         <div style={{ fontSize: "11px", color: "#64748b", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                           Very soft and absorbent towel set.
@@ -875,13 +783,13 @@ export default function WidgetSettingsPage() {
                   {/* Layout 5: Product Spotlight */}
                   {layoutStyle === "layout-5" && (
                     <>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
-                        <span style={{ fontSize: "11px", fontWeight: 700, color: "#2563eb", textTransform: "uppercase" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
+                        <span style={{ fontSize: "10.5px", fontWeight: 700, color: "#2563eb", textTransform: "uppercase" }}>
                           Customer Review
                         </span>
-                        <span style={{ color: "#d97706", fontSize: "12px" }}>★★★★★</span>
+                        <span style={{ color: "#f59e0b", fontSize: "11px" }}>★★★★★</span>
                       </div>
-                      <div style={{ fontSize: "13px", fontWeight: 700, color: "#0f172a", marginBottom: "4px" }}>
+                      <div style={{ fontSize: "12.5px", fontWeight: 700, color: "#0f172a", marginBottom: "3px" }}>
                         Priya P.
                       </div>
                       <div style={{ fontSize: "12px", color: "#334155", lineHeight: 1.4 }}>
@@ -893,8 +801,8 @@ export default function WidgetSettingsPage() {
               )}
             </div>
 
-            {/* Disclaimer note below preview */}
-            <div style={{ fontSize: "13px", color: "#64748b", marginTop: "14px" }}>
+            {/* Note below canvas */}
+            <div style={{ fontSize: "12px", color: "#64748b", marginTop: "12px" }}>
               ⓘ Preview uses sample text. Live popups show only real or imported reviews.
             </div>
           </div>
