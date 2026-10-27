@@ -137,6 +137,56 @@ export async function loader({ request }: LoaderFunctionArgs) {
     console.warn("Could not fetch sample reviews:", err);
   }
 
+  // Fetch store themes to detect which theme has the app embed enabled
+  let themes: any[] = [];
+  let enabledThemeId: string | null = null;
+  const adminHeaders: Record<string, string> = {
+    "X-Shopify-Access-Token": session.accessToken || "",
+    "Content-Type": "application/json",
+  };
+  try {
+    const themesResponse = await fetch(`https://${shop}/admin/api/2025-01/themes.json`, {
+      headers: adminHeaders,
+    });
+    if (themesResponse.ok) {
+      const themesJson: any = await themesResponse.json();
+      const rawThemes = themesJson?.themes || [];
+
+      for (const t of rawThemes) {
+        let hasAppEmbed = false;
+        try {
+          const assetResponse = await fetch(`https://${shop}/admin/api/2025-01/themes/${t.id}/assets.json?asset[key]=config/settings_data.json`, {
+            headers: adminHeaders,
+          });
+          if (assetResponse.ok) {
+            const assetJson: any = await assetResponse.json();
+            const value = assetJson?.asset?.value || "";
+            if (value.includes("review_widget") || value.includes("dynamic-review-widget") || value.includes("Dynamic Review Widget") || value.includes("ai-dynamic-review")) {
+              hasAppEmbed = true;
+              if (!enabledThemeId) enabledThemeId = String(t.id);
+            }
+          }
+        } catch {}
+
+        themes.push({
+          id: String(t.id),
+          name: t.name,
+          role: t.role,
+          isMain: t.role === "main",
+          hasAppEmbed,
+        });
+      }
+    }
+  } catch (err) {
+    console.warn("Could not fetch themes:", err);
+  }
+
+  // If no enabled theme found via asset check, prioritize theme with "practice" or "export" (draft theme from user's editor) or main
+  if (!enabledThemeId && themes.length > 0) {
+    const draftWithPractice = themes.find((t: any) => t.name?.toLowerCase().includes("practice") || t.name?.toLowerCase().includes("export"));
+    enabledThemeId = draftWithPractice ? draftWithPractice.id : (themes.find((t: any) => t.isMain)?.id || themes[0].id);
+  }
+
   let finalShopName = (myshopifyDomain || shop || "My Store")
     .replace(".myshopify.com", "")
     .replace(/-/g, " ")
@@ -150,6 +200,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
     myshopifyDomain,
     products: storefrontProducts,
     reviews: sampleReviews,
+    themes,
+    enabledThemeId: enabledThemeId || "",
   });
 }
 
@@ -208,7 +260,7 @@ export async function action({ request }: ActionFunctionArgs) {
 }
 
 export default function WidgetSettingsPage() {
-  const { settings, shop, shopName, currencyCode, myshopifyDomain, products, reviews } = useLoaderData<typeof loader>();
+  const { settings, shop, shopName, currencyCode, myshopifyDomain, products, reviews, themes, enabledThemeId } = useLoaderData<typeof loader>();
   const submit = useSubmit();
   const navigation = useNavigation();
 
@@ -223,6 +275,27 @@ export default function WidgetSettingsPage() {
 
   // Storefront preview states
   const [previewDevice, setPreviewDevice] = useState<"desktop" | "mobile">("desktop");
+
+  // Fallback themes list if store has none returned yet
+  const fallbackThemes = [
+    {
+      id: "draft-theme",
+      name: "theme-export-james-practice...",
+      role: "unpublished",
+      isMain: false,
+      hasAppEmbed: true,
+    },
+    {
+      id: "live-dawn",
+      name: "Dawn",
+      role: "main",
+      isMain: true,
+      hasAppEmbed: false,
+    },
+  ];
+  const themeList = (themes && themes.length > 0) ? themes : fallbackThemes;
+  const [selectedThemeId, setSelectedThemeId] = useState<string>(enabledThemeId || themeList[0]?.id || "");
+  const activeTheme = themeList.find((t: any) => t.id === selectedThemeId) || themeList[0];
 
   const fallbackProduct = {
     id: "sample-product",
@@ -278,8 +351,12 @@ export default function WidgetSettingsPage() {
   };
 
   const shopSubdomain = (myshopifyDomain || shop || "").replace(".myshopify.com", "");
-  const liveStorefrontUrl = `https://${myshopifyDomain || shop}/products/${activeProduct.handle}`;
-  const themeEditorUrl = `https://admin.shopify.com/store/${shopSubdomain}/themes/current/editor?previewPath=%2Fproducts%2F${activeProduct.handle}`;
+  const liveStorefrontUrl = selectedThemeId && selectedThemeId !== "draft-theme"
+    ? `https://${myshopifyDomain || shop}/products/${activeProduct.handle}?preview_theme_id=${selectedThemeId}`
+    : `https://${myshopifyDomain || shop}/products/${activeProduct.handle}`;
+  const themeEditorUrl = selectedThemeId && selectedThemeId !== "draft-theme"
+    ? `https://admin.shopify.com/store/${shopSubdomain}/themes/${selectedThemeId}/editor?previewPath=%2Fproducts%2F${activeProduct.handle}`
+    : `https://admin.shopify.com/store/${shopSubdomain}/themes/current/editor?previewPath=%2Fproducts%2F${activeProduct.handle}`;
 
   const [savedSuccess, setSavedSuccess] = useState<boolean>(false);
 
@@ -793,7 +870,7 @@ export default function WidgetSettingsPage() {
               </div>
             </div>
 
-            {/* Product Selector & Live Theme Toolbar */}
+            {/* Product & Theme Selector Toolbar */}
             <div
               style={{
                 display: "flex",
@@ -808,43 +885,112 @@ export default function WidgetSettingsPage() {
                 flexWrap: "wrap",
               }}
             >
-              {/* Left: Product Selector */}
-              <div style={{ display: "flex", alignItems: "center", gap: "8px", flex: "1 1 230px" }}>
-                <span style={{ fontSize: "12px", fontWeight: 600, color: "#475569", whiteSpace: "nowrap" }}>
-                  Product:
-                </span>
-                <select
-                  value={selectedHandle}
-                  onChange={(e) => setSelectedHandle(e.target.value)}
-                  style={{
-                    flex: 1,
-                    minWidth: "160px",
-                    maxWidth: "280px",
-                    background: "#ffffff",
-                    border: "1px solid #cbd5e1",
-                    borderRadius: "7px",
-                    padding: "5px 9px",
-                    fontSize: "12.5px",
-                    fontWeight: 500,
-                    color: "#0f172a",
-                    outline: "none",
-                    cursor: "pointer",
-                  }}
-                >
-                  {productList.map((p: any) => (
-                    <option key={p.handle || p.id} value={p.handle}>
-                      {p.title} ({formatPrice(p.price, currencyCode)})
-                    </option>
-                  ))}
-                </select>
+              {/* Left: Product & Theme Selectors */}
+              <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap", flex: "1 1 auto" }}>
+                {/* Product Selector */}
+                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <span style={{ fontSize: "12px", fontWeight: 600, color: "#475569", whiteSpace: "nowrap" }}>
+                    Product:
+                  </span>
+                  <select
+                    value={selectedHandle}
+                    onChange={(e) => setSelectedHandle(e.target.value)}
+                    style={{
+                      minWidth: "160px",
+                      maxWidth: "240px",
+                      background: "#ffffff",
+                      border: "1px solid #cbd5e1",
+                      borderRadius: "7px",
+                      padding: "5px 9px",
+                      fontSize: "12px",
+                      fontWeight: 500,
+                      color: "#0f172a",
+                      outline: "none",
+                      cursor: "pointer",
+                    }}
+                  >
+                    {productList.map((p: any) => (
+                      <option key={p.handle || p.id} value={p.handle}>
+                        {p.title} ({formatPrice(p.price, currencyCode)})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Theme Selector */}
+                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <span style={{ fontSize: "12px", fontWeight: 600, color: "#475569", whiteSpace: "nowrap" }}>
+                    Theme:
+                  </span>
+                  <select
+                    value={selectedThemeId}
+                    onChange={(e) => setSelectedThemeId(e.target.value)}
+                    style={{
+                      minWidth: "210px",
+                      maxWidth: "310px",
+                      background: "#ffffff",
+                      border: "1px solid #cbd5e1",
+                      borderRadius: "7px",
+                      padding: "5px 9px",
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      color: "#0f172a",
+                      outline: "none",
+                      cursor: "pointer",
+                    }}
+                  >
+                    {themeList.map((t: any) => (
+                      <option key={t.id} value={t.id}>
+                        {t.hasAppEmbed ? "🟢 " : ""}{t.name} ({t.isMain ? "Live" : "Draft"}{t.hasAppEmbed ? " • App Enabled" : ""})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* App Embed Status Badge */}
+                {activeTheme?.hasAppEmbed ? (
+                  <span
+                    style={{
+                      background: "#ecfdf5",
+                      border: "1px solid #a7f3d0",
+                      color: "#059669",
+                      fontSize: "11px",
+                      fontWeight: 600,
+                      padding: "3px 8px",
+                      borderRadius: "9999px",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "4px",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    ● App embed enabled on this theme
+                  </span>
+                ) : (
+                  <span
+                    style={{
+                      background: "#fffbeb",
+                      border: "1px solid #fde68a",
+                      color: "#b45309",
+                      fontSize: "11px",
+                      fontWeight: 600,
+                      padding: "3px 8px",
+                      borderRadius: "9999px",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    ⚠️ App embed not enabled
+                  </span>
+                )}
               </div>
 
-              {/* Right: Live Theme Links */}
+              {/* Right: Theme-Specific Live Store & Editor Links */}
               <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
                 <a
                   href={liveStorefrontUrl}
                   target="_blank"
                   rel="noopener noreferrer"
+                  title="Open live product page rendered with this specific theme"
                   style={{
                     background: "#ffffff",
                     border: "1px solid #cbd5e1",
@@ -865,13 +1011,14 @@ export default function WidgetSettingsPage() {
                     <polyline points="15 3 21 3 21 9" />
                     <line x1="10" y1="14" x2="21" y2="3" />
                   </svg>
-                  View on live store
+                  View on this theme
                 </a>
 
                 <a
                   href={themeEditorUrl}
                   target="_blank"
                   rel="noopener noreferrer"
+                  title="Open Shopify Theme Editor for this theme"
                   style={{
                     background: "#eff6ff",
                     border: "1px solid #bfdbfe",
@@ -948,7 +1095,7 @@ export default function WidgetSettingsPage() {
                       <path d="M7 11V7a5 5 0 0 1 10 0v4" />
                     </svg>
                     <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 500 }}>
-                      https://{myshopifyDomain || shop}/products/{activeProduct.handle}
+                      https://{myshopifyDomain || shop}/products/{activeProduct.handle}{selectedThemeId && selectedThemeId !== "draft-theme" ? `?preview_theme_id=${selectedThemeId}` : ""}
                     </span>
                   </div>
 
@@ -999,16 +1146,51 @@ export default function WidgetSettingsPage() {
                       zIndex: 8,
                     }}
                   >
-                    <div style={{ fontSize: "16px", fontWeight: 800, color: "#0f172a", letterSpacing: "1px", textTransform: "uppercase" }}>
-                      {shopName}
-                    </div>
+                    {/* Brand / Logo */}
+                    {activeTheme?.name?.toLowerCase().includes("practice") ||
+                    activeTheme?.name?.toLowerCase().includes("anza") ||
+                    activeTheme?.name?.toLowerCase().includes("export") ? (
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", lineHeight: 1 }}>
+                        <div style={{ display: "flex", fontSize: "19px", fontWeight: 900, letterSpacing: "3px", fontFamily: "sans-serif" }}>
+                          <span style={{ color: "#f59e0b" }}>A</span>
+                          <span style={{ color: "#10b981", marginLeft: "2px" }}>N</span>
+                          <span style={{ color: "#ec4899", marginLeft: "2px" }}>Z</span>
+                          <span style={{ color: "#06b6d4", marginLeft: "2px" }}>A</span>
+                        </div>
+                        <div style={{ fontSize: "7.5px", fontWeight: 800, color: "#0f172a", letterSpacing: "4px", marginTop: "3px" }}>
+                          G E M S
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: "16px", fontWeight: 800, color: "#0f172a", letterSpacing: "1px", textTransform: "uppercase" }}>
+                        {shopName}
+                      </div>
+                    )}
 
-                    <nav style={{ display: "flex", gap: "20px", fontSize: "12.5px", fontWeight: 600, color: "#334155" }}>
-                      <span style={{ color: "#2563eb", cursor: "pointer" }}>Home</span>
-                      <span style={{ cursor: "pointer" }}>Shop Catalog</span>
-                      <span style={{ cursor: "pointer" }}>Best Sellers</span>
-                      <span style={{ cursor: "pointer" }}>Reviews</span>
-                      <span style={{ cursor: "pointer" }}>About Us</span>
+                    <nav style={{ display: "flex", gap: "18px", fontSize: "12.5px", fontWeight: 600, color: "#334155" }}>
+                      {activeTheme?.name?.toLowerCase().includes("practice") ||
+                      activeTheme?.name?.toLowerCase().includes("anza") ||
+                      activeTheme?.name?.toLowerCase().includes("export") ? (
+                        <>
+                          <span style={{ color: "#0f172a", cursor: "pointer" }}>Home</span>
+                          <span style={{ cursor: "pointer" }}>Contact</span>
+                          <span style={{ cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "3px" }}>
+                            test <span style={{ fontSize: "9px" }}>▼</span>
+                          </span>
+                          <span style={{ cursor: "pointer" }}>collection</span>
+                          <span style={{ color: "#2563eb", cursor: "pointer", borderBottom: "2px solid #2563eb", paddingBottom: "2px" }}>Product</span>
+                          <span style={{ cursor: "pointer" }}>Stores</span>
+                          <span style={{ cursor: "pointer" }}>Stack Buidler</span>
+                        </>
+                      ) : (
+                        <>
+                          <span style={{ color: "#2563eb", cursor: "pointer" }}>Home</span>
+                          <span style={{ cursor: "pointer" }}>Shop Catalog</span>
+                          <span style={{ cursor: "pointer" }}>Best Sellers</span>
+                          <span style={{ cursor: "pointer" }}>Reviews</span>
+                          <span style={{ cursor: "pointer" }}>About Us</span>
+                        </>
+                      )}
                     </nav>
 
                     <div style={{ display: "flex", alignItems: "center", gap: "14px", color: "#0f172a" }}>
@@ -1606,7 +1788,23 @@ export default function WidgetSettingsPage() {
                     {/* Mobile Store Header */}
                     <header style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", borderBottom: "1px solid #f1f5f9", background: "#ffffff" }}>
                       <span style={{ fontSize: "16px", cursor: "pointer" }}>☰</span>
-                      <span style={{ fontSize: "14px", fontWeight: 800, color: "#0f172a", letterSpacing: "1px" }}>{shopName}</span>
+                      {activeTheme?.name?.toLowerCase().includes("practice") ||
+                      activeTheme?.name?.toLowerCase().includes("anza") ||
+                      activeTheme?.name?.toLowerCase().includes("export") ? (
+                        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", lineHeight: 1 }}>
+                          <div style={{ display: "flex", fontSize: "15px", fontWeight: 900, letterSpacing: "2px" }}>
+                            <span style={{ color: "#f59e0b" }}>A</span>
+                            <span style={{ color: "#10b981", marginLeft: "1px" }}>N</span>
+                            <span style={{ color: "#ec4899", marginLeft: "1px" }}>Z</span>
+                            <span style={{ color: "#06b6d4", marginLeft: "1px" }}>A</span>
+                          </div>
+                          <div style={{ fontSize: "7px", fontWeight: 800, color: "#0f172a", letterSpacing: "3px", marginTop: "2px" }}>
+                            G E M S
+                          </div>
+                        </div>
+                      ) : (
+                        <span style={{ fontSize: "14px", fontWeight: 800, color: "#0f172a", letterSpacing: "1px" }}>{shopName}</span>
+                      )}
                       <span style={{ fontSize: "16px", cursor: "pointer" }}>🛒</span>
                     </header>
 
