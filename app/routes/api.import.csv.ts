@@ -202,17 +202,32 @@ export async function action({ request }: ActionFunctionArgs) {
   // Track product-specific import counts
   const productImportMap: Record<string, { title: string; count: number }> = {};
 
+  const columnMappingJson = formData.get("columnMapping") as string;
+  let customMapping: any = null;
+  if (columnMappingJson) {
+    try {
+      customMapping = JSON.parse(columnMappingJson);
+    } catch {}
+  }
+
   for (const row of rows) {
     // Dynamic SKU header lookup supporting SKU/ASIN, SKU / ASIN, Product SKU, Item SKU, etc.
     const rawSkuKey = Object.keys(row).find((k) => {
       const lower = k.toLowerCase().replace(/[\s_\-\/]/g, "");
       return lower.includes("sku") || lower.includes("asin");
     });
-    const sku = rawSkuKey ? row[rawSkuKey] : (row["SKU/ASIN"] || row["SKU / ASIN"] || row["SKU"] || row["ASIN"] || row["sku"] || row["asin"] || "");
-    const reviewerName = row["ReviewerName"] || row["reviewer_name"] || row["Name"] || "Verified Buyer";
-    const rating = parseInt(row["Rating"] || row["rating"] || "5", 10);
-    const reviewText = row["ReviewText"] || row["review_text"] || row["Comment"] || row["Review"] || "";
-    const externalUrl = row["ExternalUrl"] || row["external_url"] || row["URL"] || row["url"] || row["Link"] || row["link"] || row["ProductUrl"] || row["product_url"] || "";
+
+    const reviewerKey = customMapping?.reviewerName;
+    const ratingKey = customMapping?.rating;
+    const reviewTextKey = customMapping?.reviewText;
+    const skuKey = customMapping?.sku;
+    const externalUrlKey = customMapping?.externalUrl;
+
+    const sku = (skuKey && row[skuKey]) || (rawSkuKey ? row[rawSkuKey] : (row["SKU/ASIN"] || row["SKU / ASIN"] || row["SKU"] || row["ASIN"] || row["sku"] || row["asin"] || ""));
+    const reviewerName = (reviewerKey && row[reviewerKey]) || row["ReviewerName"] || row["reviewer_name"] || row["Name"] || "Verified Buyer";
+    const rating = parseInt((ratingKey && row[ratingKey]) || row["Rating"] || row["rating"] || "5", 10);
+    const reviewText = (reviewTextKey && row[reviewTextKey]) || row["ReviewText"] || row["review_text"] || row["Comment"] || row["Review"] || "";
+    const externalUrl = (externalUrlKey && row[externalUrlKey]) || row["ExternalUrl"] || row["external_url"] || row["URL"] || row["url"] || row["Link"] || row["link"] || row["ProductUrl"] || row["product_url"] || "";
 
     if (!reviewText) {
       failedRows++;

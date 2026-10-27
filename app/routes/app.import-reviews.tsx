@@ -1,10 +1,7 @@
 import { json, LoaderFunctionArgs } from "@remix-run/node";
 import { useLoaderData, useNavigate, Link } from "@remix-run/react";
-import { useState, useRef, useMemo } from "react";
-import {
-  Page,
-  Banner,
-} from "@shopify/polaris";
+import { useState, useRef, useMemo, useEffect } from "react";
+import { Page, Banner } from "@shopify/polaris";
 import Papa from "papaparse";
 import { authenticate } from "../shopify.server";
 import db, { ensureTablesExist } from "../db.server";
@@ -151,7 +148,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     console.warn("Error querying reviews in import-reviews loader:", e);
   }
 
-  // 3. Dynamically count real marketplace reviews in store (NO hardcoded numbers!)
+  // 3. Dynamically count real marketplace reviews in store
   const amazonReviews = allShopReviews.filter((r) => {
     const s = (r.source || "").toUpperCase();
     return s === "IMPORTED_AMAZON" || s === "AMAZON" || (s.includes("AMAZON") && !s.includes("AI"));
@@ -178,7 +175,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     console.warn("Sync product import history warning:", e);
   }
 
-  // 5. Query persistent product import history (filter out any old fake test records)
+  // 5. Query persistent product import history
   const historyList = await db.productImportHistory.findMany({
     where: {
       shop,
@@ -231,11 +228,94 @@ interface ParsedPreviewRow {
   check: "Ready" | "Duplicate" | "No name" | "Error";
 }
 
+// Authentic marketplace brand icons
+function AmazonBrandIcon({ size = 20 }: { size?: number }) {
+  return (
+    <div
+      style={{
+        width: size + 4,
+        height: size + 4,
+        borderRadius: "6px",
+        background: "#ffffff",
+        border: "1px solid #e2e8f0",
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        flexShrink: 0,
+      }}
+    >
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+        <path
+          d="M13.5 13.8c-.2.2-.4.2-.6.1-.8-.6-2.5-1-4.2-1-2.4 0-4.3.9-4.8 2.2-.1.3 0 .5.3.6.2 0 .4 0 .5-.1.4-.4 1.8-.9 3.9-.9 1.5 0 3 .3 3.8.8.2.1.4.1.6 0 .3-.2.3-.5.1-.7zm7.4 3.7c-.3.4-1.2.6-2.1.6-1.5 0-3-.5-4.4-1.3-.3-.2-.2-.5.1-.6.3-.1.6 0 .8.2 1.1.7 2.4 1.1 3.5 1.1.7 0 1.3-.2 1.5-.4.2-.2.4-.2.6 0 .3.1.3.3 0 .4z"
+          fill="#ff9900"
+        />
+        <path
+          d="M17.8 17.5c-.3.4-.9.8-1.7 1-.3.1-.5 0-.6-.2-.1-.3 0-.5.2-.6.6-.2 1-.5 1.2-.7.2-.2.5-.2.7 0 .2.2.3.4.2.5z"
+          fill="#ff9900"
+        />
+        <path
+          d="M12.4 5.2c-2.8 0-4.6 1.8-4.6 4.4 0 2.4 1.6 4 3.8 4 1.3 0 2.4-.6 3.1-1.6v1.3h2.3V5.5h-2.3v1.3c-.7-1-1.8-1.6-3.1-1.6zm-.2 2c1.4 0 2.5 1.1 2.5 2.6s-1.1 2.6-2.5 2.6c-1.4 0-2.5-1.1-2.5-2.6s1.1-2.6 2.5-2.6z"
+          fill="#0f172a"
+        />
+      </svg>
+    </div>
+  );
+}
+
+function FlipkartBrandIcon({ size = 20 }: { size?: number }) {
+  return (
+    <div
+      style={{
+        width: size + 4,
+        height: size + 4,
+        borderRadius: "6px",
+        background: "#2874f0",
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        flexShrink: 0,
+      }}
+    >
+      <svg width={size - 2} height={size - 2} viewBox="0 0 24 24" fill="none">
+        <path d="M7 6H17L19 20H5L7 6Z" fill="#ffe500" />
+        <path d="M10 6V4C10 2.9 10.9 2 12 2C13.1 2 14 2.9 14 4V6" stroke="#ffe500" strokeWidth="2.2" strokeLinecap="round" />
+        <path d="M9 10H15M9 13H13" stroke="#2874f0" strokeWidth="2" strokeLinecap="round" />
+      </svg>
+    </div>
+  );
+}
+
+function AlibabaBrandIcon({ size = 20 }: { size?: number }) {
+  return (
+    <div
+      style={{
+        width: size + 4,
+        height: size + 4,
+        borderRadius: "6px",
+        background: "#ff6000",
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        flexShrink: 0,
+      }}
+    >
+      <svg width={size - 2} height={size - 2} viewBox="0 0 24 24" fill="none">
+        <path d="M12 4C7.58 4 4 7.58 4 12C4 16.42 7.58 20 12 20C16.42 20 20 16.42 20 12" stroke="#ffffff" strokeWidth="2.2" strokeLinecap="round" />
+        <path d="M12 9C10.34 9 9 10.34 9 12C9 13.66 10.34 15 12 15C13.66 15 15 13.66 15 12V9" stroke="#ffffff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M15 12H12" stroke="#ffffff" strokeWidth="2" strokeLinecap="round" />
+      </svg>
+    </div>
+  );
+}
+
 export default function ImportReviewsPage() {
   const { products, historyList, liveMarketplaceReviews, marketplaceCounts } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
 
-  // Active marketplace selector (default Alibaba to match reference UI)
+  // Stepper state: 1 = Upload file, 2 = Map columns, 3 = Review & import
+  const [currentStep, setCurrentStep] = useState<1 | 2 | 3>(1);
+
+  // Active marketplace selector (default Amazon/Alibaba)
   const [sourceType, setSourceType] = useState<MarketplaceKey>("IMPORTED_ALIBABA");
 
   // Settings
@@ -243,8 +323,24 @@ export default function ImportReviewsPage() {
   const [duplicatesOption, setDuplicatesOption] = useState<string>("skip");
   const [afterImportOption, setAfterImportOption] = useState<string>("pending");
 
-  // File & Dynamic Parsed Data (only populated when user actually selects/drops a file!)
+  // File & Dynamic Parsed Data
   const [file, setFile] = useState<File | null>(null);
+  const [rawParsedRows, setRawParsedRows] = useState<Array<Record<string, string>>>([]);
+  const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
+  const [columnMapping, setColumnMapping] = useState<{
+    reviewerName: string;
+    rating: string;
+    reviewText: string;
+    sku: string;
+    externalUrl: string;
+  }>({
+    reviewerName: "ReviewerName",
+    rating: "Rating",
+    reviewText: "ReviewText",
+    sku: "SKU/ASIN",
+    externalUrl: "ExternalUrl",
+  });
+
   const [parsedData, setParsedData] = useState<{
     rows: ParsedPreviewRow[];
     validCount: number;
@@ -261,39 +357,89 @@ export default function ImportReviewsPage() {
   const [importResult, setImportResult] = useState<any>(null);
   const [manualMappings, setManualMappings] = useState<Record<number, string>>({});
 
-  // Product History Filter state
+  // Filter for Recent imports table
+  const [marketplaceFilter, setMarketplaceFilter] = useState<string>("ALL");
   const [selectedProductHistoryFilter, setSelectedProductHistoryFilter] = useState<string>("ALL");
+  const [showProductSpotlight, setShowProductSpotlight] = useState<boolean>(false);
+  const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Dynamic Marketplace cards metadata based on real reviews in the database
+  // Dynamic Marketplace cards metadata
   const marketplaces = useMemo(() => [
     {
       key: "IMPORTED_AMAZON" as MarketplaceKey,
       name: "Amazon",
       count: marketplaceCounts.amazon,
-      iconBg: "#fef3c7",
-      iconColor: "#b45309",
+      icon: <AmazonBrandIcon size={18} />,
     },
     {
       key: "IMPORTED_FLIPKART" as MarketplaceKey,
       name: "Flipkart",
       count: marketplaceCounts.flipkart,
-      iconBg: "#e0f2fe",
-      iconColor: "#0284c7",
+      icon: <FlipkartBrandIcon size={18} />,
     },
     {
       key: "IMPORTED_ALIBABA" as MarketplaceKey,
       name: "Alibaba",
       count: marketplaceCounts.alibaba,
-      iconBg: "#e2e8f0",
-      iconColor: "#334155",
+      icon: <AlibabaBrandIcon size={18} />,
     },
   ], [marketplaceCounts]);
 
-  const currentMarketplace = marketplaces.find((m) => m.key === sourceType) || marketplaces[2];
+  const currentMarketplace = marketplaces.find((m) => m.key === sourceType) || marketplaces[0];
 
-  // Client-side real CSV file parser
+  // Helper to re-compute preview rows whenever mapping changes
+  const computePreview = (rows: Array<Record<string, string>>, mapping: typeof columnMapping) => {
+    let valid = 0;
+    let dupes = 0;
+    let errors = 0;
+    const seenKeys = new Set<string>();
+    const mappedRows: ParsedPreviewRow[] = [];
+
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const reviewer = (mapping.reviewerName ? row[mapping.reviewerName] : "") || row["ReviewerName"] || row["reviewer_name"] || row["Name"] || "";
+      const rating = parseInt((mapping.rating ? row[mapping.rating] : "") || row["Rating"] || row["rating"] || "5", 10) || 5;
+      const reviewText = (mapping.reviewText ? row[mapping.reviewText] : "") || row["ReviewText"] || row["review_text"] || row["Comment"] || row["Review"] || "";
+      const sku = (mapping.sku ? row[mapping.sku] : "") || row["SKU/ASIN"] || row["SKU"] || row["ASIN"] || "ASIN B0X1";
+
+      let checkStatus: ParsedPreviewRow["check"] = "Ready";
+      if (!reviewer.trim() || reviewer.toLowerCase().includes("missing")) {
+        checkStatus = "No name";
+        errors++;
+      } else {
+        const dupKey = `${reviewer}_${reviewText.substring(0, 30)}`.toLowerCase();
+        if (seenKeys.has(dupKey)) {
+          checkStatus = "Duplicate";
+          dupes++;
+        } else {
+          seenKeys.add(dupKey);
+          valid++;
+        }
+      }
+
+      if (mappedRows.length < 5) {
+        mappedRows.push({
+          reviewer: reviewer || "(missing)",
+          rating,
+          review: reviewText.length > 70 ? reviewText.substring(0, 70) + "..." : (reviewText || "Authentic review text"),
+          product: sku || "ASIN B0X1",
+          check: checkStatus,
+        });
+      }
+    }
+
+    setParsedData({
+      rows: mappedRows,
+      validCount: valid,
+      duplicateCount: dupes,
+      errorCount: errors,
+      totalRows: rows.length,
+    });
+  };
+
+  // Client-side CSV file parser
   const handleFileChosen = (selectedFile: File) => {
     setFile(selectedFile);
     setErrorMessage(null);
@@ -307,59 +453,44 @@ export default function ImportReviewsPage() {
         if (rows.length === 0) {
           setErrorMessage("The uploaded CSV file is empty. Please select a valid CSV with review rows.");
           setParsedData(null);
+          setRawParsedRows([]);
+          setCsvHeaders([]);
           return;
         }
 
-        let valid = 0;
-        let dupes = 0;
-        let errors = 0;
-        const seenKeys = new Set<string>();
-        const mappedRows: ParsedPreviewRow[] = [];
+        const headers = results.meta.fields || Object.keys(rows[0] || {});
+        setCsvHeaders(headers);
+        setRawParsedRows(rows);
 
-        for (let i = 0; i < rows.length; i++) {
-          const row = rows[i];
-          const rawSkuKey = Object.keys(row).find((k) => {
-            const lower = k.toLowerCase().replace(/[\s_\-\/]/g, "");
-            return lower.includes("sku") || lower.includes("asin");
-          });
-          const sku = rawSkuKey ? row[rawSkuKey] : (row["SKU/ASIN"] || row["SKU"] || row["ASIN"] || "ASIN B0X1");
-          const reviewer = row["ReviewerName"] || row["reviewer_name"] || row["Name"] || "";
-          const rating = parseInt(row["Rating"] || row["rating"] || "5", 10) || 5;
-          const reviewText = row["ReviewText"] || row["review_text"] || row["Comment"] || row["Review"] || "";
-
-          let checkStatus: ParsedPreviewRow["check"] = "Ready";
-          if (!reviewer.trim() || reviewer.toLowerCase().includes("missing")) {
-            checkStatus = "No name";
-            errors++;
-          } else {
-            const dupKey = `${reviewer}_${reviewText.substring(0, 30)}`.toLowerCase();
-            if (seenKeys.has(dupKey)) {
-              checkStatus = "Duplicate";
-              dupes++;
-            } else {
-              seenKeys.add(dupKey);
-              valid++;
-            }
+        // Auto-detect best matching column for each field
+        const findHeader = (candidates: string[]) => {
+          for (const c of candidates) {
+            const found = headers.find((h) => h.toLowerCase().replace(/[\s_\-\/]/g, "") === c.toLowerCase().replace(/[\s_\-\/]/g, ""));
+            if (found) return found;
           }
-
-          if (mappedRows.length < 4) {
-            mappedRows.push({
-              reviewer: reviewer || "(missing)",
-              rating,
-              review: reviewText.length > 70 ? reviewText.substring(0, 70) + "..." : (reviewText || "Authentic review text"),
-              product: sku || "ASIN B0X1",
-              check: checkStatus,
-            });
+          for (const c of candidates) {
+            const found = headers.find((h) => h.toLowerCase().includes(c.toLowerCase()));
+            if (found) return found;
           }
-        }
+          return "";
+        };
 
-        setParsedData({
-          rows: mappedRows,
-          validCount: valid,
-          duplicateCount: dupes,
-          errorCount: errors,
-          totalRows: rows.length,
-        });
+        const detectedReviewer = findHeader(["ReviewerName", "reviewer_name", "Reviewer", "Name", "Author", "Customer"]) || headers[0] || "";
+        const detectedRating = findHeader(["Rating", "rating", "Stars", "Score"]) || headers[1] || "";
+        const detectedText = findHeader(["ReviewText", "review_text", "Review", "Comment", "Body", "Feedback"]) || headers[2] || "";
+        const detectedSku = findHeader(["SKU/ASIN", "SKU", "ASIN", "sku", "asin", "Product SKU", "Item SKU"]) || "";
+        const detectedUrl = findHeader(["ExternalUrl", "external_url", "URL", "url", "Link", "ProductUrl"]) || "";
+
+        const mapping = {
+          reviewerName: detectedReviewer,
+          rating: detectedRating,
+          reviewText: detectedText,
+          sku: detectedSku,
+          externalUrl: detectedUrl,
+        };
+        setColumnMapping(mapping);
+
+        computePreview(rows, mapping);
       },
       error: (err) => {
         setErrorMessage(`CSV parse error: ${err.message}`);
@@ -375,21 +506,27 @@ export default function ImportReviewsPage() {
     }
   };
 
-  const handleDownloadTemplate = () => {
+  const handleDownloadTemplate = (type?: MarketplaceKey) => {
+    const targetType = type || sourceType;
     let csvContent = "";
-    if (sourceType === "IMPORTED_AMAZON") {
+    let fileName = "alibaba_reviews_template.csv";
+
+    if (targetType === "IMPORTED_AMAZON") {
       csvContent = "ASIN,ReviewerName,Rating,ReviewText,Date,ExternalUrl\nASIN_B0X1,Amit Joshi,4,\"Good set overall. Soft, absorbs water well, dries quickly...\",2026-10-01,https://amazon.com/dp/B0X1\nASIN_B0X1,Kavita Sharma,5,\"Really happy with this 6 piece cotton towel set. Beige looks elegant.\",2026-10-02,https://amazon.com/dp/B0X1";
-    } else if (sourceType === "IMPORTED_FLIPKART") {
+      fileName = "amazon_reviews_template.csv";
+    } else if (targetType === "IMPORTED_FLIPKART") {
       csvContent = "SKU,ReviewerName,Rating,ReviewText,Date,ExternalUrl\nFKP-7721,Rahul Mehta,4,\"Good quality cotton towels. Thickness decent hai aur colour fade nahi hua.\",2026-10-01,https://flipkart.com/p/fkp7721\nFKP-7721,Priya Patel,5,\"Towels bahut soft hain aur paani achhe se absorb karte hain. Superb quality!\",2026-10-03,https://flipkart.com/p/fkp7721";
+      fileName = "flipkart_reviews_template.csv";
     } else {
       csvContent = "SKU/ASIN,ReviewerName,Rating,ReviewText,Date,ExternalUrl\nASIN B0X1,Fatima Al-Sayed,4,\"Good quality towel sets at a competitive wholesale price point.\",2026-10-01,https://alibaba.com/product/B0X1\nASIN B0X1,Daniel Carter,5,\"Ordered several sets for guest rooms. 100% cotton weave is durable and soft.\",2026-10-02,https://alibaba.com/product/B0X1";
+      fileName = "alibaba_reviews_template.csv";
     }
 
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.setAttribute("download", `${currentMarketplace.name.toLowerCase()}_reviews_template.csv`);
+    link.setAttribute("download", fileName);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -397,9 +534,12 @@ export default function ImportReviewsPage() {
 
   const handleCancel = () => {
     setFile(null);
+    setRawParsedRows([]);
+    setCsvHeaders([]);
     setParsedData(null);
     setErrorMessage(null);
     setSuccessBanner(null);
+    setCurrentStep(1);
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
@@ -420,6 +560,7 @@ export default function ImportReviewsPage() {
       fd.append("overrideProductId", overrideProductId);
       fd.append("duplicates", duplicatesOption);
       fd.append("afterImport", afterImportOption);
+      fd.append("columnMapping", JSON.stringify(columnMapping));
 
       const res = await fetch("/api/import/csv", {
         method: "POST",
@@ -435,7 +576,10 @@ export default function ImportReviewsPage() {
         );
         setImportResult(data);
         setFile(null);
+        setRawParsedRows([]);
+        setCsvHeaders([]);
         setParsedData(null);
+        setCurrentStep(1);
         if (fileInputRef.current) fileInputRef.current.value = "";
         navigate(".", { replace: true });
       }
@@ -487,22 +631,31 @@ export default function ImportReviewsPage() {
     }
   };
 
-  // Filter history records for the Product History section
-  const filteredHistory = useMemo(() => {
-    if (selectedProductHistoryFilter === "ALL") {
-      return historyList;
-    }
-    return historyList.filter((h) => h.productId === selectedProductHistoryFilter);
-  }, [historyList, selectedProductHistoryFilter]);
+  // Close menus on click outside
+  useEffect(() => {
+    const handleClickOutside = () => setActiveMenuId(null);
+    window.addEventListener("click", handleClickOutside);
+    return () => window.removeEventListener("click", handleClickOutside);
+  }, []);
 
-  // Dynamic Product Spotlight summary based on REAL data
+  // Filter history records for Recent Imports table
+  const recentImports = useMemo(() => {
+    let list = historyList;
+    if (marketplaceFilter !== "ALL") {
+      list = list.filter((h) => h.sourceType.toUpperCase().includes(marketplaceFilter));
+    }
+    if (selectedProductHistoryFilter !== "ALL") {
+      list = list.filter((h) => h.productId === selectedProductHistoryFilter);
+    }
+    return list;
+  }, [historyList, marketplaceFilter, selectedProductHistoryFilter]);
+
+  // Product Spotlight summary for store owners
   const productSpotlight = useMemo(() => {
     if (historyList.length === 0) return null;
-
     const targetList = selectedProductHistoryFilter === "ALL"
       ? historyList
       : historyList.filter((h) => h.productId === selectedProductHistoryFilter);
-
     if (targetList.length === 0) return null;
 
     const firstItem = targetList[0];
@@ -511,10 +664,8 @@ export default function ImportReviewsPage() {
       ? historyList.filter((h) => h.productId === targetProdId)
       : targetList;
 
-    const prodTitle = firstItem.productTitle || "6 Piece Cotton Towel Set - Beige";
-
     return {
-      productTitle: prodTitle,
+      productTitle: firstItem.productTitle || "6 Piece Cotton Towel Set - Beige",
       productId: targetProdId,
       totalImported: prodHistory.reduce((s, h) => s + (h.reviewCount || 0), 0),
       amazonCount: prodHistory.filter((h) => h.sourceType.toLowerCase().includes("amazon")).reduce((s, h) => s + (h.reviewCount || 0), 0),
@@ -524,7 +675,6 @@ export default function ImportReviewsPage() {
     };
   }, [historyList, selectedProductHistoryFilter]);
 
-  // Unique products with import history for the dropdown
   const historyProducts = useMemo(() => {
     const map = new Map<string, string>();
     for (const h of historyList) {
@@ -536,88 +686,357 @@ export default function ImportReviewsPage() {
   }, [historyList]);
 
   return (
-    <Page fullWidth title="Marketplace Review Import (Module C)">
+    <Page fullWidth>
       <style>{`
-        .marketplace-card {
+        .import-page-wrapper {
+          max-width: 1200px;
+          margin: 0 auto;
+          padding: 8px 16px 64px 16px;
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+          color: #0f172a;
+        }
+
+        /* Top Page Header */
+        .page-title {
+          font-size: 24px;
+          font-weight: 700;
+          color: #0f172a;
+          margin: 0 0 4px 0;
+          letter-spacing: -0.015em;
+        }
+        .page-subtitle {
+          font-size: 14px;
+          color: #64748b;
+          margin: 0 0 24px 0;
+        }
+
+        /* Stepper Component */
+        .stepper-nav {
           display: flex;
           align-items: center;
-          gap: 16px;
-          padding: 18px 22px;
-          border-radius: 14px;
+          justify-content: flex-start;
+          gap: 12px;
+          margin-bottom: 24px;
+          padding: 8px 0;
+          overflow-x: auto;
+        }
+        .step-item {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          background: none;
+          border: none;
+          padding: 6px 10px;
+          border-radius: 8px;
           cursor: pointer;
-          background: #ffffff;
-          border: 1px solid #e2e8f0;
-          transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+          transition: all 0.15s ease;
           text-align: left;
+          flex-shrink: 0;
         }
-        .marketplace-card:hover {
-          border-color: #cbd5e1;
-          transform: translateY(-1px);
-          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-        }
-        .marketplace-card.active {
-          border: 2px solid #2563eb;
-          background: #eff6ff;
-          box-shadow: 0 4px 14px rgba(37, 99, 235, 0.12);
-        }
-        .dropzone-container {
-          border: 1.5px dashed #cbd5e1;
-          border-radius: 12px;
-          padding: 38px 20px;
-          background: #fbfcfe;
-          text-align: center;
-          cursor: pointer;
-          transition: all 0.2s ease;
-        }
-        .dropzone-container:hover {
-          border-color: #94a3b8;
+        .step-item:hover {
           background: #f8fafc;
         }
+        .step-badge {
+          width: 28px;
+          height: 28px;
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 13px;
+          font-weight: 700;
+          transition: all 0.2s ease;
+        }
+        .step-badge.active {
+          background: #2563eb;
+          color: #ffffff;
+          box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25);
+        }
+        .step-badge.inactive {
+          background: #ffffff;
+          border: 1.5px solid #cbd5e1;
+          color: #64748b;
+        }
+        .step-badge.completed {
+          background: #10b981;
+          color: #ffffff;
+        }
+        .step-text {
+          font-size: 14px;
+          font-weight: 600;
+          transition: color 0.15s ease;
+        }
+        .step-text.active {
+          color: #0f172a;
+        }
+        .step-text.inactive {
+          color: #64748b;
+        }
+        .step-divider {
+          flex: 1;
+          min-width: 40px;
+          max-width: 120px;
+          height: 1.5px;
+          background: #e2e8f0;
+          margin: 0 4px;
+        }
+        .step-divider.completed {
+          background: #2563eb;
+        }
+
+        /* Main Wizard Container Card */
+        .wizard-card {
+          background: #ffffff;
+          border: 1px solid #e2e8f0;
+          border-radius: 16px;
+          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+          margin-bottom: 32px;
+          overflow: hidden;
+        }
+
+        /* Step 1: Two Column Layout */
+        .step1-grid {
+          display: grid;
+          grid-template-columns: 1fr 340px;
+          min-height: 380px;
+        }
+        @media (max-width: 860px) {
+          .step1-grid {
+            grid-template-columns: 1fr;
+          }
+        }
+
+        /* Left Upload Dropzone */
+        .upload-dropzone-panel {
+          padding: 48px 32px;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          text-align: center;
+          cursor: pointer;
+          background: #ffffff;
+          border-right: 1px solid #f1f5f9;
+          transition: background 0.15s ease;
+        }
+        .upload-dropzone-panel:hover {
+          background: #fbfcfe;
+        }
+        @media (max-width: 860px) {
+          .upload-dropzone-panel {
+            border-right: none;
+            border-bottom: 1px solid #f1f5f9;
+          }
+        }
+
+        .upload-cloud-icon {
+          width: 56px;
+          height: 56px;
+          border-radius: 50%;
+          background: #eff6ff;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          margin-bottom: 18px;
+          color: #2563eb;
+          transition: transform 0.2s ease;
+        }
+        .upload-dropzone-panel:hover .upload-cloud-icon {
+          transform: translateY(-2px);
+        }
+
+        .upload-main-title {
+          font-size: 18px;
+          font-weight: 700;
+          color: #0f172a;
+          margin: 0 0 6px 0;
+        }
+        .upload-subtitle-text {
+          font-size: 14px;
+          color: #64748b;
+          margin: 0 0 6px 0;
+        }
+        .upload-format-tag {
+          font-size: 12px;
+          color: #94a3b8;
+          margin: 0 0 20px 0;
+        }
+
+        .btn-choose-file {
+          background: #2563eb;
+          color: #ffffff;
+          border: none;
+          border-radius: 8px;
+          padding: 10px 24px;
+          font-size: 14px;
+          font-weight: 600;
+          cursor: pointer;
+          box-shadow: 0 1px 3px rgba(37, 99, 235, 0.25);
+          transition: all 0.15s ease;
+        }
+        .btn-choose-file:hover {
+          background: #1d4ed8;
+          box-shadow: 0 3px 8px rgba(37, 99, 235, 0.35);
+        }
+
+        /* Right Sidebar Panel */
+        .sample-sidebar-panel {
+          padding: 36px 30px;
+          display: flex;
+          flex-direction: column;
+          justify-content: space-between;
+          background: #ffffff;
+        }
+        .sample-section-title {
+          font-size: 15px;
+          font-weight: 700;
+          color: #0f172a;
+          margin: 0 0 6px 0;
+        }
+        .sample-section-desc {
+          font-size: 13px;
+          color: #64748b;
+          line-height: 1.45;
+          margin: 0 0 16px 0;
+        }
+        .btn-download-template {
+          background: #ffffff;
+          border: 1px solid #e2e8f0;
+          border-radius: 8px;
+          padding: 8px 16px;
+          font-size: 13px;
+          font-weight: 600;
+          color: #334155;
+          cursor: pointer;
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+          transition: all 0.15s ease;
+        }
+        .btn-download-template:hover {
+          background: #f8fafc;
+          border-color: #cbd5e1;
+        }
+
+        .supported-marketplaces-header {
+          font-size: 13px;
+          font-weight: 600;
+          color: #64748b;
+          margin: 0 0 12px 0;
+        }
+        .marketplaces-pill-list {
+          display: flex;
+          align-items: center;
+          gap: 14px;
+          flex-wrap: wrap;
+        }
+        .marketplace-chip {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          padding: 6px 12px;
+          border-radius: 8px;
+          border: 1px solid transparent;
+          background: #f8fafc;
+          cursor: pointer;
+          font-size: 13px;
+          font-weight: 600;
+          color: #1e293b;
+          transition: all 0.15s ease;
+        }
+        .marketplace-chip:hover {
+          background: #f1f5f9;
+        }
+        .marketplace-chip.active {
+          border-color: #2563eb;
+          background: #eff6ff;
+          color: #1d4ed8;
+        }
+
+        /* Step 2 & 3 General Container */
+        .wizard-step-content {
+          padding: 32px;
+        }
+
         .custom-select {
           width: 100%;
           background: #ffffff;
           border: 1px solid #cbd5e1;
           border-radius: 8px;
-          padding: 10px 14px;
-          font-size: 14px;
+          padding: 9px 12px;
+          font-size: 13.5px;
           color: #0f172a;
           outline: none;
-          appearance: auto;
           cursor: pointer;
           transition: border-color 0.15s ease;
         }
         .custom-select:focus {
           border-color: #2563eb;
-          box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+          box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
         }
-        .preview-table {
+
+        /* Tables */
+        .clean-table {
           width: 100%;
           border-collapse: collapse;
           font-size: 14px;
         }
-        .preview-table th {
+        .clean-table th {
           text-align: left;
           padding: 12px 16px;
           color: #64748b;
           font-weight: 600;
-          border-bottom: 1px solid #e2e8f0;
           font-size: 13px;
+          border-bottom: 1px solid #e2e8f0;
+          background: #fafafa;
         }
-        .preview-table td {
-          padding: 16px 16px;
+        .clean-table td {
+          padding: 14px 16px;
           border-bottom: 1px solid #f1f5f9;
           vertical-align: middle;
           color: #0f172a;
         }
-        .badge-pill {
+
+        /* Status Pills */
+        .status-pill {
           display: inline-flex;
           align-items: center;
-          padding: 3px 12px;
+          gap: 6px;
+          padding: 3px 10px;
           border-radius: 9999px;
           font-size: 12px;
           font-weight: 600;
         }
+        .status-pill.imported {
+          background: #ecfdf5;
+          color: #059669;
+        }
+        .status-pill.processing {
+          background: #eff6ff;
+          color: #2563eb;
+        }
+        .status-pill.needs_mapping {
+          background: #fef3c7;
+          color: #92400e;
+        }
+        .status-dot {
+          width: 6px;
+          height: 6px;
+          border-radius: 50%;
+          display: inline-block;
+        }
+        .status-dot.green {
+          background: #10b981;
+        }
+        .status-dot.blue {
+          background: #3b82f6;
+        }
+        .status-dot.yellow {
+          background: #f59e0b;
+        }
+
+        /* Action Buttons */
         .btn-cancel {
           background: #ffffff;
           border: 1px solid #cbd5e1;
@@ -633,13 +1052,9 @@ export default function ImportReviewsPage() {
           background: #f8fafc;
           border-color: #94a3b8;
         }
-        .btn-cancel:disabled {
-          opacity: 0.5;
-          cursor: not-allowed;
-        }
-        .btn-import {
-          background: #0f172a;
-          border: 1px solid #0f172a;
+        .btn-primary-blue {
+          background: #2563eb;
+          border: 1px solid #2563eb;
           color: #ffffff;
           font-size: 14px;
           font-weight: 600;
@@ -649,35 +1064,38 @@ export default function ImportReviewsPage() {
           display: inline-flex;
           align-items: center;
           gap: 8px;
+          box-shadow: 0 1px 3px rgba(37, 99, 235, 0.25);
           transition: all 0.15s ease;
         }
-        .btn-import:hover:not(:disabled) {
-          background: #1e293b;
+        .btn-primary-blue:hover:not(:disabled) {
+          background: #1d4ed8;
+          border-color: #1d4ed8;
         }
-        .btn-import:disabled {
-          opacity: 0.5;
+        .btn-primary-blue:disabled {
+          opacity: 0.55;
           cursor: not-allowed;
           background: #94a3b8;
           border-color: #94a3b8;
+          box-shadow: none;
         }
-        .history-table th {
-          text-align: left;
-          padding: 12px 14px;
-          color: #475569;
-          font-weight: 600;
-          font-size: 13px;
-          border-bottom: 2px solid #e2e8f0;
-          background: #f8fafc;
+
+        .icon-menu-btn {
+          background: none;
+          border: none;
+          color: #64748b;
+          font-size: 18px;
+          cursor: pointer;
+          padding: 4px 8px;
+          border-radius: 6px;
+          line-height: 1;
         }
-        .history-table td {
-          padding: 14px 14px;
-          border-bottom: 1px solid #e2e8f0;
-          font-size: 13px;
-          vertical-align: middle;
+        .icon-menu-btn:hover {
+          background: #f1f5f9;
+          color: #0f172a;
         }
       `}</style>
 
-      <div style={{ maxWidth: "100%", width: "100%", margin: "0 auto", paddingBottom: "48px" }}>
+      <div className="import-page-wrapper">
         {/* Alerts & Notifications */}
         {successBanner && (
           <div style={{ marginBottom: "20px" }}>
@@ -695,496 +1113,628 @@ export default function ImportReviewsPage() {
           </div>
         )}
 
-        {/* 1. TOP SECTION: 3 Marketplace Cards with REAL DYNAMIC COUNTS */}
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
-            gap: "16px",
-            marginBottom: "22px",
-          }}
-        >
-          {marketplaces.map((m) => {
-            const isActive = sourceType === m.key;
-            return (
-              <button
-                key={m.key}
-                type="button"
-                className={`marketplace-card ${isActive ? "active" : ""}`}
-                onClick={() => {
-                  setSourceType(m.key);
-                  setFile(null);
-                  setParsedData(null);
-                  setErrorMessage(null);
-                }}
-              >
-                {/* Marketplace Icon Box */}
-                <div
-                  style={{
-                    width: "48px",
-                    height: "48px",
-                    borderRadius: "12px",
-                    background: m.iconBg,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    flexShrink: 0,
-                  }}
-                >
-                  {m.key === "IMPORTED_AMAZON" && (
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                      <path
-                        d="M3 13.5C7.5 17 14 17 19.5 13.5M16.5 13.5C18.5 14 20.5 14.5 21 14.2C21.2 13.7 20.2 12.5 19.5 11.5"
-                        stroke={m.iconColor}
-                        strokeWidth="2.2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                  )}
-                  {m.key === "IMPORTED_FLIPKART" && (
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                      <path
-                        d="M6 8V6C6 4.34315 7.34315 3 9 3H15C16.6569 3 18 4.34315 18 6V8M4 8H20L19 21H5L4 8Z"
-                        stroke={m.iconColor}
-                        strokeWidth="2.2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                  )}
-                  {m.key === "IMPORTED_ALIBABA" && (
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                      <path
-                        d="M3 9L4 4H20L21 9M3 9V20H21V9M3 9H21M8 14H16M8 17H12"
-                        stroke={m.iconColor}
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                  )}
-                </div>
-
-                {/* Marketplace Text: Real dynamic imported count */}
-                <div>
-                  <div style={{ fontSize: "16px", fontWeight: 700, color: "#0f172a" }}>
-                    {m.name}
-                  </div>
-                  <div style={{ fontSize: "13px", color: "#64748b", marginTop: "2px" }}>
-                    {m.count} imported
-                  </div>
-                </div>
-              </button>
-            );
-          })}
+        {/* 1. TOP HEADER */}
+        <div>
+          <h1 className="page-title">Import reviews from marketplace</h1>
+          <p className="page-subtitle">
+            Upload CSV files or connect your marketplace to import and manage product reviews.
+          </p>
         </div>
 
-        {/* 2. MIDDLE SECTION: Two Columns Grid */}
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
-            gap: "20px",
-            marginBottom: "24px",
-          }}
-        >
-          {/* LEFT COLUMN: Upload Card */}
-          <div
-            style={{
-              background: "#ffffff",
-              border: "1px solid #e2e8f0",
-              borderRadius: "14px",
-              padding: "24px",
-              boxShadow: "0 1px 3px rgba(0,0,0,0.02)",
-              display: "flex",
-              flexDirection: "column",
+        {/* 2. STEPPER BAR (Circled in user reference) */}
+        <div className="stepper-nav">
+          {/* Step 1: Upload file */}
+          <button
+            type="button"
+            className="step-item"
+            onClick={() => setCurrentStep(1)}
+          >
+            <div
+              className={`step-badge ${
+                currentStep === 1
+                  ? "active"
+                  : file
+                  ? "completed"
+                  : "inactive"
+              }`}
+            >
+              {file && currentStep !== 1 ? "✓" : "1"}
+            </div>
+            <span className={`step-text ${currentStep === 1 ? "active" : "inactive"}`}>
+              Upload file
+            </span>
+          </button>
+
+          <div className={`step-divider ${currentStep > 1 ? "completed" : ""}`} />
+
+          {/* Step 2: Map columns */}
+          <button
+            type="button"
+            className="step-item"
+            onClick={() => {
+              if (file) setCurrentStep(2);
+              else setErrorMessage("Please choose or drop a CSV file first.");
             }}
           >
-            {/* Header: Title + Download Template */}
             <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                marginBottom: "20px",
-                flexWrap: "wrap",
-                gap: "12px",
-              }}
+              className={`step-badge ${
+                currentStep === 2
+                  ? "active"
+                  : currentStep > 2
+                  ? "completed"
+                  : "inactive"
+              }`}
             >
-              <h2 style={{ fontSize: "17px", fontWeight: 700, color: "#0f172a", margin: 0 }}>
-                {`Upload ${currentMarketplace.name} reviews CSV`}
-              </h2>
-              <button
-                type="button"
-                onClick={handleDownloadTemplate}
-                style={{
-                  background: "#ffffff",
-                  border: "1px solid #cbd5e1",
-                  borderRadius: "8px",
-                  padding: "7px 14px",
-                  fontSize: "13px",
-                  fontWeight: 600,
-                  color: "#334155",
-                  cursor: "pointer",
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "6px",
-                  boxShadow: "0 1px 2px rgba(0,0,0,0.02)",
-                }}
-              >
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-                Download template
-              </button>
+              {currentStep > 2 ? "✓" : "2"}
             </div>
+            <span className={`step-text ${currentStep === 2 ? "active" : "inactive"}`}>
+              Map columns
+            </span>
+          </button>
 
-            {/* Hidden File Input */}
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".csv"
-              style={{ display: "none" }}
-              onChange={(e) => {
-                if (e.target.files && e.target.files.length > 0) {
-                  handleFileChosen(e.target.files[0]);
-                }
-              }}
-            />
+          <div className={`step-divider ${currentStep > 2 ? "completed" : ""}`} />
 
-            {/* Dashed Dropzone */}
-            <div
-              className="dropzone-container"
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={handleDrop}
-              onClick={() => fileInputRef.current?.click()}
-            >
-              {file ? (
-                <div>
-                  <div
-                    style={{
-                      width: "48px",
-                      height: "48px",
-                      borderRadius: "12px",
-                      background: "#dcfce7",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      margin: "0 auto 12px auto",
-                    }}
-                  >
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#166534" strokeWidth="2.2">
-                      <path d="M20 6L9 17l-5-5" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                  </div>
-                  <div style={{ fontSize: "15px", fontWeight: 700, color: "#0f172a" }}>
-                    {file.name}
-                  </div>
-                  <div style={{ fontSize: "13px", color: "#64748b", marginTop: "4px" }}>
-                    {(file.size / 1024).toFixed(1)} KB • {parsedData?.totalRows || 0} reviews detected
-                  </div>
-                  <button
-                    type="button"
-                    style={{
-                      marginTop: "14px",
-                      background: "#ffffff",
-                      border: "1px solid #cbd5e1",
-                      borderRadius: "8px",
-                      padding: "6px 14px",
-                      fontSize: "12px",
-                      fontWeight: 600,
-                      color: "#334155",
-                      cursor: "pointer",
-                    }}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      fileInputRef.current?.click();
-                    }}
-                  >
-                    Change file
-                  </button>
-                </div>
-              ) : (
-                <div>
-                  <div
-                    style={{
-                      width: "48px",
-                      height: "48px",
-                      borderRadius: "12px",
-                      background: "#dbeafe",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      margin: "0 auto 14px auto",
-                    }}
-                  >
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2">
-                      <path
-                        d="M16 16L12 12M12 12L8 16M12 12V21M20.39 18.39A5 5 0 0018 9H16.74A8 8 0 103 16.3"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                  </div>
-                  <div style={{ fontSize: "16px", fontWeight: 700, color: "#0f172a" }}>
-                    Drag and drop your CSV here
-                  </div>
-                  <div style={{ fontSize: "13px", color: "#64748b", marginTop: "4px", marginBottom: "16px" }}>
-                    or click to browse. Max 5 MB
-                  </div>
-                  <button
-                    type="button"
-                    style={{
-                      background: "#ffffff",
-                      border: "1px solid #cbd5e1",
-                      borderRadius: "8px",
-                      padding: "7px 18px",
-                      fontSize: "13px",
-                      fontWeight: 600,
-                      color: "#0f172a",
-                      cursor: "pointer",
-                      boxShadow: "0 1px 2px rgba(0,0,0,0.02)",
-                    }}
-                  >
-                    Add file
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* RIGHT COLUMN: Settings Card */}
-          <div
-            style={{
-              background: "#ffffff",
-              border: "1px solid #e2e8f0",
-              borderRadius: "14px",
-              padding: "24px",
-              boxShadow: "0 1px 3px rgba(0,0,0,0.02)",
+          {/* Step 3: Review & import */}
+          <button
+            type="button"
+            className="step-item"
+            onClick={() => {
+              if (file) setCurrentStep(3);
+              else setErrorMessage("Please choose or drop a CSV file first.");
             }}
           >
-            <h2 style={{ fontSize: "17px", fontWeight: 700, color: "#0f172a", margin: "0 0 18px 0" }}>
-              Settings
-            </h2>
-
-            {/* Field 1: Assign to product */}
-            <div style={{ marginBottom: "18px" }}>
-              <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#475569", marginBottom: "6px" }}>
-                Assign to product
-              </label>
-              <select
-                className="custom-select"
-                value={overrideProductId}
-                onChange={(e) => setOverrideProductId(e.target.value)}
-              >
-                <option value="">Auto-detect by SKU / ASIN</option>
-                {products.map((p) => (
-                  <option key={p.value} value={p.value}>
-                    {p.title} ({p.handle})
-                  </option>
-                ))}
-              </select>
+            <div className={`step-badge ${currentStep === 3 ? "active" : "inactive"}`}>
+              3
             </div>
-
-            {/* Field 2: Duplicates */}
-            <div style={{ marginBottom: "18px" }}>
-              <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#475569", marginBottom: "6px" }}>
-                Duplicates
-              </label>
-              <select
-                className="custom-select"
-                value={duplicatesOption}
-                onChange={(e) => setDuplicatesOption(e.target.value)}
-              >
-                <option value="skip">Skip existing reviews</option>
-                <option value="overwrite">Overwrite existing reviews</option>
-              </select>
-            </div>
-
-            {/* Field 3: After import */}
-            <div>
-              <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#475569", marginBottom: "6px" }}>
-                After import
-              </label>
-              <select
-                className="custom-select"
-                value={afterImportOption}
-                onChange={(e) => setAfterImportOption(e.target.value)}
-              >
-                <option value="pending">Save as Pending</option>
-                <option value="publish">Publish immediately</option>
-              </select>
-            </div>
-          </div>
+            <span className={`step-text ${currentStep === 3 ? "active" : "inactive"}`}>
+              Review & import
+            </span>
+          </button>
         </div>
 
-        {/* 3. PREVIEW SECTION (Real Dynamic Data Only!) */}
-        <div
-          style={{
-            background: "#ffffff",
-            border: "1px solid #e2e8f0",
-            borderRadius: "14px",
-            padding: "24px",
-            boxShadow: "0 1px 3px rgba(0,0,0,0.02)",
-            marginBottom: "24px",
+        {/* Hidden File Input */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".csv"
+          style={{ display: "none" }}
+          onChange={(e) => {
+            if (e.target.files && e.target.files.length > 0) {
+              handleFileChosen(e.target.files[0]);
+            }
           }}
-        >
-          {/* Header Row: Title & Badges */}
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginBottom: "16px",
-              flexWrap: "wrap",
-              gap: "12px",
-            }}
-          >
-            <h3 style={{ fontSize: "17px", fontWeight: 700, color: "#0f172a", margin: 0 }}>
-              {parsedData ? `Preview (first ${parsedData.rows.length} rows)` : "Preview (Upload CSV to preview)"}
-            </h3>
+        />
 
-            {parsedData ? (
-              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                <span className="badge-pill" style={{ background: "#dcfce7", color: "#166534" }}>
-                  {parsedData.validCount} valid
-                </span>
-                <span className="badge-pill" style={{ background: "#fef3c7", color: "#92400e" }}>
-                  {parsedData.duplicateCount} duplicates
-                </span>
-                <span className="badge-pill" style={{ background: "#fee2e2", color: "#991b1b" }}>
-                  {parsedData.errorCount} error
-                </span>
+        {/* 3. WIZARD MAIN CARD (Matches Reference Design) */}
+        <div className="wizard-card">
+          {/* STEP 1: UPLOAD FILE */}
+          {currentStep === 1 && (
+            <div className="step1-grid">
+              {/* Left Column: Upload Dropzone */}
+              <div
+                className="upload-dropzone-panel"
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={handleDrop}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                {file ? (
+                  <div style={{ maxWidth: "420px", width: "100%" }}>
+                    <div
+                      style={{
+                        width: "56px",
+                        height: "56px",
+                        borderRadius: "50%",
+                        background: "#ecfdf5",
+                        color: "#059669",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        margin: "0 auto 16px auto",
+                      }}
+                    >
+                      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
+                        <path d="M20 6L9 17l-5-5" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </div>
+                    <h3 className="upload-main-title">{file.name}</h3>
+                    <p className="upload-subtitle-text">
+                      {(file.size / 1024).toFixed(1)} KB • {parsedData?.totalRows || 0} reviews detected
+                    </p>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "10px", marginTop: "20px" }}>
+                      <button
+                        type="button"
+                        className="btn-cancel"
+                        style={{ padding: "8px 16px", fontSize: "13px" }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          fileInputRef.current?.click();
+                        }}
+                      >
+                        Change file
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-primary-blue"
+                        style={{ padding: "8px 18px", fontSize: "13px" }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setCurrentStep(2);
+                        }}
+                      >
+                        Continue to Map Columns →
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <div className="upload-cloud-icon">
+                      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path
+                          d="M16 16L12 12M12 12L8 16M12 12V21M20.39 18.39A5 5 0 0018 9H16.74A8 8 0 103 16.3"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    </div>
+                    <h3 className="upload-main-title">Upload CSV file</h3>
+                    <p className="upload-subtitle-text">
+                      Drag and drop your file here, or click to browse.
+                    </p>
+                    <div className="upload-format-tag">
+                      CSV format • Max 5 MB
+                    </div>
+                    <button
+                      type="button"
+                      className="btn-choose-file"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        fileInputRef.current?.click();
+                      }}
+                    >
+                      Choose file
+                    </button>
+                  </div>
+                )}
               </div>
-            ) : (
-              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                <span className="badge-pill" style={{ background: "#f1f5f9", color: "#64748b" }}>
-                  No CSV file selected
-                </span>
-              </div>
-            )}
-          </div>
 
-          {/* Table / Empty State */}
-          {parsedData && parsedData.rows.length > 0 ? (
-            <div style={{ overflowX: "auto" }}>
-              <table className="preview-table">
-                <thead>
-                  <tr>
-                    <th style={{ width: "18%" }}>Reviewer</th>
-                    <th style={{ width: "12%" }}>Rating</th>
-                    <th style={{ width: "42%" }}>Review</th>
-                    <th style={{ width: "16%" }}>Product</th>
-                    <th style={{ width: "12%" }}>Check</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {parsedData.rows.map((row, idx) => (
-                    <tr key={idx}>
-                      <td style={{ fontWeight: row.reviewer === "(missing)" ? 400 : 600, color: row.reviewer === "(missing)" ? "#94a3b8" : "#0f172a", fontStyle: row.reviewer === "(missing)" ? "italic" : "normal" }}>
-                        {row.reviewer}
-                      </td>
-                      <td>
-                        <span style={{ color: "#d97706", fontSize: "15px", letterSpacing: "2px" }}>
-                          {"★".repeat(row.rating)}
-                          <span style={{ color: "#cbd5e1" }}>{"★".repeat(Math.max(0, 5 - row.rating))}</span>
-                        </span>
-                      </td>
-                      <td style={{ color: "#334155" }}>
-                        {row.review}
-                      </td>
-                      <td style={{ color: "#475569", fontWeight: 500 }}>
-                        {row.product}
-                      </td>
-                      <td>
-                        {row.check === "Ready" && (
-                          <span className="badge-pill" style={{ background: "#dcfce7", color: "#166534" }}>
-                            Ready
-                          </span>
-                        )}
-                        {row.check === "Duplicate" && (
-                          <span className="badge-pill" style={{ background: "#fef3c7", color: "#92400e" }}>
-                            Duplicate
-                          </span>
-                        )}
-                        {(row.check === "No name" || row.check === "Error") && (
-                          <span className="badge-pill" style={{ background: "#fee2e2", color: "#991b1b" }}>
-                            {row.check}
-                          </span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div style={{ textAlign: "center", padding: "44px 20px", color: "#64748b", background: "#f8fafc", borderRadius: "10px", border: "1px dashed #e2e8f0" }}>
-              <div style={{ width: "44px", height: "44px", borderRadius: "10px", background: "#ffffff", border: "1px solid #e2e8f0", margin: "0 auto 12px auto", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2">
-                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                  <polyline points="14 2 14 8 20 8" />
-                  <line x1="16" y1="13" x2="8" y2="13" />
-                  <line x1="16" y1="17" x2="8" y2="17" />
-                  <polyline points="10 9 9 9 8 9" />
-                </svg>
-              </div>
-              <div style={{ fontSize: "15px", fontWeight: 600, color: "#0f172a" }}>
-                No CSV file selected
-              </div>
-              <div style={{ fontSize: "13px", marginTop: "4px" }}>
-                Drag and drop or upload a {currentMarketplace.name} reviews CSV file above to preview rows before importing.
+              {/* Right Column: Need a Sample & Supported Marketplaces */}
+              <div className="sample-sidebar-panel">
+                <div>
+                  <h4 className="sample-section-title">Need a sample?</h4>
+                  <p className="sample-section-desc">
+                    Download our CSV template to see the required format.
+                  </p>
+                  <button
+                    type="button"
+                    className="btn-download-template"
+                    onClick={() => handleDownloadTemplate()}
+                  >
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                    Download template
+                  </button>
+                </div>
+
+                <div style={{ marginTop: "32px", paddingTop: "24px", borderTop: "1px solid #f1f5f9" }}>
+                  <div className="supported-marketplaces-header">
+                    Supported marketplaces
+                  </div>
+                  <div className="marketplaces-pill-list">
+                    {marketplaces.map((m) => {
+                      const isSelected = sourceType === m.key;
+                      return (
+                        <div
+                          key={m.key}
+                          className={`marketplace-chip ${isSelected ? "active" : ""}`}
+                          onClick={() => setSourceType(m.key)}
+                          title={`${m.name}: ${m.count} imported`}
+                        >
+                          {m.icon}
+                          <span>{m.name}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
             </div>
           )}
 
-          {/* Action Footer */}
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginTop: "24px",
-              paddingTop: "16px",
-              borderTop: "1px solid #f1f5f9",
-              flexWrap: "wrap",
-              gap: "16px",
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: "6px", color: "#64748b", fontSize: "13px" }}>
-              <span>ⓘ Only import reviews of your own products. Text is kept exactly as written.</span>
-            </div>
+          {/* STEP 2: MAP COLUMNS & SETTINGS */}
+          {currentStep === 2 && (
+            <div className="wizard-step-content">
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "24px", flexWrap: "wrap", gap: "12px" }}>
+                <div>
+                  <h3 style={{ fontSize: "18px", fontWeight: 700, color: "#0f172a", margin: "0 0 4px 0" }}>
+                    Map columns & configure import
+                  </h3>
+                  <p style={{ fontSize: "13px", color: "#64748b", margin: 0 }}>
+                    Match headers from <span style={{ fontWeight: 600, color: "#0f172a" }}>{file?.name || "your CSV"}</span> to review fields and set import rules.
+                  </p>
+                </div>
 
-            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-              <button
-                type="button"
-                className="btn-cancel"
-                onClick={handleCancel}
-                disabled={!file || loading}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="btn-import"
-                onClick={handleExecuteImport}
-                disabled={!file || loading || (parsedData?.validCount || 0) === 0}
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-                {loading
-                  ? "Importing reviews..."
-                  : parsedData
-                  ? `Import ${parsedData.validCount} reviews`
-                  : "Import reviews"}
-              </button>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <span style={{ fontSize: "12px", color: "#64748b" }}>Target Marketplace:</span>
+                  <div style={{ display: "inline-flex", gap: "6px" }}>
+                    {marketplaces.map((m) => (
+                      <button
+                        key={m.key}
+                        type="button"
+                        onClick={() => setSourceType(m.key)}
+                        style={{
+                          background: sourceType === m.key ? "#eff6ff" : "#ffffff",
+                          border: `1px solid ${sourceType === m.key ? "#2563eb" : "#cbd5e1"}`,
+                          borderRadius: "6px",
+                          padding: "4px 10px",
+                          fontSize: "12px",
+                          fontWeight: 600,
+                          color: sourceType === m.key ? "#1d4ed8" : "#334155",
+                          cursor: "pointer",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "6px",
+                        }}
+                      >
+                        {m.icon}
+                        {m.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "24px", marginBottom: "28px" }}>
+                {/* Column Mapping Section */}
+                <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "12px", padding: "20px" }}>
+                  <h4 style={{ fontSize: "15px", fontWeight: 700, color: "#0f172a", margin: "0 0 14px 0" }}>
+                    Column Mapping
+                  </h4>
+
+                  <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+                    {/* Reviewer Name */}
+                    <div>
+                      <label style={{ display: "flex", justifyContent: "space-between", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "4px" }}>
+                        <span>Reviewer Name <span style={{ color: "#dc2626" }}>*</span></span>
+                        {rawParsedRows[0] && columnMapping.reviewerName && (
+                          <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 400 }}>
+                            e.g. "{rawParsedRows[0][columnMapping.reviewerName] || "Amit Joshi"}"
+                          </span>
+                        )}
+                      </label>
+                      <select
+                        className="custom-select"
+                        value={columnMapping.reviewerName}
+                        onChange={(e) => {
+                          const updated = { ...columnMapping, reviewerName: e.target.value };
+                          setColumnMapping(updated);
+                          computePreview(rawParsedRows, updated);
+                        }}
+                      >
+                        {csvHeaders.map((h) => (
+                          <option key={h} value={h}>{h}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Star Rating */}
+                    <div>
+                      <label style={{ display: "flex", justifyContent: "space-between", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "4px" }}>
+                        <span>Rating (1-5 Stars) <span style={{ color: "#dc2626" }}>*</span></span>
+                        {rawParsedRows[0] && columnMapping.rating && (
+                          <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 400 }}>
+                            e.g. "{rawParsedRows[0][columnMapping.rating] || "5"}"
+                          </span>
+                        )}
+                      </label>
+                      <select
+                        className="custom-select"
+                        value={columnMapping.rating}
+                        onChange={(e) => {
+                          const updated = { ...columnMapping, rating: e.target.value };
+                          setColumnMapping(updated);
+                          computePreview(rawParsedRows, updated);
+                        }}
+                      >
+                        {csvHeaders.map((h) => (
+                          <option key={h} value={h}>{h}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Review Text */}
+                    <div>
+                      <label style={{ display: "flex", justifyContent: "space-between", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "4px" }}>
+                        <span>Review Content <span style={{ color: "#dc2626" }}>*</span></span>
+                        {rawParsedRows[0] && columnMapping.reviewText && (
+                          <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 400, maxWidth: "160px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            e.g. "{rawParsedRows[0][columnMapping.reviewText] || "Good quality..."}"
+                          </span>
+                        )}
+                      </label>
+                      <select
+                        className="custom-select"
+                        value={columnMapping.reviewText}
+                        onChange={(e) => {
+                          const updated = { ...columnMapping, reviewText: e.target.value };
+                          setColumnMapping(updated);
+                          computePreview(rawParsedRows, updated);
+                        }}
+                      >
+                        {csvHeaders.map((h) => (
+                          <option key={h} value={h}>{h}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Product SKU / ASIN */}
+                    <div>
+                      <label style={{ display: "flex", justifyContent: "space-between", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "4px" }}>
+                        <span>Product SKU / ASIN</span>
+                        {rawParsedRows[0] && columnMapping.sku && (
+                          <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 400 }}>
+                            e.g. "{rawParsedRows[0][columnMapping.sku] || "ASIN_B0X1"}"
+                          </span>
+                        )}
+                      </label>
+                      <select
+                        className="custom-select"
+                        value={columnMapping.sku}
+                        onChange={(e) => {
+                          const updated = { ...columnMapping, sku: e.target.value };
+                          setColumnMapping(updated);
+                          computePreview(rawParsedRows, updated);
+                        }}
+                      >
+                        <option value="">-- None / Auto Match --</option>
+                        {csvHeaders.map((h) => (
+                          <option key={h} value={h}>{h}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Import Settings Section */}
+                <div style={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: "12px", padding: "20px" }}>
+                  <h4 style={{ fontSize: "15px", fontWeight: 700, color: "#0f172a", margin: "0 0 14px 0" }}>
+                    Import Settings
+                  </h4>
+
+                  <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                    {/* Assign to product */}
+                    <div>
+                      <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#475569", marginBottom: "6px" }}>
+                        Assign to product
+                      </label>
+                      <select
+                        className="custom-select"
+                        value={overrideProductId}
+                        onChange={(e) => setOverrideProductId(e.target.value)}
+                      >
+                        <option value="">Auto-detect by SKU / ASIN</option>
+                        {products.map((p) => (
+                          <option key={p.value} value={p.value}>
+                            {p.title} ({p.handle})
+                          </option>
+                        ))}
+                      </select>
+                      <p style={{ fontSize: "11px", color: "#64748b", margin: "4px 0 0 0" }}>
+                        Leave on Auto-detect to match SKUs in the CSV to your Shopify inventory.
+                      </p>
+                    </div>
+
+                    {/* Duplicates */}
+                    <div>
+                      <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#475569", marginBottom: "6px" }}>
+                        Duplicates
+                      </label>
+                      <select
+                        className="custom-select"
+                        value={duplicatesOption}
+                        onChange={(e) => setDuplicatesOption(e.target.value)}
+                      >
+                        <option value="skip">Skip existing reviews</option>
+                        <option value="overwrite">Overwrite existing reviews</option>
+                      </select>
+                    </div>
+
+                    {/* After import */}
+                    <div>
+                      <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#475569", marginBottom: "6px" }}>
+                        After import
+                      </label>
+                      <select
+                        className="custom-select"
+                        value={afterImportOption}
+                        onChange={(e) => setAfterImportOption(e.target.value)}
+                      >
+                        <option value="pending">Save as Pending</option>
+                        <option value="publish">Publish immediately</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Navigation Footer */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: "18px", borderTop: "1px solid #f1f5f9" }}>
+                <button
+                  type="button"
+                  className="btn-cancel"
+                  onClick={() => setCurrentStep(1)}
+                >
+                  ← Back to Upload
+                </button>
+
+                <button
+                  type="button"
+                  className="btn-primary-blue"
+                  onClick={() => setCurrentStep(3)}
+                >
+                  Continue to Review & Import →
+                </button>
+              </div>
             </div>
-          </div>
+          )}
+
+          {/* STEP 3: REVIEW & IMPORT */}
+          {currentStep === 3 && (
+            <div className="wizard-step-content">
+              {/* Header Row: Title & Badges */}
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  marginBottom: "20px",
+                  flexWrap: "wrap",
+                  gap: "12px",
+                }}
+              >
+                <div>
+                  <h3 style={{ fontSize: "18px", fontWeight: 700, color: "#0f172a", margin: "0 0 4px 0" }}>
+                    Review & confirm import
+                  </h3>
+                  <p style={{ fontSize: "13px", color: "#64748b", margin: 0 }}>
+                    Previewing {parsedData?.rows.length || 0} of {parsedData?.totalRows || 0} rows from {file?.name}
+                  </p>
+                </div>
+
+                {parsedData ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <span className="status-pill" style={{ background: "#dcfce7", color: "#166534" }}>
+                      {parsedData.validCount} valid
+                    </span>
+                    <span className="status-pill" style={{ background: "#fef3c7", color: "#92400e" }}>
+                      {parsedData.duplicateCount} duplicates
+                    </span>
+                    {parsedData.errorCount > 0 && (
+                      <span className="status-pill" style={{ background: "#fee2e2", color: "#991b1b" }}>
+                        {parsedData.errorCount} errors
+                      </span>
+                    )}
+                  </div>
+                ) : (
+                  <span className="status-pill" style={{ background: "#f1f5f9", color: "#64748b" }}>
+                    No file selected
+                  </span>
+                )}
+              </div>
+
+              {/* Table / Empty State */}
+              {parsedData && parsedData.rows.length > 0 ? (
+                <div style={{ overflowX: "auto", border: "1px solid #e2e8f0", borderRadius: "10px", marginBottom: "20px" }}>
+                  <table className="clean-table">
+                    <thead>
+                      <tr>
+                        <th style={{ width: "20%" }}>Reviewer</th>
+                        <th style={{ width: "12%" }}>Rating</th>
+                        <th style={{ width: "40%" }}>Review</th>
+                        <th style={{ width: "16%" }}>Product / SKU</th>
+                        <th style={{ width: "12%" }}>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {parsedData.rows.map((row, idx) => (
+                        <tr key={idx}>
+                          <td style={{ fontWeight: row.reviewer === "(missing)" ? 400 : 600, color: row.reviewer === "(missing)" ? "#94a3b8" : "#0f172a", fontStyle: row.reviewer === "(missing)" ? "italic" : "normal" }}>
+                            {row.reviewer}
+                          </td>
+                          <td>
+                            <span style={{ color: "#f59e0b", fontSize: "14px", letterSpacing: "1px" }}>
+                              {"★".repeat(row.rating)}
+                              <span style={{ color: "#cbd5e1" }}>{"★".repeat(Math.max(0, 5 - row.rating))}</span>
+                            </span>
+                          </td>
+                          <td style={{ color: "#334155" }}>
+                            {row.review}
+                          </td>
+                          <td style={{ color: "#475569", fontWeight: 500, fontSize: "13px" }}>
+                            {row.product}
+                          </td>
+                          <td>
+                            {row.check === "Ready" && (
+                              <span className="status-pill" style={{ background: "#dcfce7", color: "#166534" }}>
+                                Ready
+                              </span>
+                            )}
+                            {row.check === "Duplicate" && (
+                              <span className="status-pill" style={{ background: "#fef3c7", color: "#92400e" }}>
+                                Duplicate
+                              </span>
+                            )}
+                            {(row.check === "No name" || row.check === "Error") && (
+                              <span className="status-pill" style={{ background: "#fee2e2", color: "#991b1b" }}>
+                                {row.check}
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div style={{ textAlign: "center", padding: "40px 20px", color: "#64748b", background: "#f8fafc", borderRadius: "10px", border: "1px dashed #e2e8f0", marginBottom: "20px" }}>
+                  <p style={{ margin: 0 }}>No review rows found to preview. Please return to Step 1 and choose a CSV file.</p>
+                </div>
+              )}
+
+              {/* Action Footer */}
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  paddingTop: "16px",
+                  borderTop: "1px solid #f1f5f9",
+                  flexWrap: "wrap",
+                  gap: "16px",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: "6px", color: "#64748b", fontSize: "13px" }}>
+                  <span>ⓘ Only import reviews of your own products. Text is kept exactly as written.</span>
+                </div>
+
+                <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                  <button
+                    type="button"
+                    className="btn-cancel"
+                    onClick={() => setCurrentStep(2)}
+                  >
+                    ← Back to Mapping
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-cancel"
+                    onClick={handleCancel}
+                    disabled={loading}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-primary-blue"
+                    onClick={handleExecuteImport}
+                    disabled={!file || loading || (parsedData?.validCount || 0) === 0}
+                  >
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                    {loading
+                      ? "Importing reviews..."
+                      : parsedData
+                      ? `Import ${parsedData.validCount} reviews`
+                      : "Import reviews"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* 4. MANUAL MAPPINGS (IF UNMATCHED ROWS OCCUR) */}
+        {/* 4. MANUAL MAPPINGS CARD (IF UNMATCHED SKUS OCCUR) */}
         {importResult && importResult.unmatchedRows && importResult.unmatchedRows.length > 0 && (
           <div
             style={{
@@ -1193,17 +1743,17 @@ export default function ImportReviewsPage() {
               borderRadius: "14px",
               padding: "24px",
               boxShadow: "0 1px 3px rgba(0,0,0,0.02)",
-              marginBottom: "24px",
+              marginBottom: "28px",
             }}
           >
-            <h3 style={{ fontSize: "16px", fontWeight: 700, color: "#92400e", marginBottom: "8px" }}>
+            <h3 style={{ fontSize: "16px", fontWeight: 700, color: "#92400e", margin: "0 0 6px 0" }}>
               Action Needed: Assign Unmatched SKUs to Store Products ({importResult.unmatchedRows.length} Rows)
             </h3>
-            <p style={{ fontSize: "13px", color: "#78350f", marginBottom: "16px" }}>
+            <p style={{ fontSize: "13px", color: "#78350f", margin: "0 0 16px 0" }}>
               These reviews could not be auto-matched to an existing store SKU. Please map each one to a target product below:
             </p>
-            <div style={{ overflowX: "auto" }}>
-              <table className="preview-table">
+            <div style={{ overflowX: "auto", border: "1px solid #fef3c7", borderRadius: "8px" }}>
+              <table className="clean-table">
                 <thead>
                   <tr>
                     <th>CSV SKU</th>
@@ -1243,7 +1793,7 @@ export default function ImportReviewsPage() {
             <div style={{ marginTop: "16px", textAlign: "right" }}>
               <button
                 type="button"
-                className="btn-import"
+                className="btn-primary-blue"
                 onClick={handleConfirmManualMappings}
                 disabled={loading}
               >
@@ -1253,62 +1803,88 @@ export default function ImportReviewsPage() {
           </div>
         )}
 
-        {/* 5. PRODUCT-SPECIFIC MARKETPLACE IMPORT HISTORY (REAL PRODUCT & REAL DATA ONLY) */}
-        <div
-          style={{
-            background: "#ffffff",
-            border: "1px solid #e2e8f0",
-            borderRadius: "14px",
-            padding: "24px",
-            boxShadow: "0 1px 3px rgba(0,0,0,0.02)",
-            marginBottom: "24px",
-          }}
-        >
-          {/* Header & Filter Controls */}
+        {/* 5. RECENT IMPORTS SECTION (Matches Reference Design Table) */}
+        <div className="wizard-card" style={{ padding: "24px" }}>
           <div
             style={{
               display: "flex",
               justifyContent: "space-between",
-              alignItems: "flex-start",
+              alignItems: "center",
               marginBottom: "20px",
               flexWrap: "wrap",
-              gap: "16px",
+              gap: "12px",
             }}
           >
             <div>
-              <h3 style={{ fontSize: "18px", fontWeight: 700, color: "#0f172a", margin: 0 }}>
-                Product Marketplace Review Import History
-              </h3>
-              <p style={{ fontSize: "13px", color: "#64748b", margin: "4px 0 0 0" }}>
-                Real persistent import history organized by product. Track marketplace origin, dates, counts, and status.
-              </p>
+              <h2 style={{ fontSize: "18px", fontWeight: 700, color: "#0f172a", margin: 0 }}>
+                Recent imports
+              </h2>
             </div>
 
-            {/* Filter by Product Dropdown */}
-            {historyProducts.length > 0 && (
-              <div style={{ display: "flex", alignItems: "center", gap: "10px", minWidth: "280px" }}>
-                <label style={{ fontSize: "13px", fontWeight: 600, color: "#475569", whiteSpace: "nowrap" }}>
-                  Filter Product:
-                </label>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              {/* Product summary toggle */}
+              {productSpotlight && (
+                <button
+                  type="button"
+                  onClick={() => setShowProductSpotlight(!showProductSpotlight)}
+                  style={{
+                    background: showProductSpotlight ? "#eff6ff" : "#ffffff",
+                    border: `1px solid ${showProductSpotlight ? "#2563eb" : "#cbd5e1"}`,
+                    borderRadius: "8px",
+                    padding: "7px 12px",
+                    fontSize: "12.5px",
+                    fontWeight: 600,
+                    color: showProductSpotlight ? "#1d4ed8" : "#475569",
+                    cursor: "pointer",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "6px",
+                  }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <rect x="3" y="3" width="7" height="7" />
+                    <rect x="14" y="3" width="7" height="7" />
+                    <rect x="14" y="14" width="7" height="7" />
+                    <rect x="3" y="14" width="7" height="7" />
+                  </svg>
+                  Product Summary
+                </button>
+              )}
+
+              {/* Filter by Product if needed */}
+              {historyProducts.length > 1 && (
                 <select
                   className="custom-select"
-                  style={{ padding: "8px 12px", fontSize: "13px" }}
+                  style={{ padding: "7px 12px", fontSize: "13px", width: "auto" }}
                   value={selectedProductHistoryFilter}
                   onChange={(e) => setSelectedProductHistoryFilter(e.target.value)}
                 >
-                  <option value="ALL">All Products with History ({filteredHistory.length} logs)</option>
+                  <option value="ALL">All Products</option>
                   {historyProducts.map((p) => (
                     <option key={p.id} value={p.id}>
                       {p.title}
                     </option>
                   ))}
                 </select>
-              </div>
-            )}
+              )}
+
+              {/* Dropdown: Filter Marketplaces (As shown in Reference UI) */}
+              <select
+                className="custom-select"
+                style={{ padding: "7px 14px", fontSize: "13px", width: "auto", minWidth: "150px" }}
+                value={marketplaceFilter}
+                onChange={(e) => setMarketplaceFilter(e.target.value)}
+              >
+                <option value="ALL">All marketplaces</option>
+                <option value="AMAZON">Amazon</option>
+                <option value="FLIPKART">Flipkart</option>
+                <option value="ALIBABA">Alibaba</option>
+              </select>
+            </div>
           </div>
 
-          {/* Product Spotlight Summary Card */}
-          {productSpotlight && (
+          {/* Optional Product Spotlight Breakdown */}
+          {showProductSpotlight && productSpotlight && (
             <div
               style={{
                 background: "#f8fafc",
@@ -1323,42 +1899,42 @@ export default function ImportReviewsPage() {
               }}
             >
               <div>
-                <div style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, textTransform: "uppercase" }}>
+                <div style={{ fontSize: "11px", color: "#64748b", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px" }}>
                   Active Product
                 </div>
-                <div style={{ fontSize: "15px", fontWeight: 700, color: "#0f172a", marginTop: "2px" }}>
+                <div style={{ fontSize: "14px", fontWeight: 700, color: "#0f172a", marginTop: "2px" }}>
                   {productSpotlight.productTitle}
                 </div>
               </div>
 
               <div>
-                <div style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, textTransform: "uppercase" }}>
+                <div style={{ fontSize: "11px", color: "#64748b", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px" }}>
                   Marketplace Reviews
                 </div>
-                <div style={{ fontSize: "18px", fontWeight: 700, color: "#166534", marginTop: "2px" }}>
+                <div style={{ fontSize: "17px", fontWeight: 700, color: "#166534", marginTop: "2px" }}>
                   {productSpotlight.totalImported} imported
                 </div>
               </div>
 
               <div>
-                <div style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, textTransform: "uppercase" }}>
+                <div style={{ fontSize: "11px", color: "#64748b", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px" }}>
                   Channel Breakdown
                 </div>
                 <div style={{ display: "flex", gap: "6px", marginTop: "4px" }}>
-                  <span className="badge-pill" style={{ background: "#fef3c7", color: "#92400e", fontSize: "11px", padding: "2px 8px" }}>
+                  <span className="status-pill" style={{ background: "#fef3c7", color: "#92400e", fontSize: "11px", padding: "2px 8px" }}>
                     Amazon: {productSpotlight.amazonCount}
                   </span>
-                  <span className="badge-pill" style={{ background: "#e0f2fe", color: "#0369a1", fontSize: "11px", padding: "2px 8px" }}>
+                  <span className="status-pill" style={{ background: "#e0f2fe", color: "#0369a1", fontSize: "11px", padding: "2px 8px" }}>
                     Flipkart: {productSpotlight.flipkartCount}
                   </span>
-                  <span className="badge-pill" style={{ background: "#e2e8f0", color: "#334155", fontSize: "11px", padding: "2px 8px" }}>
+                  <span className="status-pill" style={{ background: "#e2e8f0", color: "#334155", fontSize: "11px", padding: "2px 8px" }}>
                     Alibaba: {productSpotlight.alibabaCount}
                   </span>
                 </div>
               </div>
 
               <div>
-                <div style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, textTransform: "uppercase" }}>
+                <div style={{ fontSize: "11px", color: "#64748b", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px" }}>
                   Last Import
                 </div>
                 <div style={{ fontSize: "13px", color: "#334155", fontWeight: 500, marginTop: "2px" }}>
@@ -1374,51 +1950,95 @@ export default function ImportReviewsPage() {
             </div>
           )}
 
-          {/* History Records Table */}
-          {filteredHistory.length === 0 ? (
-            <div style={{ padding: "32px 16px", textAlign: "center", color: "#64748b" }}>
-              <div style={{ fontSize: "14px", fontWeight: 600 }}>No marketplace import logs recorded for this selection yet.</div>
-              <div style={{ fontSize: "13px", marginTop: "4px" }}>Upload a marketplace CSV above to see product import records appear here.</div>
+          {/* Table Matching Reference UI */}
+          {recentImports.length === 0 ? (
+            <div style={{ padding: "40px 16px", textAlign: "center", color: "#64748b" }}>
+              <div style={{ fontSize: "14px", fontWeight: 600 }}>No marketplace import logs found.</div>
+              <div style={{ fontSize: "13px", marginTop: "4px" }}>
+                Upload a CSV above or download a template to start importing product reviews.
+              </div>
             </div>
           ) : (
             <div style={{ overflowX: "auto" }}>
-              <table className="history-table" style={{ width: "100%", borderCollapse: "collapse" }}>
+              <table className="clean-table">
                 <thead>
                   <tr>
-                    <th>Product Name</th>
-                    <th>Marketplace Source</th>
-                    <th>Import Date & Time</th>
-                    <th>Reviews Imported</th>
-                    <th>File Name</th>
-                    <th>Import Status</th>
+                    <th style={{ width: "26%" }}>File name</th>
+                    <th style={{ width: "18%" }}>Marketplace</th>
+                    <th style={{ width: "24%" }}>Imported on</th>
+                    <th style={{ width: "14%" }}>Status</th>
+                    <th style={{ width: "10%" }}>Reviews</th>
+                    <th style={{ width: "8%", textAlign: "center" }}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredHistory.map((item) => {
-                    const isAmazon = item.sourceType.toLowerCase().includes("amazon");
-                    const isFlipkart = item.sourceType.toLowerCase().includes("flipkart");
-                    const badgeBg = isAmazon ? "#fef3c7" : isFlipkart ? "#e0f2fe" : "#f1f5f9";
-                    const badgeText = isAmazon ? "#92400e" : isFlipkart ? "#0369a1" : "#334155";
+                  {recentImports.map((item) => {
+                    const isAmazon = item.sourceType.toUpperCase().includes("AMAZON");
+                    const isFlipkart = item.sourceType.toUpperCase().includes("FLIPKART");
+                    const isAlibaba = item.sourceType.toUpperCase().includes("ALIBABA");
+
+                    const displayMarketplace = isAmazon ? "Amazon" : isFlipkart ? "Flipkart" : "Alibaba";
+                    const isProcessing = (item.status || "").toLowerCase() === "processing";
+
+                    // Formatted file size estimation
+                    const fileSizeFormatted = item.reviewCount > 50
+                      ? `${(item.reviewCount * 0.02).toFixed(1)} MB`
+                      : `${Math.max(12, item.reviewCount * 4)} KB`;
 
                     return (
                       <tr key={item.id}>
+                        {/* 1. File name with doc icon */}
                         <td>
-                          <div style={{ fontWeight: 600, color: "#0f172a" }}>
-                            {item.productTitle}
-                          </div>
-                          <div style={{ fontSize: "11px", color: "#64748b", marginTop: "1px" }}>
-                            {item.productId ? item.productId.replace("gid://shopify/Product/", "ID: ") : "Product"}
+                          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                            <div
+                              style={{
+                                width: "32px",
+                                height: "32px",
+                                borderRadius: "6px",
+                                background: "#f8fafc",
+                                border: "1px solid #e2e8f0",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                flexShrink: 0,
+                                color: "#64748b",
+                              }}
+                            >
+                              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                                <polyline points="14 2 14 8 20 8" />
+                                <line x1="16" y1="13" x2="8" y2="13" />
+                                <line x1="16" y1="17" x2="8" y2="17" />
+                              </svg>
+                            </div>
+                            <div>
+                              <div style={{ fontWeight: 600, color: "#0f172a", fontSize: "13.5px" }}>
+                                {item.fileName || `${displayMarketplace.toLowerCase()}_reviews.csv`}
+                              </div>
+                              <div style={{ fontSize: "12px", color: "#64748b", marginTop: "1px" }}>
+                                {fileSizeFormatted}
+                              </div>
+                            </div>
                           </div>
                         </td>
+
+                        {/* 2. Marketplace with authentic logo */}
                         <td>
-                          <span className="badge-pill" style={{ background: badgeBg, color: badgeText }}>
-                            {item.sourceType}
-                          </span>
+                          <div style={{ display: "inline-flex", alignItems: "center", gap: "8px" }}>
+                            {isAmazon && <AmazonBrandIcon size={18} />}
+                            {isFlipkart && <FlipkartBrandIcon size={18} />}
+                            {isAlibaba && <AlibabaBrandIcon size={18} />}
+                            <span style={{ fontWeight: 500, color: "#1e293b", fontSize: "13.5px" }}>
+                              {displayMarketplace}
+                            </span>
+                          </div>
                         </td>
-                        <td style={{ color: "#334155" }}>
+
+                        {/* 3. Imported on */}
+                        <td style={{ color: "#475569", fontSize: "13px" }}>
                           {new Date(item.createdAt).toLocaleDateString("en-US", {
                             month: "short",
-                            day: "numeric",
+                            day: "2-digit",
                             year: "numeric",
                           })}
                           {" • "}
@@ -1427,18 +2047,102 @@ export default function ImportReviewsPage() {
                             minute: "2-digit",
                           })}
                         </td>
+
+                        {/* 4. Status badge with dot */}
                         <td>
-                          <span style={{ fontWeight: 700, color: "#166534" }}>
-                            +{item.reviewCount} reviews
-                          </span>
+                          {isProcessing ? (
+                            <span className="status-pill processing">
+                              <span className="status-dot blue" />
+                              Processing
+                            </span>
+                          ) : (
+                            <span className="status-pill imported">
+                              <span className="status-dot green" />
+                              Imported
+                            </span>
+                          )}
                         </td>
-                        <td style={{ color: "#64748b", fontFamily: "monospace", fontSize: "12px" }}>
-                          {item.fileName || "marketplace_reviews.csv"}
+
+                        {/* 5. Reviews count */}
+                        <td style={{ fontWeight: 600, color: "#0f172a", fontSize: "13.5px" }}>
+                          {isProcessing ? "—" : item.reviewCount || "0"}
                         </td>
-                        <td>
-                          <span className="badge-pill" style={{ background: "#dcfce7", color: "#166534" }}>
-                            ✓ {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
-                          </span>
+
+                        {/* 6. Actions menu (•••) */}
+                        <td style={{ textAlign: "center", position: "relative" }}>
+                          <button
+                            type="button"
+                            className="icon-menu-btn"
+                            title="Actions"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActiveMenuId(activeMenuId === item.id ? null : item.id);
+                            }}
+                          >
+                            •••
+                          </button>
+
+                          {activeMenuId === item.id && (
+                            <div
+                              style={{
+                                position: "absolute",
+                                right: "12px",
+                                top: "36px",
+                                background: "#ffffff",
+                                border: "1px solid #e2e8f0",
+                                borderRadius: "8px",
+                                boxShadow: "0 4px 16px rgba(0, 0, 0, 0.08)",
+                                zIndex: 100,
+                                width: "190px",
+                                padding: "4px 0",
+                                textAlign: "left",
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <Link
+                                to="/app/reviews?tab=imported"
+                                style={{
+                                  display: "block",
+                                  padding: "8px 14px",
+                                  fontSize: "13px",
+                                  color: "#0f172a",
+                                  textDecoration: "none",
+                                }}
+                                onMouseEnter={(e) => (e.currentTarget.style.background = "#f8fafc")}
+                                onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                              >
+                                View in Reviews Tab
+                              </Link>
+                              <button
+                                type="button"
+                                style={{
+                                  display: "block",
+                                  width: "100%",
+                                  textAlign: "left",
+                                  padding: "8px 14px",
+                                  fontSize: "13px",
+                                  color: "#334155",
+                                  background: "none",
+                                  border: "none",
+                                  cursor: "pointer",
+                                }}
+                                onMouseEnter={(e) => (e.currentTarget.style.background = "#f8fafc")}
+                                onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                                onClick={() => {
+                                  setActiveMenuId(null);
+                                  handleDownloadTemplate(
+                                    isAmazon
+                                      ? "IMPORTED_AMAZON"
+                                      : isFlipkart
+                                      ? "IMPORTED_FLIPKART"
+                                      : "IMPORTED_ALIBABA"
+                                  );
+                                }}
+                              >
+                                Download Template
+                              </button>
+                            </div>
+                          )}
                         </td>
                       </tr>
                     );
@@ -1449,94 +2153,41 @@ export default function ImportReviewsPage() {
           )}
         </div>
 
-        {/* 6. CURRENT IMPORTED REVIEWS IN STORE (Real Reviews Viewer) */}
+        {/* 6. LIVE MARKETPLACE REVIEWS DRAWER / LINK */}
         {liveMarketplaceReviews.length > 0 && (
           <div
             style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              padding: "16px 20px",
               background: "#ffffff",
               border: "1px solid #e2e8f0",
-              borderRadius: "14px",
-              padding: "24px",
-              boxShadow: "0 1px 3px rgba(0,0,0,0.02)",
+              borderRadius: "12px",
             }}
           >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", flexWrap: "wrap", gap: "12px" }}>
-              <div>
-                <h3 style={{ fontSize: "17px", fontWeight: 700, color: "#0f172a", margin: 0 }}>
-                  Active Marketplace Reviews in Store ({liveMarketplaceReviews.length} total)
-                </h3>
-                <p style={{ fontSize: "13px", color: "#64748b", margin: "4px 0 0 0" }}>
-                  All published marketplace customer reviews currently live in your store database.
-                </p>
-              </div>
-
-              <Link
-                to="/app/reviews?tab=imported"
-                style={{
-                  fontSize: "13px",
-                  fontWeight: 600,
-                  color: "#2563eb",
-                  textDecoration: "none",
-                }}
-              >
-                Manage in Reviews Tab →
-              </Link>
+            <div>
+              <span style={{ fontWeight: 600, color: "#0f172a", fontSize: "14px" }}>
+                {liveMarketplaceReviews.length} Active Marketplace Reviews in Store
+              </span>
+              <span style={{ fontSize: "13px", color: "#64748b", marginLeft: "10px" }}>
+                (Amazon: {marketplaceCounts.amazon}, Flipkart: {marketplaceCounts.flipkart}, Alibaba: {marketplaceCounts.alibaba})
+              </span>
             </div>
-
-            <div style={{ overflowX: "auto" }}>
-              <table className="preview-table">
-                <thead>
-                  <tr>
-                    <th>Reviewer</th>
-                    <th>Product</th>
-                    <th>Rating</th>
-                    <th>Review Content</th>
-                    <th>Source</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {liveMarketplaceReviews.map((rev) => {
-                    const isAmazon = (rev.source || "").toUpperCase().includes("AMAZON");
-                    const isFlipkart = (rev.source || "").toUpperCase().includes("FLIPKART");
-                    const badgeBg = isAmazon ? "#fef3c7" : isFlipkart ? "#e0f2fe" : "#f1f5f9";
-                    const badgeText = isAmazon ? "#92400e" : isFlipkart ? "#0369a1" : "#334155";
-                    const sourceLabel = isAmazon ? "Amazon" : isFlipkart ? "Flipkart" : "Alibaba";
-
-                    return (
-                      <tr key={rev.id}>
-                        <td>
-                          <div style={{ fontWeight: 600, color: "#0f172a" }}>{rev.reviewerName}</div>
-                          <div style={{ fontSize: "11px", color: "#166534", fontWeight: 500 }}>Verified order</div>
-                        </td>
-                        <td style={{ color: "#334155", fontWeight: 500 }}>
-                          {rev.productTitle}
-                        </td>
-                        <td>
-                          <span style={{ color: "#d97706", fontSize: "14px", letterSpacing: "2px" }}>
-                            {"★".repeat(rev.rating)}
-                            <span style={{ color: "#cbd5e1" }}>{"★".repeat(Math.max(0, 5 - rev.rating))}</span>
-                          </span>
-                        </td>
-                        <td style={{ color: "#334155", maxWidth: "340px" }}>
-                          {rev.bodyShort || rev.bodyFull}
-                        </td>
-                        <td>
-                          <span className="badge-pill" style={{ background: badgeBg, color: badgeText }}>
-                            {sourceLabel}
-                          </span>
-                        </td>
-                        <td>
-                          <span className="badge-pill" style={{ background: "#dcfce7", color: "#166534" }}>
-                            {rev.isPublished ? "Published" : "Pending"}
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+            <Link
+              to="/app/reviews?tab=imported"
+              style={{
+                fontSize: "13px",
+                fontWeight: 600,
+                color: "#2563eb",
+                textDecoration: "none",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "4px",
+              }}
+            >
+              Manage Live Reviews →
+            </Link>
           </div>
         )}
       </div>
