@@ -30,7 +30,7 @@ export class GeminiProvider implements AIProvider {
     let response: any;
     try {
       response = await ai.models.generateContent({
-        model: "gemini-2.0-flash",
+        model: "gemini-1.5-flash",
         contents: [
           {
             role: "user",
@@ -43,7 +43,7 @@ export class GeminiProvider implements AIProvider {
       });
     } catch {
       response = await ai.models.generateContent({
-        model: "gemini-1.5-flash",
+        model: "gemini-1.5-pro",
         contents: [
           {
             role: "user",
@@ -111,7 +111,7 @@ MANDATORY REQUIREMENTS:
     let response: any;
     try {
       response = await ai.models.generateContent({
-        model: "gemini-2.0-flash",
+        model: "gemini-1.5-flash",
         contents,
         config: {
           responseMimeType: "application/json",
@@ -119,7 +119,7 @@ MANDATORY REQUIREMENTS:
       });
     } catch {
       response = await ai.models.generateContent({
-        model: "gemini-1.5-flash",
+        model: "gemini-1.5-pro",
         contents,
         config: {
           responseMimeType: "application/json",
@@ -142,7 +142,7 @@ MANDATORY REQUIREMENTS:
     let response: any;
     try {
       response = await ai.models.generateContent({
-        model: "gemini-2.0-flash",
+        model: "gemini-1.5-flash",
         contents: `Extract 2 to 4 key product benefit/attribute tags from this review text: "${reviewText}". Output ONLY a JSON string array.`,
         config: {
           responseMimeType: "application/json",
@@ -150,7 +150,7 @@ MANDATORY REQUIREMENTS:
       });
     } catch {
       response = await ai.models.generateContent({
-        model: "gemini-1.5-flash",
+        model: "gemini-1.5-pro",
         contents: `Extract 2 to 4 key product benefit/attribute tags from this review text: "${reviewText}". Output ONLY a JSON string array.`,
         config: {
           responseMimeType: "application/json",

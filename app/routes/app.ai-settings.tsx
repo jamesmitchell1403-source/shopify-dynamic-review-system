@@ -147,11 +147,27 @@ export async function action({ request }: ActionFunctionArgs) {
       if (provider === "gemini") {
         const { GoogleGenAI } = await import("@google/genai");
         const ai = new GoogleGenAI({ apiKey });
-        await ai.models.generateContent({
-          model: "gemini-2.0-flash",
-          contents: "Hello",
-        });
-        return json({ testResult: { provider, success: true, message: "Google Gemini connected successfully!" } });
+        const modelsToTry = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.5-flash", "gemini-2.0-flash-exp"];
+        let lastError: any = null;
+        let connected = false;
+
+        for (const m of modelsToTry) {
+          try {
+            await ai.models.generateContent({
+              model: m,
+              contents: "Hello",
+            });
+            connected = true;
+            break;
+          } catch (e: any) {
+            lastError = e;
+          }
+        }
+
+        if (connected) {
+          return json({ testResult: { provider, success: true, message: "Google Gemini connected successfully!" } });
+        }
+        throw lastError || new Error("Failed to connect to Google Gemini.");
       } else if (provider === "openai") {
         const OpenAI = (await import("openai")).default;
         const client = new OpenAI({ apiKey });

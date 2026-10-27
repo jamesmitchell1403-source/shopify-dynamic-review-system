@@ -323,7 +323,7 @@ export default function AiGeneratorPage() {
     {
       id: "gemini",
       name: "Google Gemini",
-      model: "gemini-2.0-flash",
+      model: "gemini-1.5-flash",
       hasKey: aiConfig.hasGeminiKey,
       description: "Fast, multimodal vision analysis & high-speed review generation.",
     },
@@ -1925,7 +1925,7 @@ export default function AiGeneratorPage() {
                           whiteSpace: "nowrap",
                         }}
                       >
-                        {selectedBulkEngine?.model || (bulkProvider === "openai" ? "gpt-4o-mini" : bulkProvider === "claude" ? "claude-3-5-sonnet" : "gemini-2.0-flash")}
+                        {selectedBulkEngine?.model || (bulkProvider === "openai" ? "gpt-4o-mini" : bulkProvider === "claude" ? "claude-3-5-sonnet" : "gemini-1.5-flash")}
                       </span>
                     </div>
                   </div>
