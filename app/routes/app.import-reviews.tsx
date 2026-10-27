@@ -312,10 +312,7 @@ export default function ImportReviewsPage() {
   const { products, historyList, liveMarketplaceReviews, marketplaceCounts } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
 
-  // Stepper state: 1 = Upload file, 2 = Map columns, 3 = Review & import
-  const [currentStep, setCurrentStep] = useState<1 | 2 | 3>(1);
-
-  // Active marketplace selector (default Amazon/Alibaba)
+  // Active marketplace selector
   const [sourceType, setSourceType] = useState<MarketplaceKey>("IMPORTED_ALIBABA");
 
   // Settings
@@ -327,6 +324,7 @@ export default function ImportReviewsPage() {
   const [file, setFile] = useState<File | null>(null);
   const [rawParsedRows, setRawParsedRows] = useState<Array<Record<string, string>>>([]);
   const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
+  const [showMappingDrawer, setShowMappingDrawer] = useState<boolean>(false);
   const [columnMapping, setColumnMapping] = useState<{
     reviewerName: string;
     rating: string;
@@ -400,7 +398,7 @@ export default function ImportReviewsPage() {
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
       const reviewer = (mapping.reviewerName ? row[mapping.reviewerName] : "") || row["ReviewerName"] || row["reviewer_name"] || row["Name"] || "";
-      const rating = parseInt((mapping.rating ? row[mapping.rating] : "") || row["Rating"] || row["rating"] || "5", 10) || 5;
+      const rating = parseInt((mapping.rating ? row[mapping.rating] : "") || row["Rating"] || "5", 10) || 5;
       const reviewText = (mapping.reviewText ? row[mapping.reviewText] : "") || row["ReviewText"] || row["review_text"] || row["Comment"] || row["Review"] || "";
       const sku = (mapping.sku ? row[mapping.sku] : "") || row["SKU/ASIN"] || row["SKU"] || row["ASIN"] || "ASIN B0X1";
 
@@ -539,7 +537,7 @@ export default function ImportReviewsPage() {
     setParsedData(null);
     setErrorMessage(null);
     setSuccessBanner(null);
-    setCurrentStep(1);
+    setShowMappingDrawer(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
@@ -579,7 +577,7 @@ export default function ImportReviewsPage() {
         setRawParsedRows([]);
         setCsvHeaders([]);
         setParsedData(null);
-        setCurrentStep(1);
+        setShowMappingDrawer(false);
         if (fileInputRef.current) fileInputRef.current.value = "";
         navigate(".", { replace: true });
       }
@@ -688,17 +686,20 @@ export default function ImportReviewsPage() {
   return (
     <Page fullWidth>
       <style>{`
+        /* 100% Edge-to-Edge Full Width Container */
         .import-page-wrapper {
-          max-width: 1200px;
-          margin: 0 auto;
-          padding: 8px 16px 64px 16px;
+          width: 100% !important;
+          max-width: 100% !important;
+          margin: 0 !important;
+          padding: 8px 24px 64px 24px !important;
+          box-sizing: border-box !important;
           font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
           color: #0f172a;
         }
 
         /* Top Page Header */
         .page-title {
-          font-size: 24px;
+          font-size: 22px;
           font-weight: 700;
           color: #0f172a;
           margin: 0 0 4px 0;
@@ -707,100 +708,29 @@ export default function ImportReviewsPage() {
         .page-subtitle {
           font-size: 14px;
           color: #64748b;
-          margin: 0 0 24px 0;
+          margin: 0 0 20px 0;
         }
 
-        /* Stepper Component */
-        .stepper-nav {
-          display: flex;
-          align-items: center;
-          justify-content: flex-start;
-          gap: 12px;
-          margin-bottom: 24px;
-          padding: 8px 0;
-          overflow-x: auto;
-        }
-        .step-item {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          background: none;
-          border: none;
-          padding: 6px 10px;
-          border-radius: 8px;
-          cursor: pointer;
-          transition: all 0.15s ease;
-          text-align: left;
-          flex-shrink: 0;
-        }
-        .step-item:hover {
-          background: #f8fafc;
-        }
-        .step-badge {
-          width: 28px;
-          height: 28px;
-          border-radius: 50%;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-size: 13px;
-          font-weight: 700;
-          transition: all 0.2s ease;
-        }
-        .step-badge.active {
-          background: #2563eb;
-          color: #ffffff;
-          box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25);
-        }
-        .step-badge.inactive {
-          background: #ffffff;
-          border: 1.5px solid #cbd5e1;
-          color: #64748b;
-        }
-        .step-badge.completed {
-          background: #10b981;
-          color: #ffffff;
-        }
-        .step-text {
-          font-size: 14px;
-          font-weight: 600;
-          transition: color 0.15s ease;
-        }
-        .step-text.active {
-          color: #0f172a;
-        }
-        .step-text.inactive {
-          color: #64748b;
-        }
-        .step-divider {
-          flex: 1;
-          min-width: 40px;
-          max-width: 120px;
-          height: 1.5px;
-          background: #e2e8f0;
-          margin: 0 4px;
-        }
-        .step-divider.completed {
-          background: #2563eb;
-        }
-
-        /* Main Wizard Container Card */
+        /* Full Width Main Cards */
         .wizard-card {
+          width: 100% !important;
           background: #ffffff;
           border: 1px solid #e2e8f0;
-          border-radius: 16px;
+          border-radius: 14px;
           box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
-          margin-bottom: 32px;
+          margin-bottom: 24px;
           overflow: hidden;
+          box-sizing: border-box;
         }
 
-        /* Step 1: Two Column Layout */
+        /* Main Upload Two-Column Grid */
         .step1-grid {
           display: grid;
-          grid-template-columns: 1fr 340px;
-          min-height: 380px;
+          grid-template-columns: 1fr 360px;
+          min-height: 340px;
+          width: 100%;
         }
-        @media (max-width: 860px) {
+        @media (max-width: 960px) {
           .step1-grid {
             grid-template-columns: 1fr;
           }
@@ -822,7 +752,7 @@ export default function ImportReviewsPage() {
         .upload-dropzone-panel:hover {
           background: #fbfcfe;
         }
-        @media (max-width: 860px) {
+        @media (max-width: 960px) {
           .upload-dropzone-panel {
             border-right: none;
             border-bottom: 1px solid #f1f5f9;
@@ -837,7 +767,7 @@ export default function ImportReviewsPage() {
           display: flex;
           align-items: center;
           justify-content: center;
-          margin-bottom: 18px;
+          margin-bottom: 16px;
           color: #2563eb;
           transition: transform 0.2s ease;
         }
@@ -886,6 +816,7 @@ export default function ImportReviewsPage() {
           flex-direction: column;
           justify-content: space-between;
           background: #ffffff;
+          box-sizing: border-box;
         }
         .sample-section-title {
           font-size: 15px;
@@ -928,7 +859,7 @@ export default function ImportReviewsPage() {
         .marketplaces-pill-list {
           display: flex;
           align-items: center;
-          gap: 14px;
+          gap: 12px;
           flex-wrap: wrap;
         }
         .marketplace-chip {
@@ -954,11 +885,6 @@ export default function ImportReviewsPage() {
           color: #1d4ed8;
         }
 
-        /* Step 2 & 3 General Container */
-        .wizard-step-content {
-          padding: 32px;
-        }
-
         .custom-select {
           width: 100%;
           background: #ffffff;
@@ -976,7 +902,7 @@ export default function ImportReviewsPage() {
           box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
         }
 
-        /* Tables */
+        /* Clean Modern Tables */
         .clean-table {
           width: 100%;
           border-collapse: collapse;
@@ -1016,10 +942,6 @@ export default function ImportReviewsPage() {
           background: #eff6ff;
           color: #2563eb;
         }
-        .status-pill.needs_mapping {
-          background: #fef3c7;
-          color: #92400e;
-        }
         .status-dot {
           width: 6px;
           height: 6px;
@@ -1031,9 +953,6 @@ export default function ImportReviewsPage() {
         }
         .status-dot.blue {
           background: #3b82f6;
-        }
-        .status-dot.yellow {
-          background: #f59e0b;
         }
 
         /* Action Buttons */
@@ -1121,77 +1040,6 @@ export default function ImportReviewsPage() {
           </p>
         </div>
 
-        {/* 2. STEPPER BAR (Circled in user reference) */}
-        <div className="stepper-nav">
-          {/* Step 1: Upload file */}
-          <button
-            type="button"
-            className="step-item"
-            onClick={() => setCurrentStep(1)}
-          >
-            <div
-              className={`step-badge ${
-                currentStep === 1
-                  ? "active"
-                  : file
-                  ? "completed"
-                  : "inactive"
-              }`}
-            >
-              {file && currentStep !== 1 ? "✓" : "1"}
-            </div>
-            <span className={`step-text ${currentStep === 1 ? "active" : "inactive"}`}>
-              Upload file
-            </span>
-          </button>
-
-          <div className={`step-divider ${currentStep > 1 ? "completed" : ""}`} />
-
-          {/* Step 2: Map columns */}
-          <button
-            type="button"
-            className="step-item"
-            onClick={() => {
-              if (file) setCurrentStep(2);
-              else setErrorMessage("Please choose or drop a CSV file first.");
-            }}
-          >
-            <div
-              className={`step-badge ${
-                currentStep === 2
-                  ? "active"
-                  : currentStep > 2
-                  ? "completed"
-                  : "inactive"
-              }`}
-            >
-              {currentStep > 2 ? "✓" : "2"}
-            </div>
-            <span className={`step-text ${currentStep === 2 ? "active" : "inactive"}`}>
-              Map columns
-            </span>
-          </button>
-
-          <div className={`step-divider ${currentStep > 2 ? "completed" : ""}`} />
-
-          {/* Step 3: Review & import */}
-          <button
-            type="button"
-            className="step-item"
-            onClick={() => {
-              if (file) setCurrentStep(3);
-              else setErrorMessage("Please choose or drop a CSV file first.");
-            }}
-          >
-            <div className={`step-badge ${currentStep === 3 ? "active" : "inactive"}`}>
-              3
-            </div>
-            <span className={`step-text ${currentStep === 3 ? "active" : "inactive"}`}>
-              Review & import
-            </span>
-          </button>
-        </div>
-
         {/* Hidden File Input */}
         <input
           ref={fileInputRef}
@@ -1205,404 +1053,183 @@ export default function ImportReviewsPage() {
           }}
         />
 
-        {/* 3. WIZARD MAIN CARD (Matches Reference Design) */}
+        {/* 2. MAIN UPLOAD CARD (Full Width Two-Column Layout) */}
         <div className="wizard-card">
-          {/* STEP 1: UPLOAD FILE */}
-          {currentStep === 1 && (
-            <div className="step1-grid">
-              {/* Left Column: Upload Dropzone */}
-              <div
-                className="upload-dropzone-panel"
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={handleDrop}
-                onClick={() => fileInputRef.current?.click()}
-              >
-                {file ? (
-                  <div style={{ maxWidth: "420px", width: "100%" }}>
-                    <div
-                      style={{
-                        width: "56px",
-                        height: "56px",
-                        borderRadius: "50%",
-                        background: "#ecfdf5",
-                        color: "#059669",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        margin: "0 auto 16px auto",
-                      }}
-                    >
-                      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
-                        <path d="M20 6L9 17l-5-5" strokeLinecap="round" strokeLinejoin="round" />
-                      </svg>
-                    </div>
-                    <h3 className="upload-main-title">{file.name}</h3>
-                    <p className="upload-subtitle-text">
-                      {(file.size / 1024).toFixed(1)} KB • {parsedData?.totalRows || 0} reviews detected
-                    </p>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "10px", marginTop: "20px" }}>
-                      <button
-                        type="button"
-                        className="btn-cancel"
-                        style={{ padding: "8px 16px", fontSize: "13px" }}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          fileInputRef.current?.click();
-                        }}
-                      >
-                        Change file
-                      </button>
-                      <button
-                        type="button"
-                        className="btn-primary-blue"
-                        style={{ padding: "8px 18px", fontSize: "13px" }}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setCurrentStep(2);
-                        }}
-                      >
-                        Continue to Map Columns →
-                      </button>
-                    </div>
+          <div className="step1-grid">
+            {/* Left Column: Upload Dropzone */}
+            <div
+              className="upload-dropzone-panel"
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={handleDrop}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              {file ? (
+                <div style={{ maxWidth: "480px", width: "100%" }}>
+                  <div
+                    style={{
+                      width: "56px",
+                      height: "56px",
+                      borderRadius: "50%",
+                      background: "#ecfdf5",
+                      color: "#059669",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      margin: "0 auto 16px auto",
+                    }}
+                  >
+                    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
+                      <path d="M20 6L9 17l-5-5" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
                   </div>
-                ) : (
-                  <div>
-                    <div className="upload-cloud-icon">
-                      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path
-                          d="M16 16L12 12M12 12L8 16M12 12V21M20.39 18.39A5 5 0 0018 9H16.74A8 8 0 103 16.3"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        />
-                      </svg>
-                    </div>
-                    <h3 className="upload-main-title">Upload CSV file</h3>
-                    <p className="upload-subtitle-text">
-                      Drag and drop your file here, or click to browse.
-                    </p>
-                    <div className="upload-format-tag">
-                      CSV format • Max 5 MB
-                    </div>
+                  <h3 className="upload-main-title">{file.name}</h3>
+                  <p className="upload-subtitle-text">
+                    {(file.size / 1024).toFixed(1)} KB • {parsedData?.totalRows || 0} reviews detected
+                  </p>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "12px", marginTop: "18px" }}>
                     <button
                       type="button"
-                      className="btn-choose-file"
+                      className="btn-cancel"
+                      style={{ padding: "8px 16px", fontSize: "13px" }}
                       onClick={(e) => {
                         e.stopPropagation();
                         fileInputRef.current?.click();
                       }}
                     >
-                      Choose file
+                      Change file
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-cancel"
+                      style={{ padding: "8px 16px", fontSize: "13px" }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleCancel();
+                      }}
+                    >
+                      Remove
                     </button>
                   </div>
-                )}
-              </div>
-
-              {/* Right Column: Need a Sample & Supported Marketplaces */}
-              <div className="sample-sidebar-panel">
+                </div>
+              ) : (
                 <div>
-                  <h4 className="sample-section-title">Need a sample?</h4>
-                  <p className="sample-section-desc">
-                    Download our CSV template to see the required format.
+                  <div className="upload-cloud-icon">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path
+                        d="M16 16L12 12M12 12L8 16M12 12V21M20.39 18.39A5 5 0 0018 9H16.74A8 8 0 103 16.3"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  </div>
+                  <h3 className="upload-main-title">Upload CSV file</h3>
+                  <p className="upload-subtitle-text">
+                    Drag and drop your file here, or click to browse.
                   </p>
+                  <div className="upload-format-tag">
+                    CSV format • Max 5 MB
+                  </div>
                   <button
                     type="button"
-                    className="btn-download-template"
-                    onClick={() => handleDownloadTemplate()}
+                    className="btn-choose-file"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      fileInputRef.current?.click();
+                    }}
                   >
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                    Download template
+                    Choose file
                   </button>
                 </div>
-
-                <div style={{ marginTop: "32px", paddingTop: "24px", borderTop: "1px solid #f1f5f9" }}>
-                  <div className="supported-marketplaces-header">
-                    Supported marketplaces
-                  </div>
-                  <div className="marketplaces-pill-list">
-                    {marketplaces.map((m) => {
-                      const isSelected = sourceType === m.key;
-                      return (
-                        <div
-                          key={m.key}
-                          className={`marketplace-chip ${isSelected ? "active" : ""}`}
-                          onClick={() => setSourceType(m.key)}
-                          title={`${m.name}: ${m.count} imported`}
-                        >
-                          {m.icon}
-                          <span>{m.name}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
+              )}
             </div>
-          )}
 
-          {/* STEP 2: MAP COLUMNS & SETTINGS */}
-          {currentStep === 2 && (
-            <div className="wizard-step-content">
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "24px", flexWrap: "wrap", gap: "12px" }}>
-                <div>
-                  <h3 style={{ fontSize: "18px", fontWeight: 700, color: "#0f172a", margin: "0 0 4px 0" }}>
-                    Map columns & configure import
-                  </h3>
-                  <p style={{ fontSize: "13px", color: "#64748b", margin: 0 }}>
-                    Match headers from <span style={{ fontWeight: 600, color: "#0f172a" }}>{file?.name || "your CSV"}</span> to review fields and set import rules.
-                  </p>
+            {/* Right Column: Need a Sample & Supported Marketplaces */}
+            <div className="sample-sidebar-panel">
+              <div>
+                <h4 className="sample-section-title">Need a sample?</h4>
+                <p className="sample-section-desc">
+                  Download our CSV template to see the required format.
+                </p>
+                <button
+                  type="button"
+                  className="btn-download-template"
+                  onClick={() => handleDownloadTemplate()}
+                >
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                  Download template
+                </button>
+              </div>
+
+              <div style={{ marginTop: "28px", paddingTop: "20px", borderTop: "1px solid #f1f5f9" }}>
+                <div className="supported-marketplaces-header">
+                  Supported marketplaces
                 </div>
-
-                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                  <span style={{ fontSize: "12px", color: "#64748b" }}>Target Marketplace:</span>
-                  <div style={{ display: "inline-flex", gap: "6px" }}>
-                    {marketplaces.map((m) => (
-                      <button
+                <div className="marketplaces-pill-list">
+                  {marketplaces.map((m) => {
+                    const isSelected = sourceType === m.key;
+                    return (
+                      <div
                         key={m.key}
-                        type="button"
+                        className={`marketplace-chip ${isSelected ? "active" : ""}`}
                         onClick={() => setSourceType(m.key)}
-                        style={{
-                          background: sourceType === m.key ? "#eff6ff" : "#ffffff",
-                          border: `1px solid ${sourceType === m.key ? "#2563eb" : "#cbd5e1"}`,
-                          borderRadius: "6px",
-                          padding: "4px 10px",
-                          fontSize: "12px",
-                          fontWeight: 600,
-                          color: sourceType === m.key ? "#1d4ed8" : "#334155",
-                          cursor: "pointer",
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: "6px",
-                        }}
+                        title={`${m.name}: ${m.count} imported`}
                       >
                         {m.icon}
-                        {m.name}
-                      </button>
-                    ))}
-                  </div>
+                        <span>{m.name}</span>
+                      </div>
+                    );
+                  })}
                 </div>
-              </div>
-
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "24px", marginBottom: "28px" }}>
-                {/* Column Mapping Section */}
-                <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "12px", padding: "20px" }}>
-                  <h4 style={{ fontSize: "15px", fontWeight: 700, color: "#0f172a", margin: "0 0 14px 0" }}>
-                    Column Mapping
-                  </h4>
-
-                  <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-                    {/* Reviewer Name */}
-                    <div>
-                      <label style={{ display: "flex", justifyContent: "space-between", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "4px" }}>
-                        <span>Reviewer Name <span style={{ color: "#dc2626" }}>*</span></span>
-                        {rawParsedRows[0] && columnMapping.reviewerName && (
-                          <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 400 }}>
-                            e.g. "{rawParsedRows[0][columnMapping.reviewerName] || "Amit Joshi"}"
-                          </span>
-                        )}
-                      </label>
-                      <select
-                        className="custom-select"
-                        value={columnMapping.reviewerName}
-                        onChange={(e) => {
-                          const updated = { ...columnMapping, reviewerName: e.target.value };
-                          setColumnMapping(updated);
-                          computePreview(rawParsedRows, updated);
-                        }}
-                      >
-                        {csvHeaders.map((h) => (
-                          <option key={h} value={h}>{h}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    {/* Star Rating */}
-                    <div>
-                      <label style={{ display: "flex", justifyContent: "space-between", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "4px" }}>
-                        <span>Rating (1-5 Stars) <span style={{ color: "#dc2626" }}>*</span></span>
-                        {rawParsedRows[0] && columnMapping.rating && (
-                          <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 400 }}>
-                            e.g. "{rawParsedRows[0][columnMapping.rating] || "5"}"
-                          </span>
-                        )}
-                      </label>
-                      <select
-                        className="custom-select"
-                        value={columnMapping.rating}
-                        onChange={(e) => {
-                          const updated = { ...columnMapping, rating: e.target.value };
-                          setColumnMapping(updated);
-                          computePreview(rawParsedRows, updated);
-                        }}
-                      >
-                        {csvHeaders.map((h) => (
-                          <option key={h} value={h}>{h}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    {/* Review Text */}
-                    <div>
-                      <label style={{ display: "flex", justifyContent: "space-between", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "4px" }}>
-                        <span>Review Content <span style={{ color: "#dc2626" }}>*</span></span>
-                        {rawParsedRows[0] && columnMapping.reviewText && (
-                          <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 400, maxWidth: "160px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                            e.g. "{rawParsedRows[0][columnMapping.reviewText] || "Good quality..."}"
-                          </span>
-                        )}
-                      </label>
-                      <select
-                        className="custom-select"
-                        value={columnMapping.reviewText}
-                        onChange={(e) => {
-                          const updated = { ...columnMapping, reviewText: e.target.value };
-                          setColumnMapping(updated);
-                          computePreview(rawParsedRows, updated);
-                        }}
-                      >
-                        {csvHeaders.map((h) => (
-                          <option key={h} value={h}>{h}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    {/* Product SKU / ASIN */}
-                    <div>
-                      <label style={{ display: "flex", justifyContent: "space-between", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "4px" }}>
-                        <span>Product SKU / ASIN</span>
-                        {rawParsedRows[0] && columnMapping.sku && (
-                          <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 400 }}>
-                            e.g. "{rawParsedRows[0][columnMapping.sku] || "ASIN_B0X1"}"
-                          </span>
-                        )}
-                      </label>
-                      <select
-                        className="custom-select"
-                        value={columnMapping.sku}
-                        onChange={(e) => {
-                          const updated = { ...columnMapping, sku: e.target.value };
-                          setColumnMapping(updated);
-                          computePreview(rawParsedRows, updated);
-                        }}
-                      >
-                        <option value="">-- None / Auto Match --</option>
-                        {csvHeaders.map((h) => (
-                          <option key={h} value={h}>{h}</option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Import Settings Section */}
-                <div style={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: "12px", padding: "20px" }}>
-                  <h4 style={{ fontSize: "15px", fontWeight: 700, color: "#0f172a", margin: "0 0 14px 0" }}>
-                    Import Settings
-                  </h4>
-
-                  <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-                    {/* Assign to product */}
-                    <div>
-                      <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#475569", marginBottom: "6px" }}>
-                        Assign to product
-                      </label>
-                      <select
-                        className="custom-select"
-                        value={overrideProductId}
-                        onChange={(e) => setOverrideProductId(e.target.value)}
-                      >
-                        <option value="">Auto-detect by SKU / ASIN</option>
-                        {products.map((p) => (
-                          <option key={p.value} value={p.value}>
-                            {p.title} ({p.handle})
-                          </option>
-                        ))}
-                      </select>
-                      <p style={{ fontSize: "11px", color: "#64748b", margin: "4px 0 0 0" }}>
-                        Leave on Auto-detect to match SKUs in the CSV to your Shopify inventory.
-                      </p>
-                    </div>
-
-                    {/* Duplicates */}
-                    <div>
-                      <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#475569", marginBottom: "6px" }}>
-                        Duplicates
-                      </label>
-                      <select
-                        className="custom-select"
-                        value={duplicatesOption}
-                        onChange={(e) => setDuplicatesOption(e.target.value)}
-                      >
-                        <option value="skip">Skip existing reviews</option>
-                        <option value="overwrite">Overwrite existing reviews</option>
-                      </select>
-                    </div>
-
-                    {/* After import */}
-                    <div>
-                      <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#475569", marginBottom: "6px" }}>
-                        After import
-                      </label>
-                      <select
-                        className="custom-select"
-                        value={afterImportOption}
-                        onChange={(e) => setAfterImportOption(e.target.value)}
-                      >
-                        <option value="pending">Save as Pending</option>
-                        <option value="publish">Publish immediately</option>
-                      </select>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Navigation Footer */}
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: "18px", borderTop: "1px solid #f1f5f9" }}>
-                <button
-                  type="button"
-                  className="btn-cancel"
-                  onClick={() => setCurrentStep(1)}
-                >
-                  ← Back to Upload
-                </button>
-
-                <button
-                  type="button"
-                  className="btn-primary-blue"
-                  onClick={() => setCurrentStep(3)}
-                >
-                  Continue to Review & Import →
-                </button>
               </div>
             </div>
-          )}
+          </div>
+        </div>
 
-          {/* STEP 3: REVIEW & IMPORT */}
-          {currentStep === 3 && (
-            <div className="wizard-step-content">
-              {/* Header Row: Title & Badges */}
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  marginBottom: "20px",
-                  flexWrap: "wrap",
-                  gap: "12px",
-                }}
-              >
-                <div>
-                  <h3 style={{ fontSize: "18px", fontWeight: 700, color: "#0f172a", margin: "0 0 4px 0" }}>
-                    Review & confirm import
-                  </h3>
-                  <p style={{ fontSize: "13px", color: "#64748b", margin: 0 }}>
-                    Previewing {parsedData?.rows.length || 0} of {parsedData?.totalRows || 0} rows from {file?.name}
-                  </p>
-                </div>
+        {/* 3. PREVIEW & IMPORT SETTINGS CARD (Displayed smoothly whenever a CSV file is selected) */}
+        {file && (
+          <div className="wizard-card" style={{ padding: "24px" }}>
+            {/* Header & Badges */}
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: "20px",
+                flexWrap: "wrap",
+                gap: "12px",
+              }}
+            >
+              <div>
+                <h3 style={{ fontSize: "17px", fontWeight: 700, color: "#0f172a", margin: "0 0 4px 0" }}>
+                  Preview & Import Settings
+                </h3>
+                <p style={{ fontSize: "13px", color: "#64748b", margin: 0 }}>
+                  Review rows from <span style={{ fontWeight: 600, color: "#0f172a" }}>{file.name}</span> before importing.
+                </p>
+              </div>
 
-                {parsedData ? (
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <button
+                  type="button"
+                  onClick={() => setShowMappingDrawer(!showMappingDrawer)}
+                  style={{
+                    background: showMappingDrawer ? "#eff6ff" : "#ffffff",
+                    border: `1px solid ${showMappingDrawer ? "#2563eb" : "#cbd5e1"}`,
+                    borderRadius: "8px",
+                    padding: "6px 12px",
+                    fontSize: "12.5px",
+                    fontWeight: 600,
+                    color: showMappingDrawer ? "#1d4ed8" : "#475569",
+                    cursor: "pointer",
+                  }}
+                >
+                  {showMappingDrawer ? "Hide Column Mapping" : "Customize Column Mapping"}
+                </button>
+
+                {parsedData && (
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
                     <span className="status-pill" style={{ background: "#dcfce7", color: "#166534" }}>
                       {parsedData.validCount} valid
                     </span>
@@ -1615,124 +1242,260 @@ export default function ImportReviewsPage() {
                       </span>
                     )}
                   </div>
-                ) : (
-                  <span className="status-pill" style={{ background: "#f1f5f9", color: "#64748b" }}>
-                    No file selected
-                  </span>
                 )}
               </div>
+            </div>
 
-              {/* Table / Empty State */}
-              {parsedData && parsedData.rows.length > 0 ? (
-                <div style={{ overflowX: "auto", border: "1px solid #e2e8f0", borderRadius: "10px", marginBottom: "20px" }}>
-                  <table className="clean-table">
-                    <thead>
-                      <tr>
-                        <th style={{ width: "20%" }}>Reviewer</th>
-                        <th style={{ width: "12%" }}>Rating</th>
-                        <th style={{ width: "40%" }}>Review</th>
-                        <th style={{ width: "16%" }}>Product / SKU</th>
-                        <th style={{ width: "12%" }}>Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {parsedData.rows.map((row, idx) => (
-                        <tr key={idx}>
-                          <td style={{ fontWeight: row.reviewer === "(missing)" ? 400 : 600, color: row.reviewer === "(missing)" ? "#94a3b8" : "#0f172a", fontStyle: row.reviewer === "(missing)" ? "italic" : "normal" }}>
-                            {row.reviewer}
-                          </td>
-                          <td>
-                            <span style={{ color: "#f59e0b", fontSize: "14px", letterSpacing: "1px" }}>
-                              {"★".repeat(row.rating)}
-                              <span style={{ color: "#cbd5e1" }}>{"★".repeat(Math.max(0, 5 - row.rating))}</span>
-                            </span>
-                          </td>
-                          <td style={{ color: "#334155" }}>
-                            {row.review}
-                          </td>
-                          <td style={{ color: "#475569", fontWeight: 500, fontSize: "13px" }}>
-                            {row.product}
-                          </td>
-                          <td>
-                            {row.check === "Ready" && (
-                              <span className="status-pill" style={{ background: "#dcfce7", color: "#166534" }}>
-                                Ready
-                              </span>
-                            )}
-                            {row.check === "Duplicate" && (
-                              <span className="status-pill" style={{ background: "#fef3c7", color: "#92400e" }}>
-                                Duplicate
-                              </span>
-                            )}
-                            {(row.check === "No name" || row.check === "Error") && (
-                              <span className="status-pill" style={{ background: "#fee2e2", color: "#991b1b" }}>
-                                {row.check}
-                              </span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <div style={{ textAlign: "center", padding: "40px 20px", color: "#64748b", background: "#f8fafc", borderRadius: "10px", border: "1px dashed #e2e8f0", marginBottom: "20px" }}>
-                  <p style={{ margin: 0 }}>No review rows found to preview. Please return to Step 1 and choose a CSV file.</p>
-                </div>
-              )}
-
-              {/* Action Footer */}
+            {/* Optional Custom Column Mapping Drawer */}
+            {showMappingDrawer && (
               <div
                 style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  paddingTop: "16px",
-                  borderTop: "1px solid #f1f5f9",
-                  flexWrap: "wrap",
-                  gap: "16px",
+                  background: "#f8fafc",
+                  border: "1px solid #e2e8f0",
+                  borderRadius: "10px",
+                  padding: "18px",
+                  marginBottom: "20px",
                 }}
               >
-                <div style={{ display: "flex", alignItems: "center", gap: "6px", color: "#64748b", fontSize: "13px" }}>
-                  <span>ⓘ Only import reviews of your own products. Text is kept exactly as written.</span>
+                <div style={{ fontSize: "13px", fontWeight: 700, color: "#0f172a", marginBottom: "12px" }}>
+                  Map CSV Column Headers
                 </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "14px" }}>
+                  <div>
+                    <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#475569", marginBottom: "4px" }}>
+                      Reviewer Name *
+                    </label>
+                    <select
+                      className="custom-select"
+                      style={{ padding: "6px 10px", fontSize: "12.5px" }}
+                      value={columnMapping.reviewerName}
+                      onChange={(e) => {
+                        const updated = { ...columnMapping, reviewerName: e.target.value };
+                        setColumnMapping(updated);
+                        computePreview(rawParsedRows, updated);
+                      }}
+                    >
+                      {csvHeaders.map((h) => <option key={h} value={h}>{h}</option>)}
+                    </select>
+                  </div>
 
-                <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                  <button
-                    type="button"
-                    className="btn-cancel"
-                    onClick={() => setCurrentStep(2)}
-                  >
-                    ← Back to Mapping
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-cancel"
-                    onClick={handleCancel}
-                    disabled={loading}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-primary-blue"
-                    onClick={handleExecuteImport}
-                    disabled={!file || loading || (parsedData?.validCount || 0) === 0}
-                  >
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
-                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                    {loading
-                      ? "Importing reviews..."
-                      : parsedData
-                      ? `Import ${parsedData.validCount} reviews`
-                      : "Import reviews"}
-                  </button>
+                  <div>
+                    <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#475569", marginBottom: "4px" }}>
+                      Rating (1-5) *
+                    </label>
+                    <select
+                      className="custom-select"
+                      style={{ padding: "6px 10px", fontSize: "12.5px" }}
+                      value={columnMapping.rating}
+                      onChange={(e) => {
+                        const updated = { ...columnMapping, rating: e.target.value };
+                        setColumnMapping(updated);
+                        computePreview(rawParsedRows, updated);
+                      }}
+                    >
+                      {csvHeaders.map((h) => <option key={h} value={h}>{h}</option>)}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#475569", marginBottom: "4px" }}>
+                      Review Text *
+                    </label>
+                    <select
+                      className="custom-select"
+                      style={{ padding: "6px 10px", fontSize: "12.5px" }}
+                      value={columnMapping.reviewText}
+                      onChange={(e) => {
+                        const updated = { ...columnMapping, reviewText: e.target.value };
+                        setColumnMapping(updated);
+                        computePreview(rawParsedRows, updated);
+                      }}
+                    >
+                      {csvHeaders.map((h) => <option key={h} value={h}>{h}</option>)}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#475569", marginBottom: "4px" }}>
+                      SKU / ASIN
+                    </label>
+                    <select
+                      className="custom-select"
+                      style={{ padding: "6px 10px", fontSize: "12.5px" }}
+                      value={columnMapping.sku}
+                      onChange={(e) => {
+                        const updated = { ...columnMapping, sku: e.target.value };
+                        setColumnMapping(updated);
+                        computePreview(rawParsedRows, updated);
+                      }}
+                    >
+                      <option value="">-- None / Auto --</option>
+                      {csvHeaders.map((h) => <option key={h} value={h}>{h}</option>)}
+                    </select>
+                  </div>
                 </div>
               </div>
+            )}
+
+            {/* Settings Row */}
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+                gap: "16px",
+                marginBottom: "20px",
+                background: "#fafafa",
+                border: "1px solid #f1f5f9",
+                borderRadius: "10px",
+                padding: "16px",
+              }}
+            >
+              <div>
+                <label style={{ display: "block", fontSize: "12.5px", fontWeight: 600, color: "#334155", marginBottom: "4px" }}>
+                  Assign to product
+                </label>
+                <select
+                  className="custom-select"
+                  value={overrideProductId}
+                  onChange={(e) => setOverrideProductId(e.target.value)}
+                >
+                  <option value="">Auto-detect by SKU / ASIN</option>
+                  {products.map((p) => (
+                    <option key={p.value} value={p.value}>
+                      {p.title}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: "12.5px", fontWeight: 600, color: "#334155", marginBottom: "4px" }}>
+                  Duplicates
+                </label>
+                <select
+                  className="custom-select"
+                  value={duplicatesOption}
+                  onChange={(e) => setDuplicatesOption(e.target.value)}
+                >
+                  <option value="skip">Skip existing reviews</option>
+                  <option value="overwrite">Overwrite existing reviews</option>
+                </select>
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: "12.5px", fontWeight: 600, color: "#334155", marginBottom: "4px" }}>
+                  After import
+                </label>
+                <select
+                  className="custom-select"
+                  value={afterImportOption}
+                  onChange={(e) => setAfterImportOption(e.target.value)}
+                >
+                  <option value="pending">Save as Pending</option>
+                  <option value="publish">Publish immediately</option>
+                </select>
+              </div>
             </div>
-          )}
-        </div>
+
+            {/* Preview Rows Table */}
+            {parsedData && parsedData.rows.length > 0 && (
+              <div style={{ overflowX: "auto", border: "1px solid #e2e8f0", borderRadius: "10px", marginBottom: "20px" }}>
+                <table className="clean-table">
+                  <thead>
+                    <tr>
+                      <th style={{ width: "20%" }}>Reviewer</th>
+                      <th style={{ width: "12%" }}>Rating</th>
+                      <th style={{ width: "40%" }}>Review</th>
+                      <th style={{ width: "16%" }}>Product / SKU</th>
+                      <th style={{ width: "12%" }}>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {parsedData.rows.map((row, idx) => (
+                      <tr key={idx}>
+                        <td style={{ fontWeight: row.reviewer === "(missing)" ? 400 : 600, color: row.reviewer === "(missing)" ? "#94a3b8" : "#0f172a", fontStyle: row.reviewer === "(missing)" ? "italic" : "normal" }}>
+                          {row.reviewer}
+                        </td>
+                        <td>
+                          <span style={{ color: "#f59e0b", fontSize: "14px", letterSpacing: "1px" }}>
+                            {"★".repeat(row.rating)}
+                            <span style={{ color: "#cbd5e1" }}>{"★".repeat(Math.max(0, 5 - row.rating))}</span>
+                          </span>
+                        </td>
+                        <td style={{ color: "#334155" }}>
+                          {row.review}
+                        </td>
+                        <td style={{ color: "#475569", fontWeight: 500, fontSize: "13px" }}>
+                          {row.product}
+                        </td>
+                        <td>
+                          {row.check === "Ready" && (
+                            <span className="status-pill" style={{ background: "#dcfce7", color: "#166534" }}>
+                              Ready
+                            </span>
+                          )}
+                          {row.check === "Duplicate" && (
+                            <span className="status-pill" style={{ background: "#fef3c7", color: "#92400e" }}>
+                              Duplicate
+                            </span>
+                          )}
+                          {(row.check === "No name" || row.check === "Error") && (
+                            <span className="status-pill" style={{ background: "#fee2e2", color: "#991b1b" }}>
+                              {row.check}
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Action Footer */}
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                paddingTop: "14px",
+                borderTop: "1px solid #f1f5f9",
+                flexWrap: "wrap",
+                gap: "14px",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "6px", color: "#64748b", fontSize: "13px" }}>
+                <span>ⓘ Only import reviews of your own products. Text is kept exactly as written.</span>
+              </div>
+
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <button
+                  type="button"
+                  className="btn-cancel"
+                  onClick={handleCancel}
+                  disabled={loading}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="btn-primary-blue"
+                  onClick={handleExecuteImport}
+                  disabled={!file || loading || (parsedData?.validCount || 0) === 0}
+                >
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                  {loading
+                    ? "Importing reviews..."
+                    : parsedData
+                    ? `Import ${parsedData.validCount} reviews`
+                    : "Import reviews"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* 4. MANUAL MAPPINGS CARD (IF UNMATCHED SKUS OCCUR) */}
         {importResult && importResult.unmatchedRows && importResult.unmatchedRows.length > 0 && (
@@ -1743,7 +1506,7 @@ export default function ImportReviewsPage() {
               borderRadius: "14px",
               padding: "24px",
               boxShadow: "0 1px 3px rgba(0,0,0,0.02)",
-              marginBottom: "28px",
+              marginBottom: "24px",
             }}
           >
             <h3 style={{ fontSize: "16px", fontWeight: 700, color: "#92400e", margin: "0 0 6px 0" }}>
@@ -1803,7 +1566,7 @@ export default function ImportReviewsPage() {
           </div>
         )}
 
-        {/* 5. RECENT IMPORTS SECTION (Matches Reference Design Table) */}
+        {/* 5. RECENT IMPORTS SECTION (Full Width Table) */}
         <div className="wizard-card" style={{ padding: "24px" }}>
           <div
             style={{
