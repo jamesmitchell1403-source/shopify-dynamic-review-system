@@ -37,52 +37,52 @@ export async function loader({ request }: LoaderFunctionArgs) {
     const metaVal = await fetchShopMetafieldValue(admin, shop, "ai_jobs_backup");
     const isCleared = metaVal === "[]";
 
-    // If no jobs exist yet and merchant hasn't explicitly cleared them, seed the default audit history from the reference design
+    // If no jobs exist yet and merchant hasn't explicitly cleared them, seed default audit history
     if (aiJobs.length === 0 && !isCleared) {
       const seedJobs = [
         {
           id: `seed_job_1_${Date.now()}`,
           shop,
           provider: "gemini",
-          modelUsed: "gemini-2.0-flash",
-          inputNotes: "Request emails",
-          inputDescription: "104 delivered orders",
-          resultCount: 104,
+          modelUsed: "Bulk Generator",
+          inputNotes: "Review generation",
+          inputDescription: "Bulk generate reviews",
+          resultCount: 915,
           status: "completed",
-          createdAt: new Date("2026-10-12T05:45:00Z"),
+          createdAt: new Date("2026-10-23T17:14:00Z"),
         },
         {
           id: `seed_job_2_${Date.now()}`,
           shop,
           provider: "gemini",
-          modelUsed: "gemini-2.0-flash",
+          modelUsed: "gemini-1.5-pro",
           inputNotes: "Reply suggestion",
           inputDescription: "Luminous Kit",
           resultCount: 12,
           status: "completed",
-          createdAt: new Date("2026-10-11T18:20:00Z"),
+          createdAt: new Date("2026-10-21T18:20:00Z"),
         },
         {
           id: `seed_job_3_${Date.now()}`,
           shop,
           provider: "openai",
-          modelUsed: "gpt-4o-mini",
+          modelUsed: "gpt-4o",
           inputNotes: "Summary",
           inputDescription: "6 Piece Towel Set",
           resultCount: 1,
           status: "completed",
-          createdAt: new Date("2026-10-11T10:02:00Z"),
+          createdAt: new Date("2026-10-18T10:02:00Z"),
         },
         {
           id: `seed_job_4_${Date.now()}`,
           shop,
           provider: "claude",
-          modelUsed: "claude-sonnet",
+          modelUsed: "claude-3-5-sonnet",
           inputNotes: "Translation",
-          inputDescription: "Gujarati reviews",
+          inputDescription: "Customer reviews",
           resultCount: 18,
-          status: "failed: key missing",
-          createdAt: new Date("2026-10-10T14:37:00Z"),
+          status: "completed",
+          createdAt: new Date("2026-10-15T14:37:00Z"),
         },
       ];
 
@@ -106,7 +106,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       anthropicApiKey: shopifyCloudKeys?.anthropicApiKey || settings?.anthropicApiKey || process.env.ANTHROPIC_API_KEY || "",
       geminiApiKey: shopifyCloudKeys?.geminiApiKey || settings?.geminiApiKey || process.env.GEMINI_API_KEY || "",
       openaiApiKey: shopifyCloudKeys?.openaiApiKey || (settings as any)?.openaiApiKey || process.env.OPENAI_API_KEY || "",
-      defaultAiProvider: shopifyCloudKeys?.defaultAiProvider || settings?.defaultAiProvider || "gemini",
+      defaultAiProvider: shopifyCloudKeys?.defaultAiProvider || settings?.defaultAiProvider || "openai",
       fallbackAiProvider: shopifyCloudKeys?.fallbackAiProvider || (settings as any)?.fallbackAiProvider || "auto",
     };
 
@@ -119,7 +119,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       anthropicApiKey: shopifyCloudKeys?.anthropicApiKey || process.env.ANTHROPIC_API_KEY || "",
       geminiApiKey: shopifyCloudKeys?.geminiApiKey || process.env.GEMINI_API_KEY || "",
       openaiApiKey: shopifyCloudKeys?.openaiApiKey || process.env.OPENAI_API_KEY || "",
-      defaultAiProvider: shopifyCloudKeys?.defaultAiProvider || "gemini",
+      defaultAiProvider: shopifyCloudKeys?.defaultAiProvider || "openai",
       fallbackAiProvider: shopifyCloudKeys?.fallbackAiProvider || "auto",
     };
     return json({ settings: fallbackSettings, aiJobs: [] });
@@ -188,19 +188,7 @@ export async function action({ request }: ActionFunctionArgs) {
     return json({ success: true, message: "Audit history record deleted." });
   }
 
-  // 3. Delete selected audit records
-  if (intent === "deleteSelectedJobs") {
-    const jobIds = formData.getAll("jobIds") as string[];
-    if (jobIds.length > 0) {
-      await db.aiGenerationJob.deleteMany({
-        where: { id: { in: jobIds }, shop },
-      });
-      syncAiJobsToShopify(admin, shop, true).catch((e) => console.warn(e));
-    }
-    return json({ success: true, message: "Selected audit history records deleted." });
-  }
-
-  // 4. Clear all audit logs
+  // 3. Clear all audit logs
   if (intent === "clearAllJobs") {
     await db.aiGenerationJob.deleteMany({
       where: { shop },
@@ -209,7 +197,7 @@ export async function action({ request }: ActionFunctionArgs) {
     return json({ success: true, message: "All audit history records cleared." });
   }
 
-  // 4. Default / Save API Keys & Preferences
+  // 4. Save API Keys & Preferences
   const anthropicApiKeyRaw = formData.get("anthropicApiKey") as string;
   const geminiApiKeyRaw = formData.get("geminiApiKey") as string;
   const openaiApiKeyRaw = formData.get("openaiApiKey") as string;
@@ -219,10 +207,10 @@ export async function action({ request }: ActionFunctionArgs) {
   const anthropicApiKey = anthropicApiKeyRaw !== null && anthropicApiKeyRaw !== undefined ? anthropicApiKeyRaw.trim() : null;
   const geminiApiKey = geminiApiKeyRaw !== null && geminiApiKeyRaw !== undefined ? geminiApiKeyRaw.trim() : null;
   const openaiApiKey = openaiApiKeyRaw !== null && openaiApiKeyRaw !== undefined ? openaiApiKeyRaw.trim() : null;
-  const defaultAiProvider = defaultAiProviderRaw ? defaultAiProviderRaw.trim() : "gemini";
+  const defaultAiProvider = defaultAiProviderRaw ? defaultAiProviderRaw.trim() : "openai";
   const fallbackAiProvider = fallbackAiProviderRaw ? fallbackAiProviderRaw.trim() : "auto";
 
-  // 1. Save permanently to Shopify Cloud (Shop Metafields in background)
+  // 1. Save permanently to Shopify Cloud (Shop Metafields)
   saveShopAIKeysToShopify(admin, {
     anthropicApiKey,
     geminiApiKey,
@@ -281,6 +269,83 @@ export async function action({ request }: ActionFunctionArgs) {
   return json({ success: true, message: "API keys and preferences saved successfully." });
 }
 
+// Authentic Provider Logos
+function AnthropicLogo() {
+  return (
+    <div
+      style={{
+        width: "36px",
+        height: "36px",
+        borderRadius: "8px",
+        background: "#f5f5f4",
+        border: "1px solid #e7e5e4",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        fontWeight: 800,
+        fontSize: "15px",
+        color: "#1c1917",
+        letterSpacing: "-0.5px",
+        flexShrink: 0,
+      }}
+    >
+      AI
+    </div>
+  );
+}
+
+function GoogleGeminiLogo() {
+  return (
+    <div
+      style={{
+        width: "36px",
+        height: "36px",
+        borderRadius: "8px",
+        background: "#ffffff",
+        border: "1px solid #e2e8f0",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        flexShrink: 0,
+      }}
+    >
+      <svg width="20" height="20" viewBox="0 0 24 24">
+        <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+        <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+        <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
+        <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
+      </svg>
+    </div>
+  );
+}
+
+function OpenAiLogo() {
+  return (
+    <div
+      style={{
+        width: "36px",
+        height: "36px",
+        borderRadius: "8px",
+        background: "#10a37f",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        flexShrink: 0,
+      }}
+    >
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+        <path
+          d="M20.5 10.2a5.2 5.2 0 0 0-.4-4.2 5.3 5.3 0 0 0-5.2-2.5 5.2 5.2 0 0 0-3.9-1.8 5.3 5.3 0 0 0-5 3.5 5.2 5.2 0 0 0-3.6 2.6 5.3 5.3 0 0 0 .7 5.7 5.2 5.2 0 0 0 .4 4.2 5.3 5.3 0 0 0 5.2 2.5 5.2 5.2 0 0 0 3.9 1.8 5.3 5.3 0 0 0 5-3.5 5.2 5.2 0 0 0 3.6-2.6 5.3 5.3 0 0 0-.7-5.7zM12 14.8a2.8 2.8 0 1 1 0-5.6 2.8 2.8 0 0 1 0 5.6z"
+          stroke="#ffffff"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    </div>
+  );
+}
+
 export default function AiSettingsPage() {
   const { settings, aiJobs } = useLoaderData<typeof loader>();
   const submit = useSubmit();
@@ -292,7 +357,7 @@ export default function AiSettingsPage() {
   const [geminiKey, setGeminiKey] = useState<string>(settings?.geminiApiKey || "");
   const [openaiKey, setOpenaiKey] = useState<string>((settings as any)?.openaiApiKey || "");
   const [defaultProvider, setDefaultProvider] = useState<"claude" | "gemini" | "openai">(
-    (settings?.defaultAiProvider as any) || "gemini"
+    (settings?.defaultAiProvider as any) || "openai"
   );
 
   // Key visibility toggles
@@ -307,8 +372,11 @@ export default function AiSettingsPage() {
   const [testingProvider, setTestingProvider] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<{ provider: string; success: boolean; message: string } | null>(null);
 
-  // Activity Log Selection & Deletion states with instantaneous optimistic response
-  const [selectedJobIds, setSelectedJobIds] = useState<Set<string>>(new Set());
+  // Activity Log Search & Filter states
+  const [searchQuery, setSearchQuery] = useState<string>("");
+  const [dateFilter, setDateFilter] = useState<"7d" | "30d" | "all">("7d");
+  const [activeMenuJobId, setActiveMenuJobId] = useState<string | null>(null);
+
   const [optimisticDeletedJobIds, setOptimisticDeletedJobIds] = useState<Set<string>>(new Set());
   const [optimisticCleared, setOptimisticCleared] = useState<boolean>(false);
 
@@ -317,37 +385,18 @@ export default function AiSettingsPage() {
     setOptimisticCleared(false);
   }, [aiJobs]);
 
-  const displayedAiJobs = useMemo(() => {
-    if (optimisticCleared) return [];
-    return aiJobs.filter((j: any) => !optimisticDeletedJobIds.has(j.id));
-  }, [aiJobs, optimisticDeletedJobIds, optimisticCleared]);
+  // Close popup menu on outside click
+  useEffect(() => {
+    const handleOutside = () => setActiveMenuJobId(null);
+    window.addEventListener("click", handleOutside);
+    return () => window.removeEventListener("click", handleOutside);
+  }, []);
 
   const [deleteConfirmModal, setDeleteConfirmModal] = useState<{
     open: boolean;
-    type: "single" | "selected" | "all";
+    type: "single" | "all";
     jobId?: string;
-    count?: number;
   }>({ open: false, type: "single" });
-
-  const allCurrentJobIds = useMemo(() => displayedAiJobs.map((j: any) => j.id), [displayedAiJobs]);
-  const allSelected = allCurrentJobIds.length > 0 && allCurrentJobIds.every((id: string) => selectedJobIds.has(id));
-
-  const toggleSelectAll = () => {
-    if (allSelected) {
-      setSelectedJobIds(new Set());
-    } else {
-      setSelectedJobIds(new Set(allCurrentJobIds));
-    }
-  };
-
-  const toggleSelectOne = (id: string) => {
-    setSelectedJobIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
 
   const executeDelete = () => {
     if (deleteConfirmModal.type === "single" && deleteConfirmModal.jobId) {
@@ -356,23 +405,16 @@ export default function AiSettingsPage() {
       fd.append("intent", "deleteJob");
       fd.append("jobId", deleteConfirmModal.jobId);
       submit(fd, { method: "post" });
-    } else if (deleteConfirmModal.type === "selected") {
-      setOptimisticDeletedJobIds((prev) => new Set([...prev, ...selectedJobIds]));
-      const fd = new FormData();
-      fd.append("intent", "deleteSelectedJobs");
-      selectedJobIds.forEach((id) => fd.append("jobIds", id));
-      submit(fd, { method: "post" });
     } else if (deleteConfirmModal.type === "all") {
       setOptimisticCleared(true);
       const fd = new FormData();
       fd.append("intent", "clearAllJobs");
       submit(fd, { method: "post" });
     }
-    setSelectedJobIds(new Set());
     setDeleteConfirmModal({ open: false, type: "single" });
   };
 
-  // Handle Save
+  // Handle Save Changes
   const handleSave = () => {
     const fd = new FormData();
     fd.append("intent", "saveKeys");
@@ -425,77 +467,96 @@ export default function AiSettingsPage() {
     setShowKeys((prev) => ({ ...prev, [prov]: !prev[prov] }));
   };
 
-  // Format Date string
+  // Format Date string: "Oct 23, 2026 • 5:14 PM"
   const formatDateTime = (dateInput: string | Date | undefined) => {
-    if (!dateInput) return "2026-10-12 05:45";
+    if (!dateInput) return "Oct 23, 2026 • 5:14 PM";
     try {
       const d = new Date(dateInput);
       if (isNaN(d.getTime())) return String(dateInput);
-      const pad = (n: number) => String(n).padStart(2, "0");
-      const year = d.getFullYear();
-      const month = pad(d.getMonth() + 1);
-      const day = pad(d.getDate());
-      const hours = pad(d.getHours());
-      const mins = pad(d.getMinutes());
-      return `${year}-${month}-${day} ${hours}:${mins}`;
+      const datePart = d.toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      });
+      const timePart = d.toLocaleTimeString("en-US", {
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true,
+      });
+      return `${datePart} • ${timePart}`;
     } catch {
       return String(dateInput);
     }
   };
 
-  // Parse Action & Target for activity logs
-  const parseJobDetails = (job: any) => {
+  // Parse Action for activity logs
+  const parseAction = (job: any) => {
     const notes = (job.inputNotes || "").toLowerCase();
-    const desc = (job.inputDescription || "").trim();
-
-    let action = "Review generation";
-    if (notes.includes("email") || desc.toLowerCase().includes("email") || desc.toLowerCase().includes("delivered")) {
-      action = "Request emails";
-    } else if (notes.includes("reply") || desc.toLowerCase().includes("reply")) {
-      action = "Reply suggestion";
-    } else if (notes.includes("summary") || desc.toLowerCase().includes("summary")) {
-      action = "Summary";
-    } else if (notes.includes("translation") || (job.language && job.language !== "en")) {
-      action = "Translation";
-    } else if (job.inputNotes) {
-      action = job.inputNotes;
-    }
-
-    let target = "104 delivered orders";
-    if (desc) {
-      target = desc;
-    } else if (job.productId === "ALL_PRODUCTS_BULK") {
-      target = "All Store Products";
-    } else if (job.productId) {
-      target = job.productId.replace(/^gid:\/\/shopify\/Product\//, "Product #");
-    }
-
-    return { action, target };
+    const desc = (job.inputDescription || "").toLowerCase();
+    if (notes.includes("email") || desc.includes("email")) return "Request emails";
+    if (notes.includes("reply") || desc.includes("reply")) return "Reply suggestion";
+    if (notes.includes("summary") || desc.includes("summary")) return "Summary";
+    if (notes.includes("translation") || (job.language && job.language !== "en")) return "Translation";
+    return job.inputNotes || "Review generation";
   };
+
+  // Filtered Activity Logs
+  const filteredJobs = useMemo(() => {
+    if (optimisticCleared) return [];
+    let list = aiJobs.filter((j: any) => !optimisticDeletedJobIds.has(j.id));
+
+    // Date filtering
+    const now = Date.now();
+    if (dateFilter === "7d") {
+      const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000;
+      list = list.filter((j) => new Date(j.createdAt).getTime() >= sevenDaysAgo);
+    } else if (dateFilter === "30d") {
+      const thirtyDaysAgo = now - 30 * 24 * 60 * 60 * 1000;
+      list = list.filter((j) => new Date(j.createdAt).getTime() >= thirtyDaysAgo);
+    }
+
+    // Search query filtering
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      list = list.filter((j) => {
+        const action = parseAction(j).toLowerCase();
+        const model = (j.modelUsed || "").toLowerCase();
+        const prov = (j.provider || "").toLowerCase();
+        const status = (j.status || "").toLowerCase();
+        return (
+          action.includes(q) ||
+          model.includes(q) ||
+          prov.includes(q) ||
+          status.includes(q)
+        );
+      });
+    }
+
+    return list;
+  }, [aiJobs, optimisticDeletedJobIds, optimisticCleared, dateFilter, searchQuery]);
 
   // Export CSV Handler
   const handleExportCSV = () => {
-    const headers = ["Date and time", "Provider", "Model", "Action", "Target", "Items", "Status"];
-    const csvRows = aiJobs.map((j) => {
+    const headers = ["Date & time", "Provider", "Model", "Action", "Items", "Status"];
+    const csvRows = filteredJobs.map((j) => {
       const dt = formatDateTime(j.createdAt);
       const provLower = (j.provider || "").toLowerCase();
       const prov = provLower.includes("gemini")
-        ? "Gemini"
+        ? "Google Gemini"
         : provLower.includes("openai")
-        ? "OpenAI"
-        : "Claude";
+        ? "ChatGPT (OpenAI)"
+        : "Anthropic Claude";
       const model =
         j.modelUsed ||
-        (prov === "Gemini" ? "gemini-2.0-flash" : prov === "OpenAI" ? "gpt-4o-mini" : "claude-sonnet");
-      const { action, target } = parseJobDetails(j);
+        (prov.includes("Gemini") ? "Gemini 1.5 Pro" : prov.includes("OpenAI") ? "GPT-4o" : "Claude 3.5 Sonnet");
+      const action = parseAction(j);
       const items = j.resultCount || 1;
       const status = j.status === "completed" ? "Completed" : j.status;
       return [
-        dt,
-        prov,
-        model,
+        `"${dt}"`,
+        `"${prov}"`,
+        `"${model}"`,
         `"${action.replace(/"/g, '""')}"`,
-        `"${target.replace(/"/g, '""')}"`,
         items,
         `"${status.replace(/"/g, '""')}"`,
       ].join(",");
@@ -515,40 +576,89 @@ export default function AiSettingsPage() {
   const isSaving = navigation.state === "submitting";
 
   return (
-    <Page
-      fullWidth
-      title="Multi-Provider AI Settings & Audit Logs"
-      primaryAction={{
-        content: isSaving ? "Saving..." : "Save API keys and preferences",
-        onAction: handleSave,
-        loading: isSaving,
-      }}
-    >
+    <Page fullWidth>
       <style>{`
-        /* Full width overrides to eliminate side whitespace */
-        .Polaris-Page {
-          max-width: 100% !important;
-          padding-left: 24px !important;
-          padding-right: 24px !important;
-        }
-        .Polaris-Page--fullWidth {
-          max-width: 100% !important;
-        }
+        /* 100% Full Width Edge-to-Edge Container */
         .ai-settings-container {
           width: 100% !important;
           max-width: 100% !important;
           margin: 0 !important;
-          padding: 0 !important;
+          padding: 8px 24px 64px 24px !important;
+          box-sizing: border-box !important;
           font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-          color: #111827;
+          color: #0f172a;
         }
 
-        /* Provider Cards Grid */
+        /* Top Page Header */
+        .page-header-row {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          margin-bottom: 24px;
+          flex-wrap: wrap;
+          gap: 16px;
+        }
+        .page-title {
+          font-size: 24px;
+          font-weight: 700;
+          color: #0f172a;
+          margin: 0 0 4px 0;
+          letter-spacing: -0.015em;
+        }
+        .page-subtitle {
+          font-size: 14px;
+          color: #64748b;
+          margin: 0;
+        }
+
+        .btn-save-changes {
+          background: #2563eb;
+          color: #ffffff;
+          border: none;
+          border-radius: 8px;
+          padding: 9px 20px;
+          font-size: 14px;
+          font-weight: 600;
+          cursor: pointer;
+          box-shadow: 0 1px 3px rgba(37, 99, 235, 0.25);
+          transition: all 0.15s ease;
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+        }
+        .btn-save-changes:hover:not(:disabled) {
+          background: #1d4ed8;
+        }
+        .btn-save-changes:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
+        }
+
+        /* Full Width Main Cards */
+        .section-card {
+          width: 100% !important;
+          background: #ffffff;
+          border: 1px solid #e2e8f0;
+          border-radius: 14px;
+          padding: 24px;
+          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+          margin-bottom: 24px;
+          box-sizing: border-box;
+        }
+
+        .section-header-title {
+          font-size: 17px;
+          font-weight: 700;
+          color: #0f172a;
+          margin: 0 0 18px 0;
+        }
+
+        /* 3 Provider Sub-Cards Grid */
         .provider-grid {
           display: grid;
           grid-template-columns: repeat(3, minmax(0, 1fr));
-          gap: 20px;
-          margin-bottom: 20px;
+          gap: 18px;
+          width: 100%;
         }
         @media (max-width: 960px) {
           .provider-grid {
@@ -556,121 +666,102 @@ export default function AiSettingsPage() {
           }
         }
 
-        .provider-card {
+        .provider-subcard {
           background: #ffffff;
           border: 1px solid #e2e8f0;
-          border-radius: 18px;
-          padding: 24px;
+          border-radius: 12px;
+          padding: 20px;
           display: flex;
           flex-direction: column;
           justify-content: space-between;
-          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-          transition: all 0.2s ease;
-          position: relative;
+          box-sizing: border-box;
+          transition: border-color 0.15s ease;
         }
-        .provider-card.is-default {
-          border: 2px solid #2563eb !important;
-          box-shadow: 0 4px 16px rgba(37, 99, 235, 0.1);
+        .provider-subcard:hover {
+          border-color: #cbd5e1;
         }
 
-        .card-header {
+        .provider-subcard-header {
           display: flex;
           align-items: flex-start;
           justify-content: space-between;
-          margin-bottom: 20px;
+          margin-bottom: 16px;
+          gap: 8px;
         }
 
-        .provider-identity {
+        .provider-meta {
           display: flex;
           align-items: center;
-          gap: 14px;
+          gap: 12px;
         }
 
-        .provider-icon-wrapper {
-          width: 46px;
-          height: 46px;
-          border-radius: 12px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          flex-shrink: 0;
-        }
-
-        .icon-claude {
-          background: #fef3c7;
-          color: #92400e;
-        }
-        .icon-gemini {
-          background: #dbeafe;
-          color: #2563eb;
-        }
-        .icon-openai {
-          background: #dcfce7;
-          color: #166534;
-        }
-
-        .provider-title {
-          font-size: 16px;
+        .provider-name {
+          font-size: 15px;
           font-weight: 700;
-          color: #111827;
+          color: #0f172a;
           line-height: 1.25;
-          margin: 0;
         }
-        .provider-subtitle {
-          font-size: 13px;
-          color: #6b7280;
-          margin-top: 3px;
-          font-weight: 400;
+        .provider-model-desc {
+          font-size: 12.5px;
+          color: #64748b;
+          margin-top: 2px;
         }
 
-        .pill-badge-default {
-          background: #dbeafe;
-          color: #1e40af;
-          font-size: 12px;
-          font-weight: 600;
-          padding: 4px 14px;
-          border-radius: 9999px;
+        /* Status & Default Pills */
+        .badge-pill {
           display: inline-flex;
           align-items: center;
-        }
-
-        .btn-set-default {
-          background: #f3f4f6;
-          color: #4b5563;
-          border: none;
-          font-size: 12px;
-          font-weight: 500;
-          padding: 5px 14px;
+          gap: 5px;
+          padding: 3px 9px;
           border-radius: 9999px;
-          cursor: pointer;
-          transition: background 0.15s ease;
+          font-size: 12px;
+          font-weight: 600;
         }
-        .btn-set-default:hover {
-          background: #e5e7eb;
-          color: #111827;
+        .badge-pill.connected {
+          background: #ecfdf5;
+          color: #059669;
+        }
+        .badge-pill.not-connected {
+          background: #fef2f2;
+          color: #dc2626;
+        }
+        .badge-pill.default-tag {
+          background: #eff6ff;
+          color: #2563eb;
+        }
+        .pill-dot {
+          width: 6px;
+          height: 6px;
+          border-radius: 50%;
+        }
+        .pill-dot.green {
+          background: #10b981;
+        }
+        .pill-dot.red {
+          background: #ef4444;
         }
 
+        /* Inputs */
         .field-label {
-          font-size: 13px;
-          font-weight: 500;
-          color: #374151;
-          margin-bottom: 8px;
+          font-size: 12.5px;
+          font-weight: 600;
+          color: #475569;
+          margin-bottom: 6px;
           display: block;
         }
-
-        .input-wrapper {
+        .input-group {
           position: relative;
           display: flex;
           align-items: center;
-          margin-bottom: 24px;
+          margin-bottom: 18px;
         }
         .key-input {
           width: 100%;
-          border: 1px solid #d1d5db;
-          border-radius: 10px;
-          padding: 10px 42px 10px 14px;
-          font-size: 14px;
-          color: #111827;
+          border: 1px solid #cbd5e1;
+          border-radius: 8px;
+          padding: 8px 38px 8px 12px;
+          font-size: 13.5px;
+          color: #0f172a;
           background: #ffffff;
           outline: none;
           transition: border-color 0.15s ease, box-shadow 0.15s ease;
@@ -678,209 +769,155 @@ export default function AiSettingsPage() {
         }
         .key-input:focus {
           border-color: #2563eb;
-          box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+          box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
         }
 
-        .btn-eye-toggle {
+        .eye-toggle-btn {
           position: absolute;
-          right: 10px;
-          background: transparent;
+          right: 8px;
+          background: none;
           border: none;
-          color: #6b7280;
+          color: #64748b;
           cursor: pointer;
           padding: 4px;
           display: flex;
           align-items: center;
           justify-content: center;
-          border-radius: 6px;
+          border-radius: 4px;
         }
-        .btn-eye-toggle:hover {
-          color: #111827;
+        .eye-toggle-btn:hover {
+          color: #0f172a;
         }
 
-        .card-footer {
+        /* Card Bottom Actions */
+        .card-actions-row {
           display: flex;
           align-items: center;
           justify-content: space-between;
-          padding-top: 4px;
+          gap: 10px;
         }
-
-        .badge-status-pill {
-          padding: 6px 14px;
-          border-radius: 9999px;
-          font-size: 12px;
-          font-weight: 600;
-          display: inline-flex;
-          align-items: center;
-          gap: 6px;
-        }
-        .badge-status-connected {
-          background: #dcfce7;
-          color: #15803d;
-        }
-        .badge-status-disconnected {
-          background: #fef3c7;
-          color: #92400e;
-        }
-
-        .btn-test-connection {
+        .btn-card-action {
           background: #ffffff;
-          color: #111827;
-          border: 1px solid #d1d5db;
-          border-radius: 10px;
+          border: 1px solid #e2e8f0;
+          border-radius: 7px;
           font-size: 13px;
-          font-weight: 600;
-          padding: 8px 16px;
+          font-weight: 500;
+          color: #334155;
+          padding: 6px 16px;
           cursor: pointer;
-          transition: background 0.15s ease, border-color 0.15s ease;
-          white-space: nowrap;
+          transition: all 0.15s ease;
         }
-        .btn-test-connection:hover:not(:disabled) {
-          background: #f9fafb;
-          border-color: #9ca3af;
+        .btn-card-action:hover:not(:disabled) {
+          background: #f8fafc;
+          border-color: #cbd5e1;
+          color: #0f172a;
         }
-        .btn-test-connection:disabled {
-          opacity: 0.6;
+        .btn-card-action:disabled {
+          opacity: 0.5;
           cursor: not-allowed;
         }
 
-        /* Page Header Primary Action Styling */
-        .Polaris-Page-Header__PrimaryAction .Polaris-Button--variantPrimary,
-        .Polaris-Page-Header .Polaris-Button--variantPrimary {
-          background: #0f172a !important;
-          color: #ffffff !important;
-          font-weight: 600 !important;
-          font-size: 13.5px !important;
-          border-radius: 9px !important;
-          padding: 8px 18px !important;
-          border: none !important;
-        }
-        .Polaris-Page-Header__PrimaryAction .Polaris-Button--variantPrimary:hover,
-        .Polaris-Page-Header .Polaris-Button--variantPrimary:hover {
-          background: #1e293b !important;
-        }
-
-        /* AI Activity Log Card */
-        .activity-log-card {
-          background: #ffffff;
-          border: 1px solid #e2e8f0;
-          border-radius: 18px;
-          padding: 24px;
-          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-        }
-
-        .log-header {
+        /* Activity Log Top Controls */
+        .log-top-bar {
           display: flex;
-          align-items: center;
+          align-items: flex-start;
           justify-content: space-between;
-          gap: 16px;
           margin-bottom: 20px;
           flex-wrap: wrap;
+          gap: 16px;
         }
-
-        .log-title-group h2 {
-          font-size: 18px;
-          font-weight: 700;
-          color: #111827;
-          margin: 0;
+        .search-input-wrapper {
+          position: relative;
+          display: inline-flex;
+          align-items: center;
         }
-        .log-title-group p {
-          font-size: 13.5px;
-          color: #6b7280;
-          margin: 3px 0 0 0;
-        }
-
-        .btn-export-csv {
-          background: #ffffff;
-          color: #111827;
-          border: 1px solid #d1d5db;
+        .search-input {
+          border: 1px solid #cbd5e1;
           border-radius: 8px;
+          padding: 7px 12px 7px 32px;
           font-size: 13px;
-          font-weight: 600;
-          padding: 7px 16px;
+          color: #0f172a;
+          outline: none;
+          width: 200px;
+          transition: all 0.15s ease;
+        }
+        .search-input:focus {
+          border-color: #2563eb;
+          box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+        }
+
+        .filter-select {
+          border: 1px solid #cbd5e1;
+          border-radius: 8px;
+          padding: 7px 12px;
+          font-size: 13px;
+          color: #334155;
+          background: #ffffff;
+          outline: none;
+          cursor: pointer;
+          transition: border-color 0.15s ease;
+        }
+        .filter-select:focus {
+          border-color: #2563eb;
+        }
+
+        .btn-outline-white {
+          background: #ffffff;
+          border: 1px solid #cbd5e1;
+          border-radius: 8px;
+          padding: 7px 14px;
+          font-size: 13px;
+          font-weight: 500;
+          color: #334155;
           cursor: pointer;
           display: inline-flex;
           align-items: center;
-          gap: 8px;
-          transition: background 0.15s ease, border-color 0.15s ease;
+          gap: 6px;
+          transition: all 0.15s ease;
         }
-        .btn-export-csv:hover {
-          background: #f9fafb;
-          border-color: #9ca3af;
+        .btn-outline-white:hover {
+          background: #f8fafc;
+          border-color: #94a3b8;
         }
 
-        /* Table Styles */
-        .table-responsive {
-          width: 100%;
-          overflow-x: auto;
-          margin-top: 12px;
-        }
-        .log-table {
+        /* Clean Table */
+        .clean-table {
           width: 100%;
           border-collapse: collapse;
-          font-size: 14px;
+          font-size: 13.5px;
         }
-        .log-table th {
+        .clean-table th {
           text-align: left;
-          padding: 12px 14px;
-          font-size: 13px;
-          font-weight: 500;
-          color: #6b7280;
+          padding: 12px 16px;
+          color: #64748b;
+          font-weight: 600;
+          font-size: 12.5px;
+          border-bottom: 1px solid #e2e8f0;
+          background: #fafafa;
+        }
+        .clean-table td {
+          padding: 14px 16px;
           border-bottom: 1px solid #f1f5f9;
-          white-space: nowrap;
-        }
-        .log-table td {
-          padding: 14px 14px;
-          color: #111827;
-          border-bottom: 1px solid #f8fafc;
           vertical-align: middle;
-          white-space: nowrap;
+          color: #0f172a;
         }
-        .log-table tbody tr:hover {
-          background-color: #f8fafc;
-        }
-
-        .badge-provider {
-          font-size: 12px;
-          font-weight: 600;
-          padding: 3px 12px;
-          border-radius: 9999px;
-          display: inline-block;
-        }
-        .badge-provider-gemini {
-          background: #dbeafe;
-          color: #1e40af;
-        }
-        .badge-provider-openai {
-          background: #dcfce7;
-          color: #166534;
-        }
-        .badge-provider-claude {
-          background: #fef3c7;
-          color: #92400e;
+        .clean-table tbody tr:hover {
+          background: #fbfcfe;
         }
 
-        .badge-result {
-          font-size: 12px;
-          font-weight: 600;
-          padding: 4px 12px;
-          border-radius: 9999px;
-          display: inline-block;
+        .icon-more-btn {
+          background: none;
+          border: none;
+          color: #64748b;
+          font-size: 16px;
+          cursor: pointer;
+          padding: 4px 8px;
+          border-radius: 6px;
+          line-height: 1;
         }
-        .badge-result-completed {
-          background: #dcfce7;
-          color: #166534;
-        }
-        .badge-result-failed {
-          background: #fee2e2;
-          color: #991b1b;
-        }
-
-        .target-cell {
-          max-width: 170px;
-          overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
+        .icon-more-btn:hover {
+          background: #f1f5f9;
+          color: #0f172a;
         }
       `}</style>
 
@@ -888,7 +925,7 @@ export default function AiSettingsPage() {
         {/* Alerts / Banners */}
         {savedSuccess && (
           <div style={{ marginBottom: 18 }}>
-            <Banner tone="success" title="Settings Saved">
+            <Banner tone="success" title="Settings Saved" onDismiss={() => setSavedSuccess(false)}>
               <p>AI provider keys and preferences have been updated and synchronized with Shopify Cloud.</p>
             </Banner>
           </div>
@@ -899,338 +936,354 @@ export default function AiSettingsPage() {
             <Banner
               tone={testResult.success ? "success" : "critical"}
               title={testResult.success ? "Connection Verified" : "Connection Failed"}
+              onDismiss={() => setTestResult(null)}
             >
               <p>{testResult.message}</p>
             </Banner>
           </div>
         )}
 
-        {/* 1. TOP SECTION - 3 PROVIDER CARDS */}
-        <div className="provider-grid">
-          {/* Card 1: Anthropic Claude */}
-          <div className={`provider-card ${defaultProvider === "claude" ? "is-default" : ""}`}>
-            <div>
-              <div className="card-header">
-                <div className="provider-identity">
-                  <div className="provider-icon-wrapper icon-claude">
-                    {/* Claude stylized flower / sun icon */}
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                      <path
-                        d="M12 4v16M4 12h16M6.34 6.34l11.32 11.32M17.66 6.34L6.34 17.66"
-                        stroke="#92400e"
-                        strokeWidth="2.5"
-                        strokeLinecap="round"
-                      />
-                    </svg>
-                  </div>
-                  <div>
-                    <h3 className="provider-title">Anthropic Claude</h3>
-                    <div className="provider-subtitle">Text and vision</div>
-                  </div>
-                </div>
-
-                {defaultProvider === "claude" ? (
-                  <span className="pill-badge-default">Default</span>
-                ) : (
-                  <button
-                    type="button"
-                    className="btn-set-default"
-                    onClick={() => setDefaultProvider("claude")}
-                  >
-                    Set default
-                  </button>
-                )}
-              </div>
-
-              <label className="field-label" htmlFor="claude-key-input">
-                API key
-              </label>
-              <div className="input-wrapper">
-                <input
-                  id="claude-key-input"
-                  className="key-input"
-                  type={showKeys.claude ? "text" : "password"}
-                  value={claudeKey}
-                  onChange={(e) => setClaudeKey(e.target.value)}
-                  placeholder="sk-ant-••••••••"
-                  autoComplete="off"
-                />
-                <button
-                  type="button"
-                  className="btn-eye-toggle"
-                  onClick={() => toggleShowKey("claude")}
-                  title={showKeys.claude ? "Hide API key" : "Show API key"}
-                >
-                  {showKeys.claude ? (
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
-                      <line x1="1" y1="1" x2="23" y2="23" />
-                    </svg>
-                  ) : (
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                      <circle cx="12" cy="12" r="3" />
-                    </svg>
-                  )}
-                </button>
-              </div>
-            </div>
-
-            <div className="card-footer">
-              {claudeKey.trim() ? (
-                <span className="badge-status-pill badge-status-connected">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="20 6 9 17 4 12" />
-                  </svg>
-                  Connected
-                </span>
-              ) : (
-                <span className="badge-status-pill badge-status-disconnected">
-                  Not connected
-                </span>
-              )}
-
-              <button
-                type="button"
-                className="btn-test-connection"
-                disabled={testingProvider === "claude"}
-                onClick={() => handleTestConnection("claude")}
-              >
-                {testingProvider === "claude" ? "Testing..." : "Test connection"}
-              </button>
-            </div>
+        {/* 1. TOP HEADER WITH "Save changes" BUTTON */}
+        <div className="page-header-row">
+          <div>
+            <h1 className="page-title">AI provider settings</h1>
+            <p className="page-subtitle">
+              Manage API connections and choose the default model.
+            </p>
           </div>
 
-          {/* Card 2: Google Gemini */}
-          <div className={`provider-card ${defaultProvider === "gemini" ? "is-default" : ""}`}>
-            <div>
-              <div className="card-header">
-                <div className="provider-identity">
-                  <div className="provider-icon-wrapper icon-gemini">
-                    {/* Gemini 4-pointed sparkle icon */}
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M12 2C12 7.52 7.52 12 2 12C7.52 12 12 16.48 12 22C12 16.48 16.48 12 22 12C16.48 12 12 7.52 12 2Z" />
-                    </svg>
+          <button
+            type="button"
+            className="btn-save-changes"
+            disabled={isSaving}
+            onClick={handleSave}
+          >
+            {isSaving ? "Saving..." : "Save changes"}
+          </button>
+        </div>
+
+        {/* 2. AI PROVIDERS SECTION CARD */}
+        <div className="section-card">
+          <h2 className="section-header-title">AI providers</h2>
+
+          <div className="provider-grid">
+            {/* Sub-card 1: Anthropic Claude */}
+            <div className="provider-subcard">
+              <div>
+                <div className="provider-subcard-header">
+                  <div className="provider-meta">
+                    <AnthropicLogo />
+                    <div>
+                      <div className="provider-name">Anthropic Claude</div>
+                      <div className="provider-model-desc">Claude 3.5 Sonnet</div>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="provider-title">Google Gemini</h3>
-                    <div className="provider-subtitle">Multimodal</div>
+
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                    {claudeKey.trim() ? (
+                      <span className="badge-pill connected">
+                        <span className="pill-dot green" />
+                        Connected
+                      </span>
+                    ) : (
+                      <span className="badge-pill not-connected">
+                        <span className="pill-dot red" />
+                        Not connected
+                      </span>
+                    )}
+                    {defaultProvider === "claude" && (
+                      <span className="badge-pill default-tag">
+                        ★ Default
+                      </span>
+                    )}
                   </div>
                 </div>
 
-                {defaultProvider === "gemini" ? (
-                  <span className="pill-badge-default">Default</span>
-                ) : (
+                <label className="field-label" htmlFor="claude-key">
+                  API key
+                </label>
+                <div className="input-group">
+                  <input
+                    id="claude-key"
+                    className="key-input"
+                    type={showKeys.claude ? "text" : "password"}
+                    value={claudeKey}
+                    onChange={(e) => setClaudeKey(e.target.value)}
+                    placeholder="sk-ant-••••••••••••••••••••••••••"
+                    autoComplete="off"
+                  />
                   <button
                     type="button"
-                    className="btn-set-default"
-                    onClick={() => setDefaultProvider("gemini")}
+                    className="eye-toggle-btn"
+                    onClick={() => toggleShowKey("claude")}
+                    title={showKeys.claude ? "Hide API key" : "Show API key"}
                   >
-                    Set default
+                    {showKeys.claude ? (
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+                        <line x1="1" y1="1" x2="23" y2="23" />
+                      </svg>
+                    ) : (
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                        <circle cx="12" cy="12" r="3" />
+                      </svg>
+                    )}
                   </button>
-                )}
+                </div>
               </div>
 
-              <label className="field-label" htmlFor="gemini-key-input">
-                API key
-              </label>
-              <div className="input-wrapper">
-                <input
-                  id="gemini-key-input"
-                  className="key-input"
-                  type={showKeys.gemini ? "text" : "password"}
-                  value={geminiKey}
-                  onChange={(e) => setGeminiKey(e.target.value)}
-                  placeholder="••••••••••••a4Xz"
-                  autoComplete="off"
-                />
+              <div className="card-actions-row">
                 <button
                   type="button"
-                  className="btn-eye-toggle"
-                  onClick={() => toggleShowKey("gemini")}
-                  title={showKeys.gemini ? "Hide API key" : "Show API key"}
+                  className="btn-card-action"
+                  disabled={testingProvider === "claude"}
+                  onClick={() => handleTestConnection("claude")}
                 >
-                  {showKeys.gemini ? (
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
-                      <line x1="1" y1="1" x2="23" y2="23" />
-                    </svg>
-                  ) : (
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                      <circle cx="12" cy="12" r="3" />
-                    </svg>
-                  )}
+                  {testingProvider === "claude" ? "Testing..." : "Test"}
+                </button>
+
+                <button
+                  type="button"
+                  className="btn-card-action"
+                  disabled={defaultProvider === "claude"}
+                  onClick={() => setDefaultProvider("claude")}
+                >
+                  Set as default
                 </button>
               </div>
             </div>
 
-            <div className="card-footer">
-              {geminiKey.trim() || true ? (
-                <span className="badge-status-pill badge-status-connected">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="20 6 9 17 4 12" />
-                  </svg>
-                  Connected
-                </span>
-              ) : (
-                <span className="badge-status-pill badge-status-disconnected">
-                  Not connected
-                </span>
-              )}
-
-              <button
-                type="button"
-                className="btn-test-connection"
-                disabled={testingProvider === "gemini"}
-                onClick={() => handleTestConnection("gemini")}
-              >
-                {testingProvider === "gemini" ? "Testing..." : "Test connection"}
-              </button>
-            </div>
-          </div>
-
-          {/* Card 3: ChatGPT (OpenAI) */}
-          <div className={`provider-card ${defaultProvider === "openai" ? "is-default" : ""}`}>
-            <div>
-              <div className="card-header">
-                <div className="provider-identity">
-                  <div className="provider-icon-wrapper icon-openai">
-                    {/* OpenAI / Chat bubble icon */}
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#166534" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
-                    </svg>
+            {/* Sub-card 2: Google Gemini */}
+            <div className="provider-subcard">
+              <div>
+                <div className="provider-subcard-header">
+                  <div className="provider-meta">
+                    <GoogleGeminiLogo />
+                    <div>
+                      <div className="provider-name">Google Gemini</div>
+                      <div className="provider-model-desc">Gemini 1.5 Pro</div>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="provider-title">ChatGPT (OpenAI)</h3>
-                    <div className="provider-subtitle">gpt-4o / gpt-4o-mini</div>
+
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                    {geminiKey.trim() || true ? (
+                      <span className="badge-pill connected">
+                        <span className="pill-dot green" />
+                        Connected
+                      </span>
+                    ) : (
+                      <span className="badge-pill not-connected">
+                        <span className="pill-dot red" />
+                        Not connected
+                      </span>
+                    )}
+                    {defaultProvider === "gemini" && (
+                      <span className="badge-pill default-tag">
+                        ★ Default
+                      </span>
+                    )}
                   </div>
                 </div>
 
-                {defaultProvider === "openai" ? (
-                  <span className="pill-badge-default">Default</span>
-                ) : (
+                <label className="field-label" htmlFor="gemini-key">
+                  API key
+                </label>
+                <div className="input-group">
+                  <input
+                    id="gemini-key"
+                    className="key-input"
+                    type={showKeys.gemini ? "text" : "password"}
+                    value={geminiKey}
+                    onChange={(e) => setGeminiKey(e.target.value)}
+                    placeholder="••••••••••••••••••••••••••••••••"
+                    autoComplete="off"
+                  />
                   <button
                     type="button"
-                    className="btn-set-default"
-                    onClick={() => setDefaultProvider("openai")}
+                    className="eye-toggle-btn"
+                    onClick={() => toggleShowKey("gemini")}
+                    title={showKeys.gemini ? "Hide API key" : "Show API key"}
                   >
-                    Set default
+                    {showKeys.gemini ? (
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+                        <line x1="1" y1="1" x2="23" y2="23" />
+                      </svg>
+                    ) : (
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                        <circle cx="12" cy="12" r="3" />
+                      </svg>
+                    )}
                   </button>
-                )}
+                </div>
               </div>
 
-              <label className="field-label" htmlFor="openai-key-input">
-                API key
-              </label>
-              <div className="input-wrapper">
-                <input
-                  id="openai-key-input"
-                  className="key-input"
-                  type={showKeys.openai ? "text" : "password"}
-                  value={openaiKey}
-                  onChange={(e) => setOpenaiKey(e.target.value)}
-                  placeholder="••••••••••••q9Lm"
-                  autoComplete="off"
-                />
+              <div className="card-actions-row">
                 <button
                   type="button"
-                  className="btn-eye-toggle"
-                  onClick={() => toggleShowKey("openai")}
-                  title={showKeys.openai ? "Hide API key" : "Show API key"}
+                  className="btn-card-action"
+                  disabled={testingProvider === "gemini"}
+                  onClick={() => handleTestConnection("gemini")}
                 >
-                  {showKeys.openai ? (
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
-                      <line x1="1" y1="1" x2="23" y2="23" />
-                    </svg>
-                  ) : (
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                      <circle cx="12" cy="12" r="3" />
-                    </svg>
-                  )}
+                  {testingProvider === "gemini" ? "Testing..." : "Test"}
+                </button>
+
+                <button
+                  type="button"
+                  className="btn-card-action"
+                  disabled={defaultProvider === "gemini"}
+                  onClick={() => setDefaultProvider("gemini")}
+                >
+                  Set as default
                 </button>
               </div>
             </div>
 
-            <div className="card-footer">
-              {openaiKey.trim() || true ? (
-                <span className="badge-status-pill badge-status-connected">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="20 6 9 17 4 12" />
-                  </svg>
-                  Connected
-                </span>
-              ) : (
-                <span className="badge-status-pill badge-status-disconnected">
-                  Not connected
-                </span>
-              )}
+            {/* Sub-card 3: ChatGPT (OpenAI) */}
+            <div className="provider-subcard">
+              <div>
+                <div className="provider-subcard-header">
+                  <div className="provider-meta">
+                    <OpenAiLogo />
+                    <div>
+                      <div className="provider-name">ChatGPT (OpenAI)</div>
+                      <div className="provider-model-desc">GPT-4o</div>
+                    </div>
+                  </div>
 
-              <button
-                type="button"
-                className="btn-test-connection"
-                disabled={testingProvider === "openai"}
-                onClick={() => handleTestConnection("openai")}
-              >
-                {testingProvider === "openai" ? "Testing..." : "Test connection"}
-              </button>
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                    {openaiKey.trim() || true ? (
+                      <span className="badge-pill connected">
+                        <span className="pill-dot green" />
+                        Connected
+                      </span>
+                    ) : (
+                      <span className="badge-pill not-connected">
+                        <span className="pill-dot red" />
+                        Not connected
+                      </span>
+                    )}
+                    {defaultProvider === "openai" && (
+                      <span className="badge-pill default-tag">
+                        ★ Default
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <label className="field-label" htmlFor="openai-key">
+                  API key
+                </label>
+                <div className="input-group">
+                  <input
+                    id="openai-key"
+                    className="key-input"
+                    type={showKeys.openai ? "text" : "password"}
+                    value={openaiKey}
+                    onChange={(e) => setOpenaiKey(e.target.value)}
+                    placeholder="••••••••••••••••••••••••••••••••"
+                    autoComplete="off"
+                  />
+                  <button
+                    type="button"
+                    className="eye-toggle-btn"
+                    onClick={() => toggleShowKey("openai")}
+                    title={showKeys.openai ? "Hide API key" : "Show API key"}
+                  >
+                    {showKeys.openai ? (
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+                        <line x1="1" y1="1" x2="23" y2="23" />
+                      </svg>
+                    ) : (
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                        <circle cx="12" cy="12" r="3" />
+                      </svg>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              <div className="card-actions-row">
+                <button
+                  type="button"
+                  className="btn-card-action"
+                  disabled={testingProvider === "openai"}
+                  onClick={() => handleTestConnection("openai")}
+                >
+                  {testingProvider === "openai" ? "Testing..." : "Test"}
+                </button>
+
+                <button
+                  type="button"
+                  className="btn-card-action"
+                  disabled={defaultProvider === "openai"}
+                  onClick={() => setDefaultProvider("openai")}
+                >
+                  Set as default
+                </button>
+              </div>
             </div>
           </div>
         </div>
 
-        {/* 2. BOTTOM SECTION - AI ACTIVITY LOG CARD */}
-        <div className="activity-log-card">
-          <div className="log-header">
-            <div className="log-title-group">
-              <h2>AI activity log</h2>
-              <p>Every AI action with provider, model and result</p>
+        {/* 3. AI ACTIVITY LOG SECTION CARD */}
+        <div className="section-card">
+          <div className="log-top-bar">
+            <div>
+              <h2 style={{ fontSize: "17px", fontWeight: 700, color: "#0f172a", margin: "0 0 4px 0" }}>
+                AI activity log
+              </h2>
+              <p style={{ fontSize: "13px", color: "#64748b", margin: 0 }}>
+                Recent provider and generation activity.
+              </p>
             </div>
 
             <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
-              {aiJobs.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setDeleteConfirmModal({ open: true, type: "all", count: aiJobs.length })}
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: "6px",
-                    padding: "7px 14px",
-                    borderRadius: "8px",
-                    border: "1px solid #fecaca",
-                    backgroundColor: "#fef2f2",
-                    color: "#dc2626",
-                    fontSize: "13px",
-                    fontWeight: 600,
-                    cursor: "pointer",
-                    transition: "all 0.15s ease",
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = "#fee2e2";
-                    e.currentTarget.style.borderColor = "#f87171";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = "#fef2f2";
-                    e.currentTarget.style.borderColor = "#fecaca";
-                  }}
+              {/* Search logs input */}
+              <div className="search-input-wrapper">
+                <svg
+                  style={{ position: "absolute", left: "10px", color: "#94a3b8" }}
+                  width="15"
+                  height="15"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.2"
                 >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="3 6 5 6 21 6" />
-                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                  </svg>
-                  Clear all logs
-                </button>
-              )}
+                  <circle cx="11" cy="11" r="8" />
+                  <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                </svg>
+                <input
+                  type="text"
+                  className="search-input"
+                  placeholder="Search logs..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+              </div>
 
+              {/* Date range filter dropdown */}
+              <select
+                className="filter-select"
+                value={dateFilter}
+                onChange={(e) => setDateFilter(e.target.value as any)}
+              >
+                <option value="7d">Last 7 days</option>
+                <option value="30d">Last 30 days</option>
+                <option value="all">All time</option>
+              </select>
+
+              {/* Export CSV Button */}
               <button
                 type="button"
-                className="btn-export-csv"
+                className="btn-outline-white"
                 onClick={handleExportCSV}
               >
-                {/* Export / Download Icon */}
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
                   <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
                   <polyline points="7 10 12 15 17 10" />
                   <line x1="12" y1="15" x2="12" y2="3" />
@@ -1240,194 +1293,176 @@ export default function AiSettingsPage() {
             </div>
           </div>
 
-          {/* BULK ACTIONS BAR (When records are selected) */}
-          {selectedJobIds.size > 0 && (
-            <div
-              style={{
-                margin: "0 0 16px 0",
-                padding: "10px 16px",
-                backgroundColor: "#eff6ff",
-                border: "1px solid #bfdbfe",
-                borderRadius: "8px",
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                flexWrap: "wrap",
-                gap: "12px",
-              }}
-            >
-              <div style={{ fontWeight: 600, color: "#1d4ed8", fontSize: "13.5px" }}>
-                {selectedJobIds.size} log {selectedJobIds.size === 1 ? "entry" : "entries"} selected
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                <button
-                  type="button"
-                  onClick={() => setDeleteConfirmModal({ open: true, type: "selected", count: selectedJobIds.size })}
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: "6px",
-                    padding: "6px 14px",
-                    borderRadius: "6px",
-                    border: "1px solid #fca5a5",
-                    backgroundColor: "#fee2e2",
-                    color: "#b91c1c",
-                    fontSize: "13px",
-                    fontWeight: 600,
-                    cursor: "pointer",
-                  }}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="3 6 5 6 21 6" />
-                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                  </svg>
-                  Delete selected
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSelectedJobIds(new Set())}
-                  style={{
-                    padding: "6px 10px",
-                    borderRadius: "6px",
-                    border: "none",
-                    backgroundColor: "transparent",
-                    color: "#64748b",
-                    fontSize: "12px",
-                    fontWeight: 500,
-                    cursor: "pointer",
-                    textDecoration: "underline",
-                  }}
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Activity Log Table */}
-          <div className="table-responsive">
-            <table className="log-table">
+          {/* Table */}
+          <div style={{ overflowX: "auto" }}>
+            <table className="clean-table">
               <thead>
                 <tr>
-                  <th style={{ width: "36px" }}>
-                    <input
-                      type="checkbox"
-                      checked={allSelected}
-                      onChange={toggleSelectAll}
-                      style={{ width: "16px", height: "16px", cursor: "pointer", accentColor: "#2563eb" }}
-                      title="Select all"
-                    />
-                  </th>
-                  <th>Date and time</th>
-                  <th>Provider</th>
-                  <th>Model</th>
-                  <th>Action</th>
-                  <th>Target</th>
-                  <th>Items</th>
-                  <th>Status</th>
-                  <th style={{ textAlign: "right", width: "70px" }}>Actions</th>
+                  <th style={{ width: "22%" }}>Date & time</th>
+                  <th style={{ width: "16%" }}>Provider</th>
+                  <th style={{ width: "18%" }}>Model</th>
+                  <th style={{ width: "20%" }}>Action</th>
+                  <th style={{ width: "10%" }}>Items</th>
+                  <th style={{ width: "10%" }}>Status</th>
+                  <th style={{ width: "4%", textAlign: "center" }}>Options</th>
                 </tr>
               </thead>
               <tbody>
-                {displayedAiJobs.length === 0 ? (
+                {filteredJobs.length === 0 ? (
                   <tr>
-                    <td colSpan={9} style={{ textAlign: "center", padding: "30px 14px", color: "#6b7280" }}>
-                      No AI actions recorded yet.
+                    <td colSpan={7} style={{ textAlign: "center", padding: "36px 14px", color: "#64748b" }}>
+                      No AI activity recorded for this selection.
                     </td>
                   </tr>
                 ) : (
-                  displayedAiJobs.map((job) => {
+                  filteredJobs.map((job) => {
                     const dt = formatDateTime(job.createdAt);
                     const provLower = (job.provider || "").toLowerCase();
-                    const prov = provLower.includes("gemini")
-                      ? "Gemini"
-                      : provLower.includes("openai")
-                      ? "OpenAI"
-                      : "Claude";
+                    const isGemini = provLower.includes("gemini");
+                    const isOpenAi = provLower.includes("openai");
+                    const isClaude = provLower.includes("claude");
 
-                    const model =
-                      job.modelUsed ||
-                      (prov === "Gemini"
-                        ? "gemini-2.0-flash"
-                        : prov === "OpenAI"
-                        ? "gpt-4o-mini"
-                        : "claude-sonnet");
-
-                    const { action, target } = parseJobDetails(job);
+                    const displayProvider = isGemini ? "Gemini" : isOpenAi ? "ChatGPT" : "Claude";
+                    const model = job.modelUsed || (isGemini ? "Gemini 1.5 Pro" : isOpenAi ? "GPT-4o" : "Claude 3.5 Sonnet");
+                    const action = parseAction(job);
                     const items = job.resultCount || 1;
                     const isCompleted = job.status === "completed" || job.status === "success";
 
                     return (
                       <tr key={job.id}>
-                        <td style={{ width: "36px" }}>
-                          <input
-                            type="checkbox"
-                            checked={selectedJobIds.has(job.id)}
-                            onChange={() => toggleSelectOne(job.id)}
-                            style={{ width: "16px", height: "16px", cursor: "pointer", accentColor: "#2563eb" }}
-                          />
+                        {/* 1. Date & time */}
+                        <td style={{ color: "#0f172a", fontWeight: 500 }}>
+                          {dt}
                         </td>
-                        <td style={{ color: "#111827", fontWeight: 500 }}>{dt}</td>
+
+                        {/* 2. Provider with logo */}
                         <td>
-                          {prov === "Gemini" && (
-                            <span className="badge-provider badge-provider-gemini">Gemini</span>
-                          )}
-                          {prov === "OpenAI" && (
-                            <span className="badge-provider badge-provider-openai">OpenAI</span>
-                          )}
-                          {prov === "Claude" && (
-                            <span className="badge-provider badge-provider-claude">Claude</span>
-                          )}
+                          <div style={{ display: "inline-flex", alignItems: "center", gap: "8px" }}>
+                            {isGemini && (
+                              <svg width="18" height="18" viewBox="0 0 24 24">
+                                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
+                                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
+                              </svg>
+                            )}
+                            {isOpenAi && (
+                              <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                                <path d="M20.5 10.2a5.2 5.2 0 0 0-.4-4.2 5.3 5.3 0 0 0-5.2-2.5 5.2 5.2 0 0 0-3.9-1.8 5.3 5.3 0 0 0-5 3.5 5.2 5.2 0 0 0-3.6 2.6 5.3 5.3 0 0 0 .7 5.7 5.2 5.2 0 0 0 .4 4.2 5.3 5.3 0 0 0 5.2 2.5 5.2 5.2 0 0 0 3.9 1.8 5.3 5.3 0 0 0 5-3.5 5.2 5.2 0 0 0 3.6-2.6 5.3 5.3 0 0 0-.7-5.7zM12 14.8a2.8 2.8 0 1 1 0-5.6 2.8 2.8 0 0 1 0 5.6z" stroke="#10a37f" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                              </svg>
+                            )}
+                            {isClaude && (
+                              <span style={{ fontWeight: 800, fontSize: "12px", background: "#f5f5f4", border: "1px solid #e7e5e4", borderRadius: "4px", padding: "1px 5px", color: "#1c1917" }}>
+                                AI
+                              </span>
+                            )}
+                            <span style={{ fontWeight: 500, color: "#1e293b" }}>{displayProvider}</span>
+                          </div>
                         </td>
-                        <td style={{ color: "#374151" }}>{model}</td>
-                        <td style={{ color: "#111827", fontWeight: 500 }}>{action}</td>
-                        <td className="target-cell" title={target}>
-                          {target.length > 15 ? target.substring(0, 13) + "..." : target}
-                        </td>
-                        <td style={{ color: "#111827" }}>{items}</td>
+
+                        {/* 3. Model */}
+                        <td style={{ color: "#475569" }}>{model}</td>
+
+                        {/* 4. Action */}
+                        <td style={{ color: "#0f172a", fontWeight: 500 }}>{action}</td>
+
+                        {/* 5. Items */}
+                        <td style={{ color: "#0f172a" }}>{items}</td>
+
+                        {/* 6. Status */}
                         <td>
                           {isCompleted ? (
-                            <span className="badge-result badge-result-completed">Completed</span>
+                            <span className="badge-pill connected">
+                              <span className="pill-dot green" />
+                              Completed
+                            </span>
                           ) : (
-                            <span className="badge-result badge-result-failed">
-                              {job.status.length > 16 ? job.status.substring(0, 14) + "..." : job.status}
+                            <span className="badge-pill not-connected">
+                              <span className="pill-dot red" />
+                              {job.status.length > 15 ? job.status.substring(0, 13) + "..." : job.status}
                             </span>
                           )}
                         </td>
-                        <td style={{ textAlign: "right" }}>
+
+                        {/* 7. Options (•••) */}
+                        <td style={{ textAlign: "center", position: "relative" }}>
                           <button
                             type="button"
-                            onClick={() => setDeleteConfirmModal({ open: true, type: "single", jobId: job.id })}
-                            title="Delete this log entry"
-                            style={{
-                              width: "30px",
-                              height: "30px",
-                              borderRadius: "6px",
-                              border: "1px solid #cbd5e1",
-                              backgroundColor: "#ffffff",
-                              color: "#dc2626",
-                              display: "inline-flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              cursor: "pointer",
-                              transition: "all 0.15s ease",
-                            }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.backgroundColor = "#fee2e2";
-                              e.currentTarget.style.borderColor = "#fca5a5";
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.backgroundColor = "#ffffff";
-                              e.currentTarget.style.borderColor = "#cbd5e1";
+                            className="icon-more-btn"
+                            title="Options"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActiveMenuJobId(activeMenuJobId === job.id ? null : job.id);
                             }}
                           >
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                              <polyline points="3 6 5 6 21 6" />
-                              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                              <line x1="10" y1="11" x2="10" y2="17" />
-                              <line x1="14" y1="11" x2="14" y2="17" />
-                            </svg>
+                            •••
                           </button>
+
+                          {activeMenuJobId === job.id && (
+                            <div
+                              style={{
+                                position: "absolute",
+                                right: "8px",
+                                top: "34px",
+                                background: "#ffffff",
+                                border: "1px solid #e2e8f0",
+                                borderRadius: "8px",
+                                boxShadow: "0 4px 14px rgba(0, 0, 0, 0.08)",
+                                zIndex: 100,
+                                minWidth: "130px",
+                                padding: "4px 0",
+                                textAlign: "left",
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <button
+                                type="button"
+                                style={{
+                                  display: "block",
+                                  width: "100%",
+                                  textAlign: "left",
+                                  padding: "8px 12px",
+                                  fontSize: "12.5px",
+                                  color: "#dc2626",
+                                  background: "none",
+                                  border: "none",
+                                  cursor: "pointer",
+                                  fontWeight: 500,
+                                }}
+                                onMouseEnter={(e) => (e.currentTarget.style.background = "#fef2f2")}
+                                onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                                onClick={() => {
+                                  setActiveMenuJobId(null);
+                                  setDeleteConfirmModal({ open: true, type: "all" });
+                                }}
+                              >
+                                Clear logs
+                              </button>
+                              <button
+                                type="button"
+                                style={{
+                                  display: "block",
+                                  width: "100%",
+                                  textAlign: "left",
+                                  padding: "8px 12px",
+                                  fontSize: "12.5px",
+                                  color: "#475569",
+                                  background: "none",
+                                  border: "none",
+                                  cursor: "pointer",
+                                  fontWeight: 500,
+                                }}
+                                onMouseEnter={(e) => (e.currentTarget.style.background = "#f8fafc")}
+                                onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                                onClick={() => {
+                                  setActiveMenuJobId(null);
+                                  setDeleteConfirmModal({ open: true, type: "single", jobId: job.id });
+                                }}
+                              >
+                                Delete entry
+                              </button>
+                            </div>
+                          )}
                         </td>
                       </tr>
                     );
@@ -1445,8 +1480,6 @@ export default function AiSettingsPage() {
           title={
             deleteConfirmModal.type === "all"
               ? "Clear all AI activity logs?"
-              : deleteConfirmModal.type === "selected"
-              ? `Delete ${deleteConfirmModal.count || selectedJobIds.size} selected log entries?`
               : "Delete AI activity log entry?"
           }
           primaryAction={{
@@ -1465,8 +1498,6 @@ export default function AiSettingsPage() {
             <Text as="p" variant="bodyMd">
               {deleteConfirmModal.type === "all"
                 ? `Are you sure you want to clear all ${aiJobs.length} AI activity log records? This action cannot be undone.`
-                : deleteConfirmModal.type === "selected"
-                ? `Are you sure you want to delete the ${deleteConfirmModal.count || selectedJobIds.size} selected activity log entries? This action cannot be undone.`
                 : "Are you sure you want to delete this activity log record? This action cannot be undone."}
             </Text>
           </Modal.Section>
