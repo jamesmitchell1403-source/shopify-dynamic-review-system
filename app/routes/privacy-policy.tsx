@@ -333,8 +333,8 @@ export default function PrivacyPolicy() {
               </p>
               <p>
                 <strong>Email:</strong>{" "}
-                <a href="mailto:privacy@productreview.zooq.app" style={styles.link}>
-                  privacy@productreview.zooq.app
+                <a href="mailto:developerr6620@gmail.com" style={styles.link}>
+                  developerr6620@gmail.com
                 </a>
               </p>
             </div>
