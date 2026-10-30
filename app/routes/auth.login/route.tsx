@@ -16,7 +16,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
   const apiKey = process.env.SHOPIFY_API_KEY || "d97376e1be723a9166b7ec705c55c610";
   const scopes = process.env.SCOPES || "read_themes,write_themes,read_products,read_orders";
-  const appUrl = process.env.SHOPIFY_APP_URL || "https://shopify-dynamic-review-system.onrender.com";
+  const appUrl = process.env.SHOPIFY_APP_URL || "https://productreview.zooq.app";
   const redirectUri = encodeURIComponent(`${appUrl}/auth/callback`);
 
   const oauthUrl = `https://${shop}/admin/oauth/authorize?client_id=${apiKey}&scope=${scopes}&redirect_uri=${redirectUri}`;
@@ -30,7 +30,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
   const apiKey = process.env.SHOPIFY_API_KEY || "d97376e1be723a9166b7ec705c55c610";
   const scopes = process.env.SCOPES || "read_themes,write_themes,read_products,read_orders";
-  const appUrl = process.env.SHOPIFY_APP_URL || "https://shopify-dynamic-review-system.onrender.com";
+  const appUrl = process.env.SHOPIFY_APP_URL || "https://productreview.zooq.app";
   const redirectUri = encodeURIComponent(`${appUrl}/auth/callback`);
 
   const oauthUrl = `https://${shop}/admin/oauth/authorize?client_id=${apiKey}&scope=${scopes}&redirect_uri=${redirectUri}`;

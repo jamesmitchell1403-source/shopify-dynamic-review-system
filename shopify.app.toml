@@ -2,7 +2,7 @@
 
 client_id = "d97376e1be723a9166b7ec705c55c610"
 name = "AI Dynamic Review System"
-application_url = "https://shopify-dynamic-review-system.onrender.com"
+application_url = "https://productreview.zooq.app"
 embedded = true
 
 [build]
@@ -36,13 +36,13 @@ api_version = "2026-10"
 scopes = "read_themes,write_themes,read_products,read_orders"
 
 [app_proxy]
-url = "https://shopify-dynamic-review-system.onrender.com/apps/reviews"
+url = "https://productreview.zooq.app/apps/reviews"
 subpath = "reviews"
 prefix = "apps"
 
 [auth]
 redirect_urls = [
-  "https://shopify-dynamic-review-system.onrender.com/auth/callback",
-  "https://shopify-dynamic-review-system.onrender.com/auth/shopify/callback",
-  "https://shopify-dynamic-review-system.onrender.com/api/auth"
+  "https://productreview.zooq.app/auth/callback",
+  "https://productreview.zooq.app/auth/shopify/callback",
+  "https://productreview.zooq.app/api/auth"
 ]

@@ -1786,7 +1786,7 @@ export default function AiGeneratorPage() {
               tone="warning"
               action={{
                 content: "Click Here to Re-Authorize App Permissions (1-Click)",
-                url: `https://${shop}/admin/oauth/authorize?client_id=28fbf0094946ed287e3db764e52796e5&scope=read_themes,write_themes,read_products,read_orders&redirect_uri=${encodeURIComponent("https://shopify-dynamic-review-system.onrender.com/auth/callback")}`,
+                url: `https://${shop}/admin/oauth/authorize?client_id=28fbf0094946ed287e3db764e52796e5&scope=read_themes,write_themes,read_products,read_orders&redirect_uri=${encodeURIComponent("https://productreview.zooq.app/auth/callback")}`,
                 target: "_top",
               }}
             >
@@ -2066,7 +2066,7 @@ export default function AiGeneratorPage() {
                   <div className="rg-summary-stat-grid">
                     <div className="rg-stat-box">
                       <div className="rg-stat-box-label">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" /></svg>
                         <span>Products</span>
                       </div>
                       <div className="rg-stat-box-val">{filteredProducts.length}</div>
@@ -2074,7 +2074,7 @@ export default function AiGeneratorPage() {
 
                     <div className="rg-stat-box">
                       <div className="rg-stat-box-label">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /><polyline points="10 9 9 9 8 9" /></svg>
                         <span>Reviews</span>
                       </div>
                       <div className="rg-stat-box-val">{totalReviewsToGenerate}</div>
@@ -2082,7 +2082,7 @@ export default function AiGeneratorPage() {
 
                     <div className="rg-stat-box">
                       <div className="rg-stat-box-label">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
                         <span>Tone</span>
                       </div>
                       <div className="rg-stat-box-val">{bulkTone.split(" ")[0]}</div>
@@ -2090,7 +2090,7 @@ export default function AiGeneratorPage() {
 
                     <div className="rg-stat-box">
                       <div className="rg-stat-box-label">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>
                         <span>Engine</span>
                       </div>
                       <div className="rg-stat-box-val" style={{ fontSize: "13.5px" }}>
@@ -2223,7 +2223,7 @@ export default function AiGeneratorPage() {
                       <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                         {bulkProvider === "gemini" && (
                           <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: "20px", height: "20px", borderRadius: "5px", background: "linear-gradient(135deg, #3b82f6, #8b5cf6)" }}>
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="white"><path d="M12 2C12 7.5 7.5 12 2 12C7.5 12 12 16.5 12 22C12 16.5 16.5 12 22 12C16.5 12 12 7.5 12 2Z"/></svg>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="white"><path d="M12 2C12 7.5 7.5 12 2 12C7.5 12 12 16.5 12 22C12 16.5 16.5 12 22 12C16.5 12 12 7.5 12 2Z" /></svg>
                           </span>
                         )}
                         {bulkProvider === "openai" && (
@@ -2240,8 +2240,8 @@ export default function AiGeneratorPage() {
                           {bulkProvider === "gemini"
                             ? "Advanced AI for natural, high-quality reviews."
                             : bulkProvider === "openai"
-                            ? "Structured product ratings and authentic customer headlines."
-                            : "Nuanced feedback with high-fidelity, human phrasing."}
+                              ? "Structured product ratings and authentic customer headlines."
+                              : "Nuanced feedback with high-fidelity, human phrasing."}
                         </span>
                       </div>
 
@@ -2520,10 +2520,10 @@ export default function AiGeneratorPage() {
                           {bulkTone.includes("Friendly")
                             ? "Exceeded all my expectations!"
                             : bulkTone.includes("Enthusiastic")
-                            ? "Hands down the best purchase I made this year!"
-                            : bulkTone.includes("Short")
-                            ? "Great quality, five stars."
-                            : "Excellent build and reliable performance."}
+                              ? "Hands down the best purchase I made this year!"
+                              : bulkTone.includes("Short")
+                                ? "Great quality, five stars."
+                                : "Excellent build and reliable performance."}
                         </h4>
                       )}
 
@@ -2531,10 +2531,10 @@ export default function AiGeneratorPage() {
                         {bulkTone.includes("Friendly")
                           ? `I was genuinely surprised by how great the ${filteredProducts[0]?.label || "item"} turned out. The craftsmanship is wonderful, shipping was fast, and it works exactly as promised.`
                           : bulkTone.includes("Enthusiastic")
-                          ? `Obsessed with this! The quality is unmatched and everyone who visited asked where I got it. 10/10 recommendation for anyone on the fence!`
-                          : bulkTone.includes("Short")
-                          ? `Arrived quickly, packaged well, and works flawlessly. Very pleased with this purchase.`
-                          : `The item matches all specifications accurately. Materials are durable, ergonomic, and provide tremendous value for money.`}
+                            ? `Obsessed with this! The quality is unmatched and everyone who visited asked where I got it. 10/10 recommendation for anyone on the fence!`
+                            : bulkTone.includes("Short")
+                              ? `Arrived quickly, packaged well, and works flawlessly. Very pleased with this purchase.`
+                              : `The item matches all specifications accurately. Materials are durable, ergonomic, and provide tremendous value for money.`}
                       </p>
                     </div>
 
@@ -2622,7 +2622,7 @@ export default function AiGeneratorPage() {
                   <div className="sp-header">
                     <div className="sp-header-icon">
                       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/>
+                        <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z" /><path d="M3 6h18" /><path d="M16 10a4 4 0 0 1-8 0" />
                       </svg>
                     </div>
                     <div>
@@ -2635,7 +2635,7 @@ export default function AiGeneratorPage() {
                   <div className="sp-search-box">
                     <span className="sp-search-icon">
                       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+                        <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" />
                       </svg>
                     </span>
                     <input
@@ -2689,7 +2689,7 @@ export default function AiGeneratorPage() {
 
                     <div style={{ color: "#64748b", transform: isProductDropdownOpen ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.2s" }}>
                       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <polyline points="6 9 12 15 18 9"/>
+                        <polyline points="6 9 12 15 18 9" />
                       </svg>
                     </div>
                   </div>
@@ -2805,8 +2805,8 @@ export default function AiGeneratorPage() {
                   <div className="sp-header">
                     <div className="sp-header-icon">
                       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
-                        <circle cx="12" cy="12" r="3"/>
+                        <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+                        <circle cx="12" cy="12" r="3" />
                       </svg>
                     </div>
                     <div>
@@ -2875,7 +2875,7 @@ export default function AiGeneratorPage() {
                         pointerEvents: "none",
                       }}>
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>
+                          <circle cx="12" cy="12" r="10" /><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" /><path d="M2 12h20" />
                         </svg>
                       </div>
                       <select
@@ -2914,7 +2914,7 @@ export default function AiGeneratorPage() {
                         alignItems: "center",
                       }}>
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <polyline points="6 9 12 15 18 9"/>
+                          <polyline points="6 9 12 15 18 9" />
                         </svg>
                       </div>
                     </div>
@@ -2953,7 +2953,7 @@ export default function AiGeneratorPage() {
                   <div className="sp-header">
                     <div className="sp-header-icon">
                       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <line x1="4" x2="4" y1="21" y2="14"/><line x1="4" x2="4" y1="10" y2="3"/><line x1="12" x2="12" y1="21" y2="12"/><line x1="12" x2="12" y1="8" y2="3"/><line x1="20" x2="20" y1="21" y2="16"/><line x1="20" x2="20" y1="12" y2="3"/><line x1="1" x2="7" y1="14" y2="14"/><line x1="9" x2="15" y1="8" y2="8"/><line x1="17" x2="23" y1="16" y2="16"/>
+                        <line x1="4" x2="4" y1="21" y2="14" /><line x1="4" x2="4" y1="10" y2="3" /><line x1="12" x2="12" y1="21" y2="12" /><line x1="12" x2="12" y1="8" y2="3" /><line x1="20" x2="20" y1="21" y2="16" /><line x1="20" x2="20" y1="12" y2="3" /><line x1="1" x2="7" y1="14" y2="14" /><line x1="9" x2="15" y1="8" y2="8" /><line x1="17" x2="23" y1="16" y2="16" />
                       </svg>
                     </div>
                     <div>
@@ -2971,7 +2971,7 @@ export default function AiGeneratorPage() {
                       <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
                         <div className="sp-adv-icon">
                           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/>
+                            <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" />
                           </svg>
                         </div>
                         <div>
@@ -2981,7 +2981,7 @@ export default function AiGeneratorPage() {
                       </div>
                       <div style={{ color: "#64748b", transform: activeAdvancedSection === "ai_suggestions" ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.15s" }}>
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <polyline points="9 18 15 12 9 6"/>
+                          <polyline points="9 18 15 12 9 6" />
                         </svg>
                       </div>
                     </div>
@@ -3009,7 +3009,7 @@ export default function AiGeneratorPage() {
                       <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
                         <div className="sp-adv-icon">
                           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/>
+                            <circle cx="12" cy="12" r="10" /><path d="m4.9 4.9 14.2 14.2" />
                           </svg>
                         </div>
                         <div>
@@ -3019,7 +3019,7 @@ export default function AiGeneratorPage() {
                       </div>
                       <div style={{ color: "#64748b", transform: activeAdvancedSection === "exclude_keywords" ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.15s" }}>
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <polyline points="9 18 15 12 9 6"/>
+                          <polyline points="9 18 15 12 9 6" />
                         </svg>
                       </div>
                     </div>
@@ -3048,7 +3048,7 @@ export default function AiGeneratorPage() {
                       <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
                         <div className="sp-adv-icon">
                           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+                            <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
                           </svg>
                         </div>
                         <div>
@@ -3058,7 +3058,7 @@ export default function AiGeneratorPage() {
                       </div>
                       <div style={{ color: "#64748b", transform: activeAdvancedSection === "customer_profile" ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.15s" }}>
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <polyline points="9 18 15 12 9 6"/>
+                          <polyline points="9 18 15 12 9 6" />
                         </svg>
                       </div>
                     </div>
@@ -3098,7 +3098,7 @@ export default function AiGeneratorPage() {
                       <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
                         <div className="sp-adv-icon">
                           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" />
                           </svg>
                         </div>
                         <div>
@@ -3108,7 +3108,7 @@ export default function AiGeneratorPage() {
                       </div>
                       <div style={{ color: "#64748b", transform: activeAdvancedSection === "review_format" ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.15s" }}>
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <polyline points="9 18 15 12 9 6"/>
+                          <polyline points="9 18 15 12 9 6" />
                         </svg>
                       </div>
                     </div>
@@ -3146,7 +3146,7 @@ export default function AiGeneratorPage() {
                   <div className="sp-header">
                     <div className="sp-header-icon">
                       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/>
+                        <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" />
                       </svg>
                     </div>
                     <div>
@@ -3178,7 +3178,7 @@ export default function AiGeneratorPage() {
                     <div className="sp-summary-item">
                       <div className="sp-summary-icon">
                         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>
+                          <circle cx="12" cy="12" r="10" /><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" /><path d="M2 12h20" />
                         </svg>
                       </div>
                       <div>
@@ -3193,7 +3193,7 @@ export default function AiGeneratorPage() {
                     <div className="sp-summary-item">
                       <div className="sp-summary-icon">
                         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/>
+                          <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" />
                         </svg>
                       </div>
                       <div style={{ overflow: "hidden" }}>
@@ -3208,7 +3208,7 @@ export default function AiGeneratorPage() {
                     <div className="sp-summary-item">
                       <div className="sp-summary-icon">
                         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="12" cy="12" r="3"/>
+                          <rect width="18" height="18" x="3" y="3" rx="2" /><circle cx="12" cy="12" r="3" />
                         </svg>
                       </div>
                       <div style={{ overflow: "hidden" }}>
@@ -3223,7 +3223,7 @@ export default function AiGeneratorPage() {
                     <div className="sp-summary-item">
                       <div className="sp-summary-icon">
                         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/>
+                          <polygon points="12 2 2 7 12 12 22 7 12 2" /><polyline points="2 17 12 22 22 17" /><polyline points="2 12 12 17 22 12" />
                         </svg>
                       </div>
                       <div>
@@ -3238,7 +3238,7 @@ export default function AiGeneratorPage() {
                     <div className="sp-summary-item">
                       <div className="sp-summary-icon">
                         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+                          <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
                         </svg>
                       </div>
                       <div style={{ overflow: "hidden" }}>
@@ -3269,7 +3269,7 @@ export default function AiGeneratorPage() {
                     onClick={() => handleSingleGenerate(false)}
                   >
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/>
+                      <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" />
                     </svg>
                     <span>
                       {singleLoading
@@ -3450,7 +3450,7 @@ export default function AiGeneratorPage() {
                       </select>
                       <div style={{ position: "absolute", right: "12px", top: "50%", transform: "translateY(-50%)", pointerEvents: "none", color: "#64748b", display: "flex" }}>
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <polyline points="6 9 12 15 18 9"/>
+                          <polyline points="6 9 12 15 18 9" />
                         </svg>
                       </div>
                     </div>
