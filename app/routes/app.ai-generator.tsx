@@ -1746,6 +1746,35 @@ export default function AiGeneratorPage() {
           border-color: #2563eb;
           font-weight: 600;
         }
+
+        /* MANUAL REVIEW TOGGLES (DARK ACCENT MATCHING SCREENSHOT) */
+        .mr-toggle-switch {
+          width: 44px;
+          height: 24px;
+          background: #cbd5e1;
+          border-radius: 9999px;
+          position: relative;
+          cursor: pointer;
+          transition: background-color 0.2s ease;
+          flex-shrink: 0;
+        }
+        .mr-toggle-switch.on {
+          background: #111827;
+        }
+        .mr-toggle-handle {
+          width: 20px;
+          height: 20px;
+          background: #ffffff;
+          border-radius: 50%;
+          position: absolute;
+          top: 2px;
+          left: 2px;
+          transition: transform 0.2s ease;
+          box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+        }
+        .mr-toggle-switch.on .mr-toggle-handle {
+          transform: translateX(20px);
+        }
       `}</style>
 
       <div className="rg-root">
@@ -3337,39 +3366,10 @@ export default function AiGeneratorPage() {
 
         {/* ============================================================== */}
         {/* TAB 2: ADD REAL REVIEW (CUSTOM MANUAL REVIEW)                   */}
-        {/* FULL WIDTH CONSISTENT WORKFLOW                                  */}
+        {/* EXACT 2x2 MODULAR GRID AS SHOWN IN SCREENSHOT                   */}
         {/* ============================================================== */}
         {selectedTab === 2 && (
-          <div className="rg-step-card" style={{ padding: "32px" }}>
-            {/* Header with Title and Order Matched Badge */}
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "26px", flexWrap: "wrap", gap: "12px" }}>
-              <div>
-                <h2 style={{ margin: "0 0 4px 0", fontSize: "20px", fontWeight: 700, color: "#111827" }}>
-                  Add a real customer review
-                </h2>
-                <p style={{ margin: 0, fontSize: "14px", color: "#6b7280" }}>
-                  From WhatsApp, email or phone feedback
-                </p>
-              </div>
-
-              <div
-                style={{
-                  background: "#dcfce7",
-                  color: "#15803d",
-                  borderRadius: "9999px",
-                  padding: "6px 14px",
-                  fontSize: "13px",
-                  fontWeight: 600,
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "6px",
-                }}
-              >
-                <span>✓</span>
-                <span>{`Order matched: ${manualOrderNumber || "#1042"}`}</span>
-              </div>
-            </div>
-
+          <div>
             {manualErrorMsg && (
               <div style={{ marginBottom: "18px" }}>
                 <Banner tone="critical" title="Submission Error">
@@ -3386,228 +3386,381 @@ export default function AiGeneratorPage() {
               </div>
             )}
 
-            {/* Row 1: Product, Order number, Rating */}
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1.2fr 1fr 1fr",
-                gap: "16px",
-                marginBottom: "20px",
-              }}
-            >
-              <div>
-                <label style={{ fontSize: "13px", fontWeight: 600, color: "#374151", display: "block", marginBottom: "8px" }}>
-                  Product
-                </label>
-                <select
-                  className="rg-select"
-                  value={manualProdId}
-                  onChange={(e) => setManualProdId(e.target.value)}
-                >
-                  {products.length > 0 ? (
-                    products.map((p) => (
-                      <option key={p.value} value={p.value}>
-                        {p.label}
-                      </option>
-                    ))
-                  ) : (
-                    <option value="sample">Luminous Kit</option>
-                  )}
-                </select>
-              </div>
-
-              <div>
-                <label style={{ fontSize: "13px", fontWeight: 600, color: "#374151", display: "block", marginBottom: "8px" }}>
-                  Order number
-                </label>
-                <input
-                  type="text"
-                  className="rg-input"
-                  value={manualOrderNumber}
-                  onChange={(e) => handleOrderNumberChange(e.target.value)}
-                  placeholder="#1042"
-                />
-              </div>
-
-              <div>
-                <label style={{ fontSize: "13px", fontWeight: 600, color: "#374151", display: "block", marginBottom: "8px" }}>
-                  Rating
-                </label>
-                <div className="rg-star-picker">
-                  {[1, 2, 3, 4, 5].map((star) => (
-                    <span
-                      key={star}
-                      className={`rg-star-btn ${star <= manualRating ? "gold" : ""}`}
-                      onClick={() => setManualRating(star)}
-                    >
-                      ★
-                    </span>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Row 2: Customer name, Source of feedback */}
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1.2fr 1fr",
-                gap: "16px",
-                marginBottom: "20px",
-              }}
-            >
-              <div>
-                <label style={{ fontSize: "13px", fontWeight: 600, color: "#374151", display: "block", marginBottom: "8px" }}>
-                  Customer name (from order)
-                </label>
-                <input
-                  type="text"
-                  className="rg-input"
-                  value={manualCustomerName}
-                  onChange={(e) => setManualCustomerName(e.target.value)}
-                  placeholder="Rachel V."
-                />
-              </div>
-
-              <div>
-                <label style={{ fontSize: "13px", fontWeight: 600, color: "#374151", display: "block", marginBottom: "8px" }}>
-                  Source of feedback
-                </label>
-                <div className="rg-pills" style={{ marginBottom: 0 }}>
-                  {(["WhatsApp", "Email", "Phone"] as const).map((src) => (
-                    <button
-                      key={src}
-                      type="button"
-                      className={`rg-pill ${manualFeedbackSource === src ? "active" : ""}`}
-                      onClick={() => setManualFeedbackSource(src)}
-                    >
-                      {src}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Row 3: Review text */}
-            <div style={{ marginBottom: "20px" }}>
-              <label style={{ fontSize: "13px", fontWeight: 600, color: "#374151", display: "block", marginBottom: "8px" }}>
-                Review text (customer's own words)
-              </label>
-              <textarea
-                className="rg-input"
-                style={{ minHeight: "100px", resize: "vertical", fontFamily: "inherit" }}
-                placeholder="Paste what the customer wrote..."
-                value={manualReviewText}
-                onChange={(e) => setManualReviewText(e.target.value)}
-              />
-            </div>
-
-            {/* Row 4: Dashed Upload Box */}
-            <div style={{ marginBottom: "22px" }}>
-              <label className="rg-upload-box" style={{ display: "block" }}>
-                <input
-                  type="file"
-                  accept="image/*,video/*"
-                  style={{ display: "none" }}
-                  onChange={handleManualFileUpload}
-                />
-                {manualMediaPreview ? (
-                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px" }}>
-                    {manualMediaType === "video" ? (
-                      <video
-                        src={manualMediaPreview}
-                        controls
-                        style={{ maxHeight: "140px", maxWidth: "100%", borderRadius: "8px" }}
-                      />
-                    ) : (
-                      <img
-                        src={manualMediaPreview}
-                        alt="Customer Media"
-                        style={{ maxHeight: "120px", borderRadius: "8px", objectFit: "cover" }}
-                      />
-                    )}
-                    <span style={{ fontSize: "12px", color: "#16a34a", fontWeight: 600 }}>
-                      ✓ Media attached. Click to change.
-                    </span>
+            <div className="sp-grid">
+              {/* CARD 1: Step 1: Order Details */}
+              <div className="sp-card">
+                <div>
+                  <div style={{ marginBottom: "20px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
+                      <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 700, color: "#111827" }}>
+                        Step 1: Order Details
+                      </h3>
+                      <div
+                        style={{
+                          background: "#dcfce7",
+                          color: "#15803d",
+                          borderRadius: "9999px",
+                          padding: "4px 12px",
+                          fontSize: "12px",
+                          fontWeight: 600,
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "5px",
+                        }}
+                      >
+                        <span>✓</span>
+                        <span>{`Order matched: ${manualOrderNumber || "#1042"}`}</span>
+                      </div>
+                    </div>
+                    <div style={{ width: "36px", height: "2px", background: "#111827", marginTop: "6px" }} />
                   </div>
-                ) : (
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "10px", color: "#475569" }}>
-                    <span style={{ fontSize: "20px" }}>📷</span>
-                    <span style={{ fontSize: "14px", fontWeight: 500 }}>
-                      Add customer photo or video (with their permission)
-                    </span>
+
+                  {/* Product Field */}
+                  <div style={{ marginBottom: "16px" }}>
+                    <label style={{ fontSize: "13px", fontWeight: 600, color: "#374151", display: "block", marginBottom: "8px" }}>
+                      Product
+                    </label>
+                    <div style={{ position: "relative" }}>
+                      <select
+                        value={manualProdId}
+                        onChange={(e) => setManualProdId(e.target.value)}
+                        style={{
+                          width: "100%",
+                          height: "42px",
+                          padding: "0 34px 0 12px",
+                          fontSize: "13.5px",
+                          border: "1px solid #e2e8f0",
+                          borderRadius: "8px",
+                          background: "#ffffff",
+                          color: "#0f172a",
+                          cursor: "pointer",
+                          appearance: "none",
+                          outline: "none",
+                        }}
+                      >
+                        {products.length > 0 ? (
+                          products.map((p) => (
+                            <option key={p.value} value={p.value}>
+                              {p.label}
+                            </option>
+                          ))
+                        ) : (
+                          <option value="sample">Luminous Kit</option>
+                        )}
+                      </select>
+                      <div style={{ position: "absolute", right: "12px", top: "50%", transform: "translateY(-50%)", pointerEvents: "none", color: "#64748b", display: "flex" }}>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="6 9 12 15 18 9"/>
+                        </svg>
+                      </div>
+                    </div>
                   </div>
-                )}
-              </label>
-            </div>
 
-            {/* Row 5: Verification Toggles */}
-            <div style={{ display: "flex", flexDirection: "column", gap: "12px", marginBottom: "28px" }}>
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  padding: "12px 0",
-                  borderTop: "1px solid #f3f4f6",
-                }}
-              >
-                <span style={{ fontSize: "14px", fontWeight: 500, color: "#111827" }}>
-                  Verified badge (auto, order matched)
-                </span>
-                <div
-                  className={`rg-toggle-switch ${manualVerifiedBadge ? "on" : ""}`}
-                  onClick={() => setManualVerifiedBadge(!manualVerifiedBadge)}
-                >
-                  <div className="rg-toggle-handle" />
+                  {/* Row: Order number & Rating */}
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+                    <div>
+                      <label style={{ fontSize: "13px", fontWeight: 600, color: "#374151", display: "block", marginBottom: "8px" }}>
+                        Order number
+                      </label>
+                      <input
+                        type="text"
+                        value={manualOrderNumber}
+                        onChange={(e) => handleOrderNumberChange(e.target.value)}
+                        placeholder="#1042"
+                        style={{
+                          width: "100%",
+                          height: "42px",
+                          padding: "0 12px",
+                          fontSize: "13.5px",
+                          border: "1px solid #e2e8f0",
+                          borderRadius: "8px",
+                          outline: "none",
+                          boxSizing: "border-box",
+                          color: "#0f172a",
+                          background: "#ffffff",
+                        }}
+                      />
+                    </div>
+
+                    <div>
+                      <label style={{ fontSize: "13px", fontWeight: 600, color: "#374151", display: "block", marginBottom: "8px" }}>
+                        Rating
+                      </label>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "6px",
+                          height: "42px",
+                          padding: "0 12px",
+                          border: "1px solid #e2e8f0",
+                          borderRadius: "8px",
+                          background: "#ffffff",
+                          boxSizing: "border-box",
+                        }}
+                      >
+                        {[1, 2, 3, 4, 5].map((star) => (
+                          <span
+                            key={star}
+                            onClick={() => setManualRating(star)}
+                            style={{
+                              cursor: "pointer",
+                              fontSize: "20px",
+                              color: star <= manualRating ? "#b45309" : "#cbd5e1",
+                              lineHeight: 1,
+                              transition: "color 0.15s ease",
+                            }}
+                          >
+                            ★
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  padding: "12px 0",
-                  borderTop: "1px solid #f3f4f6",
-                }}
-              >
-                <span style={{ fontSize: "14px", fontWeight: 500, color: "#111827" }}>
-                  I confirm the customer wrote this review
-                </span>
-                <div
-                  className={`rg-toggle-switch ${manualConfirmation ? "on" : ""}`}
-                  onClick={() => setManualConfirmation(!manualConfirmation)}
-                >
-                  <div className="rg-toggle-handle" />
+              {/* CARD 2: Step 2: Customer & Source */}
+              <div className="sp-card">
+                <div>
+                  <div style={{ marginBottom: "20px" }}>
+                    <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 700, color: "#111827" }}>
+                      Step 2: Customer & Source
+                    </h3>
+                    <div style={{ width: "36px", height: "2px", background: "#111827", marginTop: "6px" }} />
+                  </div>
+
+                  {/* Customer name */}
+                  <div style={{ marginBottom: "16px" }}>
+                    <label style={{ fontSize: "13px", fontWeight: 600, color: "#374151", display: "block", marginBottom: "8px" }}>
+                      Customer name
+                    </label>
+                    <input
+                      type="text"
+                      value={manualCustomerName}
+                      onChange={(e) => setManualCustomerName(e.target.value)}
+                      placeholder="Rachel V."
+                      style={{
+                        width: "100%",
+                        height: "42px",
+                        padding: "0 12px",
+                        fontSize: "13.5px",
+                        border: "1px solid #e2e8f0",
+                        borderRadius: "8px",
+                        outline: "none",
+                        boxSizing: "border-box",
+                        color: "#0f172a",
+                        background: "#ffffff",
+                      }}
+                    />
+                  </div>
+
+                  {/* Source of feedback */}
+                  <div>
+                    <label style={{ fontSize: "13px", fontWeight: 600, color: "#374151", display: "block", marginBottom: "8px" }}>
+                      Source of feedback
+                    </label>
+                    <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                      {(["WhatsApp", "Email", "Phone"] as const).map((src) => {
+                        const isActive = manualFeedbackSource === src;
+                        return (
+                          <button
+                            key={src}
+                            type="button"
+                            onClick={() => setManualFeedbackSource(src)}
+                            style={{
+                              padding: "8px 18px",
+                              fontSize: "13px",
+                              fontWeight: isActive ? 600 : 500,
+                              borderRadius: "9999px",
+                              border: isActive ? "1px solid #111827" : "1px solid #e2e8f0",
+                              background: isActive ? "#111827" : "#ffffff",
+                              color: isActive ? "#ffffff" : "#374151",
+                              cursor: "pointer",
+                              transition: "all 0.15s ease",
+                            }}
+                          >
+                            {src}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
 
-            {/* Action Buttons */}
-            <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
-              <button
-                type="button"
-                className="rg-generate-btn"
-                disabled={manualSubmitting || !manualConfirmation}
-                onClick={handleManualSubmit}
-              >
-                {manualSubmitting ? "Saving review..." : "Save for approval"}
-              </button>
+              {/* CARD 3: Step 3: Review & Media */}
+              <div className="sp-card">
+                <div>
+                  <div style={{ marginBottom: "20px" }}>
+                    <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 700, color: "#111827" }}>
+                      Step 3: Review & Media
+                    </h3>
+                    <div style={{ width: "36px", height: "2px", background: "#111827", marginTop: "6px" }} />
+                  </div>
 
-              <button
-                type="button"
-                className="rg-outline-btn"
-                onClick={() => {
-                  setManualReviewText("");
-                  setManualMediaPreview(null);
-                  setManualMediaType(null);
-                  setManualErrorMsg(null);
-                  setManualSuccessMsg(null);
-                }}
-              >
-                Cancel
-              </button>
+                  {/* Review text */}
+                  <div style={{ marginBottom: "16px" }}>
+                    <label style={{ fontSize: "13px", fontWeight: 600, color: "#374151", display: "block", marginBottom: "8px" }}>
+                      Review text (customer's own words)
+                    </label>
+                    <textarea
+                      placeholder="Paste what the customer wrote..."
+                      value={manualReviewText}
+                      onChange={(e) => setManualReviewText(e.target.value)}
+                      style={{
+                        width: "100%",
+                        minHeight: "100px",
+                        padding: "10px 12px",
+                        fontSize: "13.5px",
+                        border: "1px solid #e2e8f0",
+                        borderRadius: "8px",
+                        outline: "none",
+                        boxSizing: "border-box",
+                        color: "#0f172a",
+                        background: "#ffffff",
+                        fontFamily: "inherit",
+                        resize: "vertical",
+                      }}
+                    />
+                  </div>
+
+                  {/* Dashed Media Box */}
+                  <div>
+                    <label
+                      style={{
+                        display: "block",
+                        border: "1.5px dashed #cbd5e1",
+                        borderRadius: "10px",
+                        background: "#f8fafc",
+                        padding: "20px 16px",
+                        textAlign: "center",
+                        cursor: "pointer",
+                        transition: "border-color 0.15s, background 0.15s",
+                      }}
+                    >
+                      <input
+                        type="file"
+                        accept="image/*,video/*"
+                        style={{ display: "none" }}
+                        onChange={handleManualFileUpload}
+                      />
+                      {manualMediaPreview ? (
+                        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px" }}>
+                          {manualMediaType === "video" ? (
+                            <video
+                              src={manualMediaPreview}
+                              controls
+                              style={{ maxHeight: "120px", maxWidth: "100%", borderRadius: "8px" }}
+                            />
+                          ) : (
+                            <img
+                              src={manualMediaPreview}
+                              alt="Customer Media"
+                              style={{ maxHeight: "100px", borderRadius: "8px", objectFit: "cover" }}
+                            />
+                          )}
+                          <span style={{ fontSize: "12px", color: "#16a34a", fontWeight: 600 }}>
+                            ✓ Media attached. Click to change.
+                          </span>
+                        </div>
+                      ) : (
+                        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "6px", color: "#475569" }}>
+                          <span style={{ fontSize: "22px" }}>📷</span>
+                          <span style={{ fontSize: "13.5px", fontWeight: 500 }}>
+                            Add customer photo or video (with their permission)
+                          </span>
+                        </div>
+                      )}
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              {/* CARD 4: Step 4: Verification & Actions */}
+              <div className="sp-card" style={{ display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+                <div>
+                  <div style={{ marginBottom: "20px" }}>
+                    <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 700, color: "#111827" }}>
+                      Step 4: Verification & Actions
+                    </h3>
+                    <div style={{ width: "36px", height: "2px", background: "#111827", marginTop: "6px" }} />
+                  </div>
+
+                  {/* Verification Toggles */}
+                  <div style={{ display: "flex", flexDirection: "column", gap: "16px", marginBottom: "24px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span style={{ fontSize: "13.5px", fontWeight: 500, color: "#111827" }}>
+                        Verified badge (auto, order matched)
+                      </span>
+                      <div
+                        className={`mr-toggle-switch ${manualVerifiedBadge ? "on" : ""}`}
+                        onClick={() => setManualVerifiedBadge(!manualVerifiedBadge)}
+                      >
+                        <div className="mr-toggle-handle" />
+                      </div>
+                    </div>
+
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span style={{ fontSize: "13.5px", fontWeight: 500, color: "#111827" }}>
+                        I confirm the customer wrote this review
+                      </span>
+                      <div
+                        className={`mr-toggle-switch ${manualConfirmation ? "on" : ""}`}
+                        onClick={() => setManualConfirmation(!manualConfirmation)}
+                      >
+                        <div className="mr-toggle-handle" />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Bottom Action Buttons */}
+                <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+                  <button
+                    type="button"
+                    disabled={manualSubmitting || !manualConfirmation}
+                    onClick={handleManualSubmit}
+                    style={{
+                      background: manualSubmitting || !manualConfirmation ? "#94a3b8" : "#111827",
+                      color: "#ffffff",
+                      border: "none",
+                      borderRadius: "8px",
+                      padding: "10px 20px",
+                      fontSize: "13.5px",
+                      fontWeight: 600,
+                      cursor: manualSubmitting || !manualConfirmation ? "not-allowed" : "pointer",
+                      transition: "background 0.15s ease",
+                    }}
+                  >
+                    {manualSubmitting ? "Saving review..." : "Save for approval"}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setManualReviewText("");
+                      setManualMediaPreview(null);
+                      setManualMediaType(null);
+                      setManualErrorMsg(null);
+                      setManualSuccessMsg(null);
+                    }}
+                    style={{
+                      background: "#ffffff",
+                      border: "1px solid #e2e8f0",
+                      borderRadius: "8px",
+                      padding: "10px 18px",
+                      fontSize: "13.5px",
+                      fontWeight: 500,
+                      color: "#374151",
+                      cursor: "pointer",
+                      transition: "all 0.15s ease",
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         )}
