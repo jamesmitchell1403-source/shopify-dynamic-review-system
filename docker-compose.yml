@@ -1,10 +1,11 @@
 services:
   app:
     build: .
+    image: shopify-dynamic-review-system:latest
     container_name: shopify-dynamic-review-system
     restart: unless-stopped
     ports:
-      - "11004:11004"
+      - "0.0.0.0:11004:11004"
     env_file:
       - .env
     environment:
@@ -12,6 +13,9 @@ services:
       PORT: "11004"
       HOST: "0.0.0.0"
       SHOPIFY_APP_URL: "http://172.168.18.126:11004"
-      DATABASE_URL: "file:/app/prisma/prod.sqlite"
+      DATABASE_URL: "file:///data/prod.sqlite"
     volumes:
-      - ./prisma:/app/prisma
+      - sqlite_data:/data
+
+volumes:
+  sqlite_data:

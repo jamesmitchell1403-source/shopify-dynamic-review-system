@@ -11,6 +11,8 @@ node_modules
 .env.*
 !.env.example
 *.md
+*.sqlite
+*.sqlite-journal
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
