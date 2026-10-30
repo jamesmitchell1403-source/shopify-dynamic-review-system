@@ -9,11 +9,11 @@ import prisma from "./db.server";
 
 process.env.SCOPES = "read_themes,write_themes,read_products,read_orders";
 
-const secret2 = Buffer.from("c2hwc3NfYzBmMmE4OGRiMTkyNDM5YWJjMjNkZTY4ZjYzY2NhMjU=", "base64").toString("utf-8");
+const secret2 = process.env.SHOPIFY_API_SECRET_2 || "";
 
 const shopifyInstance1 = shopifyApp({
-  apiKey: "28fbf0094946ed287e3db764e52796e5",
-  apiSecretKey: "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",
+  apiKey: process.env.SHOPIFY_API_KEY || "",
+  apiSecretKey: process.env.SHOPIFY_API_SECRET || "",
   apiVersion: ApiVersion.January25,
   scopes: ["read_themes", "write_themes", "read_products", "read_orders"],
   appUrl: process.env.SHOPIFY_APP_URL || process.env.HOST || process.env.RENDER_EXTERNAL_URL || "https://shopify-dynamic-review-system.onrender.com",
@@ -29,7 +29,7 @@ const shopifyInstance1 = shopifyApp({
 });
 
 const shopifyInstance2 = shopifyApp({
-  apiKey: "d97376e1be723a9166b7ec705c55c610",
+  apiKey: process.env.SHOPIFY_API_KEY_2 || "",
   apiSecretKey: secret2,
   apiVersion: ApiVersion.January25,
   scopes: ["read_themes", "write_themes", "read_products", "read_orders"],
