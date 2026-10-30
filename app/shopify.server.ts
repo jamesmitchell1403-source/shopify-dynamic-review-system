@@ -95,7 +95,14 @@ export const authenticate = {
     }
   },
   public: shopifyInstance2.authenticate.public,
-  webhook: shopifyInstance2.authenticate.webhook,
+  webhook: async (request: Request) => {
+    const clone = request.clone();
+    try {
+      return await shopifyInstance1.authenticate.webhook(request);
+    } catch {
+      return await shopifyInstance2.authenticate.webhook(clone);
+    }
+  },
 };
 export const unauthenticated = shopifyInstance2.unauthenticated;
 export const login = shopifyInstance2.login;

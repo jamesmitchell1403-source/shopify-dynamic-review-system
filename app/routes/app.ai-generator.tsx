@@ -425,6 +425,15 @@ export default function AiGeneratorPage() {
   const [copiedReply, setCopiedReply] = useState<boolean>(false);
   const [showInsights, setShowInsights] = useState<boolean>(true);
 
+  // New state for Screenshot-matched Single Product 2x2 modular UI
+  const [singleSearchQuery, setSingleSearchQuery] = useState<string>("");
+  const [isProductDropdownOpen, setIsProductDropdownOpen] = useState<boolean>(false);
+  const [activeAdvancedSection, setActiveAdvancedSection] = useState<string | null>(null);
+  const [advancedAiSuggestions, setAdvancedAiSuggestions] = useState<boolean>(true);
+  const [advancedExcludeKeywords, setAdvancedExcludeKeywords] = useState<string>("");
+  const [advancedCustomerProfile, setAdvancedCustomerProfile] = useState<string>("General Shoppers");
+  const [advancedReviewFormat, setAdvancedReviewFormat] = useState<string>("Standard Paragraph");
+
   // Current selected product object & stats
   const currentProduct = useMemo(() => {
     return products.find((p) => p.value === selectedProductId) || products[0] || {
@@ -440,8 +449,14 @@ export default function AiGeneratorPage() {
     if (stats && stats.count > 0) {
       return stats;
     }
-    return { count: 8, avgRating: 4.9 };
+    return { count: 5, avgRating: 4.6 };
   }, [productStats, selectedProductId]);
+
+  const filteredSingleProducts = useMemo(() => {
+    if (!singleSearchQuery.trim()) return products;
+    const q = singleSearchQuery.toLowerCase();
+    return products.filter((p) => p.label.toLowerCase().includes(q));
+  }, [products, singleSearchQuery]);
 
   // ==============================================================
   // TAB 2 (Add real review - Manual) STATE
@@ -552,7 +567,24 @@ export default function AiGeneratorPage() {
       });
     }, 400);
 
-    const avoidPhrasing = isMore ? generatedReviews.map((r) => r.bodyShort) : [];
+    const excludeWords = advancedExcludeKeywords
+      ? advancedExcludeKeywords.split(",").map((s) => s.trim()).filter(Boolean)
+      : [];
+    const avoidPhrasing = [
+      ...(isMore ? generatedReviews.map((r) => r.bodyShort) : []),
+      ...excludeWords,
+    ];
+
+    let customNotesCompiled = singleNotes ? singleNotes.trim() : "";
+    if (advancedAiSuggestions) {
+      customNotesCompiled += (customNotesCompiled ? ". " : "") + "Use AI to highlight unique product benefits and selling points";
+    }
+    if (advancedCustomerProfile && advancedCustomerProfile !== "General Shoppers") {
+      customNotesCompiled += (customNotesCompiled ? ". " : "") + `Customer target profile: ${advancedCustomerProfile}`;
+    }
+    if (advancedReviewFormat && advancedReviewFormat !== "Standard Paragraph") {
+      customNotesCompiled += (customNotesCompiled ? ". " : "") + `Review layout structure: ${advancedReviewFormat}`;
+    }
 
     try {
       const res = await fetch("/api/ai/generate", {
@@ -562,7 +594,7 @@ export default function AiGeneratorPage() {
           productId: selectedProductId,
           productImageUrl: currentProduct?.imageUrl || undefined,
           description: currentProduct?.description,
-          notes: singleNotes,
+          notes: customNotesCompiled,
           language: singleLanguage,
           provider: singleProvider,
           count: Number(singleCount),
@@ -1442,6 +1474,278 @@ export default function AiGeneratorPage() {
         .rg-toggle-switch.on .rg-toggle-handle {
           transform: translateX(20px);
         }
+
+        /* ========================================================== */
+        /* SINGLE PRODUCT 2x2 MODULAR GRID (SCREENSHOT EXACT MATCH)    */
+        /* ========================================================== */
+        .sp-grid {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 20px;
+          width: 100%;
+          box-sizing: border-box;
+          margin-bottom: 24px;
+        }
+        @media (max-width: 960px) {
+          .sp-grid {
+            grid-template-columns: 1fr;
+          }
+        }
+        .sp-card {
+          background: #ffffff;
+          border: 1px solid #e2e8f0;
+          border-radius: 16px;
+          padding: 24px;
+          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+          display: flex;
+          flex-direction: column;
+          box-sizing: border-box;
+          transition: border-color 0.15s ease;
+        }
+        .sp-header {
+          display: flex;
+          align-items: flex-start;
+          gap: 12px;
+          margin-bottom: 20px;
+        }
+        .sp-header-icon {
+          width: 36px;
+          height: 36px;
+          border-radius: 50%;
+          background: #f8fafc;
+          border: 1px solid #f1f5f9;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: #334155;
+          flex-shrink: 0;
+        }
+        .sp-header-title {
+          font-size: 16px;
+          font-weight: 700;
+          color: #0f172a;
+          margin: 0;
+        }
+        .sp-header-subtitle {
+          font-size: 13px;
+          color: #64748b;
+          margin: 3px 0 0 0;
+        }
+        .sp-search-box {
+          position: relative;
+          margin-bottom: 12px;
+        }
+        .sp-search-input {
+          width: 100%;
+          height: 42px;
+          padding: 0 14px 0 38px;
+          font-size: 13.5px;
+          border: 1px solid #e2e8f0;
+          border-radius: 8px;
+          background: #ffffff;
+          color: #0f172a;
+          outline: none;
+          box-sizing: border-box;
+          transition: border-color 0.15s ease, box-shadow 0.15s ease;
+        }
+        .sp-search-input:focus {
+          border-color: #3b82f6;
+          box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+        }
+        .sp-search-icon {
+          position: absolute;
+          left: 12px;
+          top: 50%;
+          transform: translateY(-50%);
+          color: #94a3b8;
+          pointer-events: none;
+          display: flex;
+          align-items: center;
+        }
+        .sp-product-select-row {
+          border: 1px solid #e2e8f0;
+          border-radius: 10px;
+          padding: 12px 14px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          cursor: pointer;
+          background: #ffffff;
+          transition: border-color 0.15s ease, background 0.15s ease;
+        }
+        .sp-product-select-row:hover {
+          background: #f8fafc;
+          border-color: #cbd5e1;
+        }
+        .sp-selected-box {
+          border: 1px solid #e2e8f0;
+          border-radius: 10px;
+          padding: 12px 14px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          background: #ffffff;
+          margin-top: 12px;
+        }
+        .sp-tone-grid {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+          margin-bottom: 18px;
+        }
+        .sp-tone-btn {
+          padding: 8px 14px;
+          font-size: 13px;
+          font-weight: 500;
+          border-radius: 8px;
+          border: 1px solid #e2e8f0;
+          background: #ffffff;
+          color: #475569;
+          cursor: pointer;
+          transition: all 0.15s ease;
+          user-select: none;
+        }
+        .sp-tone-btn:hover {
+          background: #f8fafc;
+          border-color: #cbd5e1;
+        }
+        .sp-tone-btn.active {
+          border: 1.5px solid #2563eb;
+          background: #eff6ff;
+          color: #2563eb;
+          font-weight: 600;
+        }
+        .sp-count-row {
+          display: flex;
+          gap: 10px;
+          margin-bottom: 18px;
+        }
+        .sp-count-btn {
+          flex: 1;
+          height: 38px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 13.5px;
+          font-weight: 500;
+          border-radius: 8px;
+          border: 1px solid #e2e8f0;
+          background: #ffffff;
+          color: #475569;
+          cursor: pointer;
+          transition: all 0.15s ease;
+          user-select: none;
+        }
+        .sp-count-btn:hover {
+          background: #f8fafc;
+          border-color: #cbd5e1;
+        }
+        .sp-count-btn.active {
+          border: 1.5px solid #2563eb;
+          background: #eff6ff;
+          color: #2563eb;
+          font-weight: 600;
+        }
+        .sp-adv-item {
+          border: 1px solid #e2e8f0;
+          border-radius: 10px;
+          padding: 12px 14px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          margin-bottom: 10px;
+          cursor: pointer;
+          background: #ffffff;
+          transition: all 0.15s ease;
+        }
+        .sp-adv-item:hover {
+          border-color: #cbd5e1;
+          background: #f8fafc;
+        }
+        .sp-adv-item.open {
+          border-color: #3b82f6;
+          background: #f8fafc;
+        }
+        .sp-adv-icon {
+          width: 32px;
+          height: 32px;
+          border-radius: 50%;
+          background: #f1f5f9;
+          border: 1px solid #e2e8f0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: #475569;
+          flex-shrink: 0;
+        }
+        .sp-summary-grid {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 16px;
+          margin-bottom: 24px;
+        }
+        .sp-summary-item {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+        }
+        .sp-summary-icon {
+          width: 36px;
+          height: 36px;
+          border-radius: 8px;
+          background: #f8fafc;
+          border: 1px solid #e2e8f0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: #475569;
+          flex-shrink: 0;
+        }
+        .sp-btn-generate {
+          width: 100%;
+          height: 44px;
+          background: #1e293b;
+          color: #ffffff;
+          border: none;
+          border-radius: 8px;
+          font-size: 14px;
+          font-weight: 600;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          cursor: pointer;
+          transition: background 0.15s ease;
+          box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+        }
+        .sp-btn-generate:hover:not(:disabled) {
+          background: #0f172a;
+        }
+        .sp-btn-generate:disabled {
+          background: #94a3b8;
+          cursor: not-allowed;
+        }
+        .sp-chip {
+          padding: 6px 12px;
+          font-size: 12px;
+          font-weight: 500;
+          border-radius: 6px;
+          border: 1px solid #e2e8f0;
+          background: #ffffff;
+          color: #475569;
+          cursor: pointer;
+          transition: all 0.15s ease;
+        }
+        .sp-chip:hover {
+          background: #f1f5f9;
+          border-color: #cbd5e1;
+        }
+        .sp-chip.active {
+          background: #2563eb;
+          color: #ffffff;
+          border-color: #2563eb;
+          font-weight: 600;
+        }
       `}</style>
 
       <div className="rg-root">
@@ -2270,7 +2574,7 @@ export default function AiGeneratorPage() {
 
         {/* ============================================================== */}
         {/* TAB 1: PRODUCT ASSISTANT (SINGLE PRODUCT AI GENERATOR)          */}
-        {/* REDESIGNED INTO 100% FULL-WIDTH 4-STEP WORKFLOW                 */}
+        {/* EXACT 2x2 MODULAR GRID AS SHOWN IN SCREENSHOT                   */}
         {/* ============================================================== */}
         {selectedTab === 1 && (
           <div>
@@ -2282,501 +2586,752 @@ export default function AiGeneratorPage() {
               </div>
             )}
 
-            {/* STEP 1: SELECT PRODUCT */}
-            <div className="rg-step-card">
-              <div className="rg-step-header">
-                <span className="rg-step-badge">Step 1</span>
+            <div className="sp-grid">
+              {/* CARD 1: 1. SELECT PRODUCT */}
+              <div className="sp-card">
                 <div>
-                  <h3 className="rg-step-title">Select Target Product</h3>
-                  <p className="rg-step-desc">
-                    Choose the specific Shopify product you want to analyze and generate AI reviews for.
-                  </p>
+                  <div className="sp-header">
+                    <div className="sp-header-icon">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/>
+                      </svg>
+                    </div>
+                    <div>
+                      <h3 className="sp-header-title">1. Select Product</h3>
+                      <p className="sp-header-subtitle">Choose a product from your Shopify catalog to generate reviews.</p>
+                    </div>
+                  </div>
+
+                  {/* Search input with magnifying glass */}
+                  <div className="sp-search-box">
+                    <span className="sp-search-icon">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+                      </svg>
+                    </span>
+                    <input
+                      type="text"
+                      className="sp-search-input"
+                      placeholder="Search product..."
+                      value={singleSearchQuery}
+                      onChange={(e) => {
+                        setSingleSearchQuery(e.target.value);
+                        setIsProductDropdownOpen(true);
+                      }}
+                      onFocus={() => setIsProductDropdownOpen(true)}
+                    />
+                  </div>
+
+                  {/* Product Dropdown Selector Bar */}
+                  <div
+                    className="sp-product-select-row"
+                    onClick={() => setIsProductDropdownOpen(!isProductDropdownOpen)}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: "12px", overflow: "hidden" }}>
+                      <div style={{
+                        width: "42px",
+                        height: "42px",
+                        borderRadius: "8px",
+                        background: "#f1f5f9",
+                        border: "1px solid #e2e8f0",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        overflow: "hidden",
+                        flexShrink: 0,
+                      }}>
+                        {currentProduct.imageUrl ? (
+                          <img src={currentProduct.imageUrl} alt={currentProduct.label} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                        ) : (
+                          <span style={{ fontSize: "20px" }}>🛍️</span>
+                        )}
+                      </div>
+                      <div style={{ overflow: "hidden" }}>
+                        <div style={{ fontSize: "14px", fontWeight: 600, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {currentProduct.label}
+                        </div>
+                        <div style={{ fontSize: "12px", color: "#64748b", display: "flex", alignItems: "center", gap: "6px", marginTop: "2px" }}>
+                          <span>{`${currentProductStats.count} real reviews`}</span>
+                          <span>•</span>
+                          <span style={{ color: "#d97706", fontWeight: 600 }}>{`Avg. ${currentProductStats.avgRating} ★`}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{ color: "#64748b", transform: isProductDropdownOpen ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.2s" }}>
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="6 9 12 15 18 9"/>
+                      </svg>
+                    </div>
+                  </div>
+
+                  {/* Dropdown Options List */}
+                  {isProductDropdownOpen && (
+                    <div style={{
+                      marginTop: "6px",
+                      background: "#ffffff",
+                      border: "1px solid #cbd5e1",
+                      borderRadius: "10px",
+                      maxHeight: "190px",
+                      overflowY: "auto",
+                      boxShadow: "0 6px 16px rgba(0, 0, 0, 0.08)",
+                      zIndex: 20,
+                    }}>
+                      {(filteredSingleProducts.length > 0 ? filteredSingleProducts : products).map((p) => {
+                        const stats = productStats[p.value] || { count: 5, avgRating: 4.6 };
+                        const isSelected = p.value === selectedProductId;
+                        return (
+                          <div
+                            key={p.value}
+                            onClick={() => {
+                              setSelectedProductId(p.value);
+                              setIsProductDropdownOpen(false);
+                            }}
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "space-between",
+                              padding: "10px 14px",
+                              borderBottom: "1px solid #f1f5f9",
+                              cursor: "pointer",
+                              background: isSelected ? "#eff6ff" : "transparent",
+                            }}
+                          >
+                            <div style={{ display: "flex", alignItems: "center", gap: "10px", overflow: "hidden" }}>
+                              <div style={{ width: "32px", height: "32px", borderRadius: "6px", overflow: "hidden", background: "#f8fafc", flexShrink: 0 }}>
+                                {p.imageUrl ? (
+                                  <img src={p.imageUrl} alt={p.label} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                                ) : (
+                                  <span>🛍️</span>
+                                )}
+                              </div>
+                              <div style={{ overflow: "hidden" }}>
+                                <div style={{ fontSize: "13.5px", fontWeight: isSelected ? 600 : 500, color: "#0f172a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                                  {p.label}
+                                </div>
+                                <div style={{ fontSize: "11.5px", color: "#64748b" }}>
+                                  {`${stats.count} reviews • Avg. ${stats.avgRating} ★`}
+                                </div>
+                              </div>
+                            </div>
+                            {isSelected && <span style={{ color: "#2563eb", fontWeight: 700, fontSize: "13px" }}>✓</span>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Selected Product Card */}
+                  <div className="sp-selected-box">
+                    <div style={{ display: "flex", alignItems: "center", gap: "12px", overflow: "hidden" }}>
+                      <div style={{
+                        width: "42px",
+                        height: "42px",
+                        borderRadius: "8px",
+                        background: "#f1f5f9",
+                        border: "1px solid #e2e8f0",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        overflow: "hidden",
+                        flexShrink: 0,
+                      }}>
+                        {currentProduct.imageUrl ? (
+                          <img src={currentProduct.imageUrl} alt={currentProduct.label} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                        ) : (
+                          <span style={{ fontSize: "20px" }}>🛍️</span>
+                        )}
+                      </div>
+                      <div style={{ overflow: "hidden" }}>
+                        <div style={{ fontSize: "11px", color: "#64748b", fontWeight: 500 }}>
+                          Selected Product
+                        </div>
+                        <div style={{ fontSize: "14px", fontWeight: 600, color: "#0f172a", marginTop: "2px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {currentProduct.label}
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsProductDropdownOpen(true)}
+                      style={{
+                        background: "none",
+                        border: "none",
+                        color: "#2563eb",
+                        fontSize: "13.5px",
+                        fontWeight: 600,
+                        cursor: "pointer",
+                        padding: "4px 8px",
+                      }}
+                    >
+                      Change
+                    </button>
+                  </div>
                 </div>
               </div>
 
-              {/* Product Selector Dropdown */}
-              <div style={{ marginBottom: "18px" }}>
-                <label style={{ fontSize: "13.5px", fontWeight: 600, color: "#374151", display: "block", marginBottom: "8px" }}>
-                  Product
-                </label>
-                <select
-                  className="rg-select"
-                  value={selectedProductId}
-                  onChange={(e) => setSelectedProductId(e.target.value)}
-                >
-                  {products.length > 0 ? (
-                    products.map((p) => (
-                      <option key={p.value} value={p.value}>
-                        {p.label}
-                      </option>
-                    ))
-                  ) : (
-                    <option value="luminous">Luminous Kit</option>
-                  )}
-                </select>
+              {/* CARD 2: 2. REVIEW SETTINGS */}
+              <div className="sp-card">
+                <div>
+                  <div className="sp-header">
+                    <div className="sp-header-icon">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
+                        <circle cx="12" cy="12" r="3"/>
+                      </svg>
+                    </div>
+                    <div>
+                      <h3 className="sp-header-title">2. Review Settings</h3>
+                      <p className="sp-header-subtitle">Customize the tone, volume, and other details.</p>
+                    </div>
+                  </div>
+
+                  {/* Review Tone */}
+                  <div style={{ marginBottom: "18px" }}>
+                    <label style={{ fontSize: "13px", fontWeight: 600, color: "#374151", display: "block", marginBottom: "8px" }}>
+                      Review Tone
+                    </label>
+                    <div className="sp-tone-grid">
+                      {[
+                        "Friendly & Relatable",
+                        "Enthusiastic & Excited",
+                        "Professional & Detailed",
+                        "Short & Punchy",
+                      ].map((t) => (
+                        <button
+                          key={t}
+                          type="button"
+                          className={`sp-tone-btn ${singleTone === t ? "active" : ""}`}
+                          onClick={() => setSingleTone(t)}
+                        >
+                          {t}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Number of Reviews to Generate */}
+                  <div style={{ marginBottom: "18px" }}>
+                    <label style={{ fontSize: "13px", fontWeight: 600, color: "#374151", display: "block", marginBottom: "8px" }}>
+                      Number of Reviews to Generate
+                    </label>
+                    <div className="sp-count-row">
+                      {[1, 3, 5, 10].map((num) => (
+                        <button
+                          key={num}
+                          type="button"
+                          className={`sp-count-btn ${singleCount === num ? "active" : ""}`}
+                          onClick={() => setSingleCount(num)}
+                        >
+                          {num}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Language */}
+                  <div style={{ marginBottom: "18px" }}>
+                    <label style={{ fontSize: "13px", fontWeight: 600, color: "#374151", display: "block", marginBottom: "8px" }}>
+                      Language
+                    </label>
+                    <div style={{ position: "relative" }}>
+                      <div style={{
+                        position: "absolute",
+                        left: "12px",
+                        top: "50%",
+                        transform: "translateY(-50%)",
+                        color: "#64748b",
+                        display: "flex",
+                        alignItems: "center",
+                        pointerEvents: "none",
+                      }}>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>
+                        </svg>
+                      </div>
+                      <select
+                        value={singleLanguage}
+                        onChange={(e) => setSingleLanguage(e.target.value)}
+                        style={{
+                          width: "100%",
+                          height: "42px",
+                          padding: "0 34px 0 36px",
+                          fontSize: "13.5px",
+                          border: "1px solid #e2e8f0",
+                          borderRadius: "8px",
+                          background: "#ffffff",
+                          color: "#0f172a",
+                          cursor: "pointer",
+                          appearance: "none",
+                          outline: "none",
+                        }}
+                      >
+                        <option value="en">English</option>
+                        <option value="es">Spanish</option>
+                        <option value="fr">French</option>
+                        <option value="de">German</option>
+                        <option value="it">Italian</option>
+                        <option value="pt">Portuguese</option>
+                        <option value="ja">Japanese</option>
+                      </select>
+                      <div style={{
+                        position: "absolute",
+                        right: "12px",
+                        top: "50%",
+                        transform: "translateY(-50%)",
+                        color: "#64748b",
+                        pointerEvents: "none",
+                        display: "flex",
+                        alignItems: "center",
+                      }}>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="6 9 12 15 18 9"/>
+                        </svg>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Key Features (Optional) */}
+                  <div>
+                    <label style={{ fontSize: "13px", fontWeight: 600, color: "#374151", display: "block", marginBottom: "8px" }}>
+                      Key Features (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. long battery life, fast shipping, perfect for travel..."
+                      value={singleNotes}
+                      onChange={(e) => setSingleNotes(e.target.value)}
+                      style={{
+                        width: "100%",
+                        height: "42px",
+                        padding: "0 12px",
+                        fontSize: "13.5px",
+                        border: "1px solid #e2e8f0",
+                        borderRadius: "8px",
+                        outline: "none",
+                        boxSizing: "border-box",
+                        color: "#0f172a",
+                        background: "#ffffff",
+                      }}
+                    />
+                  </div>
+                </div>
               </div>
 
-              {/* Selected Product Spotlight Card (Full Width) */}
-              <div
-                style={{
-                  background: "#dbeafe",
-                  border: "1.5px solid #bfdbfe",
-                  borderRadius: "14px",
-                  padding: "18px 22px",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  flexWrap: "wrap",
-                  gap: "16px",
-                  marginBottom: "16px",
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
-                  <div
-                    style={{
-                      width: "60px",
-                      height: "60px",
-                      borderRadius: "10px",
-                      background: "#c7d2fe",
-                      overflow: "hidden",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      flexShrink: 0,
-                    }}
-                  >
-                    {currentProduct.imageUrl ? (
-                      <img
-                        src={currentProduct.imageUrl}
-                        alt={currentProduct.label}
-                        style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                      />
-                    ) : (
-                      <span style={{ fontSize: "28px" }}>✨</span>
+              {/* CARD 3: 3. ADVANCED OPTIONS */}
+              <div className="sp-card">
+                <div>
+                  <div className="sp-header">
+                    <div className="sp-header-icon">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <line x1="4" x2="4" y1="21" y2="14"/><line x1="4" x2="4" y1="10" y2="3"/><line x1="12" x2="12" y1="21" y2="12"/><line x1="12" x2="12" y1="8" y2="3"/><line x1="20" x2="20" y1="21" y2="16"/><line x1="20" x2="20" y1="12" y2="3"/><line x1="1" x2="7" y1="14" y2="14"/><line x1="9" x2="15" y1="8" y2="8"/><line x1="17" x2="23" y1="16" y2="16"/>
+                      </svg>
+                    </div>
+                    <div>
+                      <h3 className="sp-header-title">3. Advanced Options</h3>
+                      <p className="sp-header-subtitle">Refine your reviews with AI suggestions and custom rules.</p>
+                    </div>
+                  </div>
+
+                  {/* Action 1: AI Suggestions */}
+                  <div>
+                    <div
+                      className={`sp-adv-item ${activeAdvancedSection === "ai_suggestions" ? "open" : ""}`}
+                      onClick={() => setActiveAdvancedSection(activeAdvancedSection === "ai_suggestions" ? null : "ai_suggestions")}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                        <div className="sp-adv-icon">
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/>
+                          </svg>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: "14px", fontWeight: 600, color: "#0f172a" }}>AI Suggestions</div>
+                          <div style={{ fontSize: "12.5px", color: "#64748b" }}>Use AI to highlight product benefits and unique features.</div>
+                        </div>
+                      </div>
+                      <div style={{ color: "#64748b", transform: activeAdvancedSection === "ai_suggestions" ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.15s" }}>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="9 18 15 12 9 6"/>
+                        </svg>
+                      </div>
+                    </div>
+                    {activeAdvancedSection === "ai_suggestions" && (
+                      <div style={{ background: "#f8fafc", padding: "12px 14px", borderRadius: "8px", marginBottom: "10px", border: "1px solid #e2e8f0" }}>
+                        <label style={{ display: "flex", alignItems: "center", gap: "10px", fontSize: "13px", color: "#334155", cursor: "pointer" }}>
+                          <input
+                            type="checkbox"
+                            checked={advancedAiSuggestions}
+                            onChange={(e) => setAdvancedAiSuggestions(e.target.checked)}
+                            style={{ width: "16px", height: "16px", accentColor: "#2563eb" }}
+                          />
+                          <span>Highlight top features and real-world benefit statements in reviews</span>
+                        </label>
+                      </div>
                     )}
                   </div>
 
+                  {/* Action 2: Exclude Keywords */}
                   <div>
-                    <h4 style={{ margin: "0 0 4px 0", fontSize: "17px", fontWeight: 700, color: "#1e3a8a" }}>
-                      {currentProduct.label}
-                    </h4>
-                    <div style={{ display: "flex", alignItems: "center", gap: "10px", fontSize: "13.5px", color: "#1d4ed8" }}>
-                      <strong>{`${currentProductStats.count} real reviews`}</strong>
-                      <span>•</span>
-                      <span>{`Average ${currentProductStats.avgRating} ★`}</span>
+                    <div
+                      className={`sp-adv-item ${activeAdvancedSection === "exclude_keywords" ? "open" : ""}`}
+                      onClick={() => setActiveAdvancedSection(activeAdvancedSection === "exclude_keywords" ? null : "exclude_keywords")}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                        <div className="sp-adv-icon">
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/>
+                          </svg>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: "14px", fontWeight: 600, color: "#0f172a" }}>Exclude Keywords</div>
+                          <div style={{ fontSize: "12.5px", color: "#64748b" }}>Add words or phrases to avoid in reviews.</div>
+                        </div>
+                      </div>
+                      <div style={{ color: "#64748b", transform: activeAdvancedSection === "exclude_keywords" ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.15s" }}>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="9 18 15 12 9 6"/>
+                        </svg>
+                      </div>
                     </div>
+                    {activeAdvancedSection === "exclude_keywords" && (
+                      <div style={{ background: "#f8fafc", padding: "12px 14px", borderRadius: "8px", marginBottom: "10px", border: "1px solid #e2e8f0" }}>
+                        <label style={{ fontSize: "12.5px", fontWeight: 600, color: "#475569", display: "block", marginBottom: "6px" }}>
+                          Forbidden terms (comma-separated):
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="e.g. cheap, broke, slow delivery, fake, returned"
+                          value={advancedExcludeKeywords}
+                          onChange={(e) => setAdvancedExcludeKeywords(e.target.value)}
+                          style={{ width: "100%", padding: "8px 10px", fontSize: "13px", border: "1px solid #cbd5e1", borderRadius: "6px", background: "#ffffff", boxSizing: "border-box" }}
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Action 3: Customer Profile */}
+                  <div>
+                    <div
+                      className={`sp-adv-item ${activeAdvancedSection === "customer_profile" ? "open" : ""}`}
+                      onClick={() => setActiveAdvancedSection(activeAdvancedSection === "customer_profile" ? null : "customer_profile")}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                        <div className="sp-adv-icon">
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+                          </svg>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: "14px", fontWeight: 600, color: "#0f172a" }}>Customer Profile</div>
+                          <div style={{ fontSize: "12.5px", color: "#64748b" }}>Target specific customer types (e.g., new buyers, professionals).</div>
+                        </div>
+                      </div>
+                      <div style={{ color: "#64748b", transform: activeAdvancedSection === "customer_profile" ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.15s" }}>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="9 18 15 12 9 6"/>
+                        </svg>
+                      </div>
+                    </div>
+                    {activeAdvancedSection === "customer_profile" && (
+                      <div style={{ background: "#f8fafc", padding: "12px 14px", borderRadius: "8px", marginBottom: "10px", border: "1px solid #e2e8f0" }}>
+                        <label style={{ fontSize: "12.5px", fontWeight: 600, color: "#475569", display: "block", marginBottom: "8px" }}>
+                          Select Customer Persona:
+                        </label>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                          {[
+                            "General Shoppers",
+                            "Verified First-Time Buyers",
+                            "Repeat Customers",
+                            "Gift Shoppers",
+                            "Professionals",
+                          ].map((profile) => (
+                            <button
+                              key={profile}
+                              type="button"
+                              className={`sp-chip ${advancedCustomerProfile === profile ? "active" : ""}`}
+                              onClick={() => setAdvancedCustomerProfile(profile)}
+                            >
+                              {profile}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Action 4: Review Format */}
+                  <div>
+                    <div
+                      className={`sp-adv-item ${activeAdvancedSection === "review_format" ? "open" : ""}`}
+                      onClick={() => setActiveAdvancedSection(activeAdvancedSection === "review_format" ? null : "review_format")}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                        <div className="sp-adv-icon">
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
+                          </svg>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: "14px", fontWeight: 600, color: "#0f172a" }}>Review Format</div>
+                          <div style={{ fontSize: "12.5px", color: "#64748b" }}>Choose how reviews should be structured (e.g., pros & cons).</div>
+                        </div>
+                      </div>
+                      <div style={{ color: "#64748b", transform: activeAdvancedSection === "review_format" ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.15s" }}>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="9 18 15 12 9 6"/>
+                        </svg>
+                      </div>
+                    </div>
+                    {activeAdvancedSection === "review_format" && (
+                      <div style={{ background: "#f8fafc", padding: "12px 14px", borderRadius: "8px", marginBottom: "10px", border: "1px solid #e2e8f0" }}>
+                        <label style={{ fontSize: "12.5px", fontWeight: 600, color: "#475569", display: "block", marginBottom: "8px" }}>
+                          Review Format Style:
+                        </label>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                          {[
+                            "Standard Paragraph",
+                            "Pros & Cons Format",
+                            "Short & Punchy",
+                            "Detailed Experience",
+                          ].map((fmt) => (
+                            <button
+                              key={fmt}
+                              type="button"
+                              className={`sp-chip ${advancedReviewFormat === fmt ? "active" : ""}`}
+                              onClick={() => setAdvancedReviewFormat(fmt)}
+                            >
+                              {fmt}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
+              </div>
 
-                <div style={{ display: "flex", gap: "8px" }}>
+              {/* CARD 4: 4. REVIEW GENERATION SUMMARY */}
+              <div className="sp-card">
+                <div>
+                  <div className="sp-header">
+                    <div className="sp-header-icon">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/>
+                      </svg>
+                    </div>
+                    <div>
+                      <h3 className="sp-header-title">4. Review Generation Summary</h3>
+                      <p className="sp-header-subtitle">Verify the product details and generation settings before creating reviews.</p>
+                    </div>
+                  </div>
+
+                  {/* 2x3 Summary Table */}
+                  <div className="sp-summary-grid">
+                    {/* Row 1 Left: Product */}
+                    <div className="sp-summary-item">
+                      <div style={{ width: "36px", height: "36px", borderRadius: "8px", overflow: "hidden", background: "#f8fafc", border: "1px solid #e2e8f0", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        {currentProduct.imageUrl ? (
+                          <img src={currentProduct.imageUrl} alt={currentProduct.label} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                        ) : (
+                          <span>🛍️</span>
+                        )}
+                      </div>
+                      <div style={{ overflow: "hidden" }}>
+                        <div style={{ fontSize: "11px", color: "#64748b", fontWeight: 500 }}>Product</div>
+                        <div style={{ fontSize: "13.5px", fontWeight: 600, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {currentProduct.label}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Row 1 Right: Language */}
+                    <div className="sp-summary-item">
+                      <div className="sp-summary-icon">
+                        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>
+                        </svg>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: "11px", color: "#64748b", fontWeight: 500 }}>Language</div>
+                        <div style={{ fontSize: "13.5px", fontWeight: 600, color: "#0f172a" }}>
+                          {singleLanguage === "en" ? "English" : singleLanguage === "es" ? "Spanish" : singleLanguage === "fr" ? "French" : singleLanguage === "de" ? "German" : singleLanguage === "it" ? "Italian" : singleLanguage === "pt" ? "Portuguese" : "Japanese"}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Row 2 Left: Tone */}
+                    <div className="sp-summary-item">
+                      <div className="sp-summary-icon">
+                        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/>
+                        </svg>
+                      </div>
+                      <div style={{ overflow: "hidden" }}>
+                        <div style={{ fontSize: "11px", color: "#64748b", fontWeight: 500 }}>Tone</div>
+                        <div style={{ fontSize: "13.5px", fontWeight: 600, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {singleTone}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Row 2 Right: Key Features */}
+                    <div className="sp-summary-item">
+                      <div className="sp-summary-icon">
+                        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="12" cy="12" r="3"/>
+                        </svg>
+                      </div>
+                      <div style={{ overflow: "hidden" }}>
+                        <div style={{ fontSize: "11px", color: "#64748b", fontWeight: 500 }}>Key Features</div>
+                        <div style={{ fontSize: "13.5px", fontWeight: 600, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {singleNotes && singleNotes.trim() ? singleNotes : "No custom features"}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Row 3 Left: Count */}
+                    <div className="sp-summary-item">
+                      <div className="sp-summary-icon">
+                        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/>
+                        </svg>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: "11px", color: "#64748b", fontWeight: 500 }}>Count</div>
+                        <div style={{ fontSize: "13.5px", fontWeight: 600, color: "#0f172a" }}>
+                          {`${singleCount} Reviews`}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Row 3 Right: AI Engine */}
+                    <div className="sp-summary-item">
+                      <div className="sp-summary-icon">
+                        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+                        </svg>
+                      </div>
+                      <div style={{ overflow: "hidden" }}>
+                        <div style={{ fontSize: "11px", color: "#64748b", fontWeight: 500 }}>AI Engine</div>
+                        <div style={{ fontSize: "13.5px", fontWeight: 600, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {selectedSingleEngine?.name || "Google Gemini"}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Single Progress Bar during Generation */}
+                  {singleLoading && (
+                    <div style={{ marginBottom: "16px", textAlign: "left" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "6px", fontSize: "13px", color: "#374151" }}>
+                        <span>{`Generating ${singleCount} authentic reviews for ${currentProduct.label}...`}</span>
+                        <strong>{singleProgress}%</strong>
+                      </div>
+                      <ProgressBar progress={singleProgress} animated />
+                    </div>
+                  )}
+
+                  {/* Primary Generate Button */}
+                  <button
+                    type="button"
+                    className="sp-btn-generate"
+                    disabled={singleLoading || !selectedSingleEngine?.hasKey}
+                    onClick={() => handleSingleGenerate(false)}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/>
+                    </svg>
+                    <span>
+                      {singleLoading
+                        ? `Generating Reviews for ${currentProduct.label}...`
+                        : `Generate ${singleCount} Authentic Reviews`}
+                    </span>
+                  </button>
+
+                  {!selectedSingleEngine?.hasKey && (
+                    <div style={{ marginTop: "10px", fontSize: "12.5px", color: "#dc2626", textAlign: "center" }}>
+                      ⚠️ Active engine requires a configured key in <Link to="/app/ai-settings" style={{ color: "#2563eb", textDecoration: "underline" }}>AI Settings</Link>.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Generated Reviews Preview List below 2x2 grid */}
+            {generatedReviews.length > 0 && (
+              <div style={{ marginTop: "24px", background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: "16px", padding: "24px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "18px", flexWrap: "wrap", gap: "10px" }}>
+                  <div>
+                    <h4 style={{ margin: 0, fontSize: "17px", fontWeight: 700, color: "#0f172a" }}>
+                      {`Generated Reviews for ${currentProduct.label} (${generatedReviews.length})`}
+                    </h4>
+                    <p style={{ margin: "2px 0 0 0", fontSize: "13px", color: "#64748b" }}>
+                      Review and publish generated authentic reviews directly to your store.
+                    </p>
+                  </div>
                   <button
                     type="button"
                     className="rg-outline-btn"
-                    style={{ background: "#ffffff", borderColor: "#93c5fd", color: "#1d4ed8" }}
-                    onClick={() => setShowInsights(!showInsights)}
+                    onClick={() => handleSingleGenerate(true)}
                   >
-                    {showInsights ? "Hide AI Insights ▲" : "View AI Insights ▼"}
+                    + Generate More Reviews
                   </button>
                 </div>
-              </div>
 
-              {/* Collapsible / Expandable AI Review Insights */}
-              {showInsights && (
-                <div
-                  style={{
-                    background: "#f8fafc",
-                    border: "1px solid #e2e8f0",
-                    borderRadius: "14px",
-                    padding: "20px 22px",
-                    marginTop: "12px",
-                  }}
-                >
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                      <span style={{ fontSize: "16px" }}>💡</span>
-                      <strong style={{ fontSize: "14.5px", color: "#0f172a" }}>
-                        AI Summary of Real Customer Feedback
-                      </strong>
-                    </div>
-                    <span className="rg-blue-badge">
-                      {`${currentProductStats.count} reviews analyzed`}
-                    </span>
-                  </div>
-
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "18px" }}>
-                    <div style={{ background: "#ffffff", padding: "14px 16px", borderRadius: "10px", border: "1px solid #e2e8f0" }}>
-                      <span className="rg-green-badge" style={{ marginBottom: "6px" }}>Pros</span>
-                      <p style={{ margin: "6px 0 0 0", fontSize: "13.5px", fontWeight: 500, color: "#1e293b" }}>
-                        Bright glow, easy to use, good packaging
-                      </p>
-                    </div>
-
-                    <div style={{ background: "#ffffff", padding: "14px 16px", borderRadius: "10px", border: "1px solid #e2e8f0" }}>
-                      <span className="rg-amber-badge" style={{ marginBottom: "6px" }}>Cons</span>
-                      <p style={{ margin: "6px 0 0 0", fontSize: "13.5px", fontWeight: 500, color: "#1e293b" }}>
-                        Glow fades faster than expected (3 mentions)
-                      </p>
-                    </div>
-                  </div>
-
-                  <div style={{ background: "#ffffff", padding: "14px 16px", borderRadius: "10px", border: "1px solid #e2e8f0" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
-                      <span className="rg-blue-badge">Suggested Merchant Reply</span>
-                      <button
-                        type="button"
-                        className="rg-outline-btn"
-                        style={{ padding: "4px 10px", fontSize: "12px" }}
-                        onClick={() =>
-                          handleCopyText(
-                            "Thanks for the feedback! Charging the glow under bright light for 10 minutes helps it last longer."
-                          )
-                        }
-                      >
-                        {copiedReply ? "Copied! ✓" : "Copy reply"}
-                      </button>
-                    </div>
-                    <p style={{ margin: 0, fontSize: "13.5px", color: "#334155", lineHeight: 1.5 }}>
-                      "Thanks for the feedback! Charging the glow under bright light for 10 minutes helps it last longer."
-                    </p>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* STEP 2: CONFIGURE REVIEW SETTINGS FOR THIS PRODUCT */}
-            <div className="rg-step-card">
-              <div className="rg-step-header">
-                <span className="rg-step-badge">Step 2</span>
-                <div>
-                  <h3 className="rg-step-title">Configure Review Settings</h3>
-                  <p className="rg-step-desc">
-                    Customize the tone, volume, custom selling points, and select an available AI engine.
-                  </p>
-                </div>
-              </div>
-
-              {/* Tone Selection */}
-              <div style={{ marginBottom: "22px" }}>
-                <label style={{ fontSize: "13.5px", fontWeight: 600, color: "#374151", display: "block", marginBottom: "8px" }}>
-                  Review Tone
-                </label>
-                <div className="rg-pills">
-                  {[
-                    "Friendly & Relatable",
-                    "Enthusiastic & Excited",
-                    "Professional & Detailed",
-                    "Short & Punchy",
-                  ].map((t) => (
-                    <button
-                      key={t}
-                      type="button"
-                      className={`rg-pill ${singleTone === t ? "active" : ""}`}
-                      onClick={() => setSingleTone(t)}
+                <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+                  {generatedReviews.map((rev, idx) => (
+                    <div
+                      key={`rev-item-${idx}`}
+                      style={{
+                        background: "#f8fafc",
+                        borderRadius: "12px",
+                        padding: "18px 20px",
+                        border: "1px solid #e2e8f0",
+                      }}
                     >
-                      {t}
-                    </button>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px", flexWrap: "wrap", gap: "8px" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                          <strong style={{ fontSize: "15px", color: "#0f172a" }}>{rev.reviewerName}</strong>
+                          <span style={{ color: "#b45309", fontSize: "14px" }}>{"★".repeat(rev.rating || 5)}</span>
+                          <span className="rg-green-badge">Verified Buyer</span>
+                        </div>
+
+                        <div style={{ display: "flex", gap: "8px" }}>
+                          <button
+                            type="button"
+                            className="rg-outline-btn"
+                            style={{ padding: "6px 12px", fontSize: "12.5px" }}
+                            onClick={() => handleCopyText(rev.bodyFull, idx)}
+                          >
+                            {copiedIndex === idx ? "Copied! ✓" : "Copy"}
+                          </button>
+                          <button
+                            type="button"
+                            className="rg-generate-btn"
+                            style={{ padding: "6px 14px", fontSize: "12.5px" }}
+                            disabled={savedStatus[idx] || savingIndex === idx}
+                            onClick={() => handleSaveDraft(rev, idx)}
+                          >
+                            {savedStatus[idx] ? "Saved to Drafts ✓" : "Save as Draft Review"}
+                          </button>
+                        </div>
+                      </div>
+
+                      {rev.bodyShort && (
+                        <div style={{ fontSize: "13.5px", fontWeight: 600, color: "#1e293b", marginBottom: "4px" }}>
+                          "{rev.bodyShort}"
+                        </div>
+                      )}
+
+                      <p style={{ margin: "4px 0 0 0", fontSize: "13.5px", color: "#334155", lineHeight: 1.5 }}>
+                        {rev.bodyFull}
+                      </p>
+                    </div>
                   ))}
                 </div>
               </div>
-
-              {/* Reviews to Generate Selection */}
-              <div style={{ marginBottom: "24px" }}>
-                <label style={{ fontSize: "13.5px", fontWeight: 600, color: "#374151", display: "block", marginBottom: "8px" }}>
-                  Number of Reviews to Generate
-                </label>
-                <div className="rg-pills">
-                  {[
-                    { label: "1 Review", count: 1 },
-                    { label: "3 Reviews", count: 3 },
-                    { label: "5 Reviews (Recommended)", count: 5 },
-                    { label: "10 Reviews", count: 10 },
-                  ].map((opt) => (
-                    <button
-                      key={opt.count}
-                      type="button"
-                      className={`rg-pill ${singleCount === opt.count ? "active" : ""}`}
-                      onClick={() => setSingleCount(opt.count)}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Custom USP & Language Row */}
-              <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "16px", marginBottom: "24px" }}>
-                <div>
-                  <label style={{ fontSize: "13.5px", fontWeight: 600, color: "#374151", display: "block", marginBottom: "8px" }}>
-                    Custom Angles / Key Features (Optional)
-                  </label>
-                  <input
-                    type="text"
-                    className="rg-input"
-                    placeholder="e.g. Ultra-bright glow, long battery life, fast shipping, perfect giftable item..."
-                    value={singleNotes}
-                    onChange={(e) => setSingleNotes(e.target.value)}
-                  />
-                  <span style={{ fontSize: "12px", color: "#64748b", marginTop: "4px", display: "block" }}>
-                    The AI will incorporate these specific angles into customer reviews.
-                  </span>
-                </div>
-
-                <div>
-                  <label style={{ fontSize: "13.5px", fontWeight: 600, color: "#374151", display: "block", marginBottom: "8px" }}>
-                    Language
-                  </label>
-                  <select
-                    className="rg-select"
-                    value={singleLanguage}
-                    onChange={(e) => setSingleLanguage(e.target.value)}
-                  >
-                    <option value="en">English</option>
-                    <option value="es">Spanish</option>
-                    <option value="fr">French</option>
-                    <option value="de">German</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* AI Engine Selection with API Key Validation */}
-              <div>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px", flexWrap: "wrap", gap: "8px" }}>
-                  <label style={{ fontSize: "13.5px", fontWeight: 600, color: "#374151", margin: 0 }}>
-                    Select Available AI Engine
-                  </label>
-                  <Link
-                    to="/app/ai-settings"
-                    style={{ fontSize: "13px", color: "#2563eb", textDecoration: "none", fontWeight: 500 }}
-                  >
-                    Manage API Keys in AI Settings →
-                  </Link>
-                </div>
-
-                <div className="rg-engine-grid">
-                  {availableEngines.map((engine) => {
-                    const isSelected = singleProvider === engine.id;
-                    const isDisabled = !engine.hasKey;
-
-                    return (
-                      <div
-                        key={engine.id}
-                        className={`rg-engine-card ${isSelected ? "active" : ""} ${isDisabled ? "disabled" : ""}`}
-                        onClick={() => {
-                          if (!isDisabled) {
-                            setSingleProvider(engine.id);
-                          }
-                        }}
-                      >
-                        <div>
-                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "6px" }}>
-                            <strong style={{ fontSize: "15px", color: isDisabled ? "#6b7280" : "#111827" }}>
-                              {engine.name}
-                            </strong>
-                            {engine.hasKey ? (
-                              <span className="rg-green-badge">✓ Ready</span>
-                            ) : (
-                              <span className="rg-amber-badge">⚠️ Key Missing</span>
-                            )}
-                          </div>
-
-                          <div style={{ fontSize: "12.5px", color: "#6b7280", fontFamily: "monospace", marginBottom: "8px" }}>
-                            {engine.model}
-                          </div>
-
-                          <p style={{ margin: 0, fontSize: "12.5px", color: isDisabled ? "#9ca3af" : "#4b5563", lineHeight: 1.4 }}>
-                            {engine.description}
-                          </p>
-                        </div>
-
-                        <div style={{ marginTop: "14px", paddingTop: "10px", borderTop: "1px solid #f1f5f9" }}>
-                          {engine.hasKey ? (
-                            <span style={{ fontSize: "12px", color: isSelected ? "#0f172a" : "#16a34a", fontWeight: 600 }}>
-                              {isSelected ? "● Selected Model" : "Click to select"}
-                            </span>
-                          ) : (
-                            <Link
-                              to="/app/ai-settings"
-                              style={{ fontSize: "12px", color: "#d97706", fontWeight: 600, textDecoration: "none" }}
-                            >
-                              Add Key in AI Settings →
-                            </Link>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-
-            {/* STEP 3: REVIEW SUMMARY */}
-            <div className="rg-step-card">
-              <div className="rg-step-header">
-                <span className="rg-step-badge">Step 3</span>
-                <div>
-                  <h3 className="rg-step-title">Review Generation Summary</h3>
-                  <p className="rg-step-desc">
-                    Verify the product details and generation settings before creating reviews.
-                  </p>
-                </div>
-              </div>
-
-              <div className="rg-summary-grid">
-                <div className="rg-summary-tile">
-                  <div className="rg-summary-label">Target Product</div>
-                  <div className="rg-summary-val" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {currentProduct.label}
-                  </div>
-                  <div className="rg-summary-sub">{`${currentProductStats.count} existing reviews`}</div>
-                </div>
-
-                <div className="rg-summary-tile">
-                  <div className="rg-summary-label">Reviews to Generate</div>
-                  <div className="rg-summary-val" style={{ color: "#2563eb" }}>
-                    {`${singleCount} Reviews`}
-                  </div>
-                  <div className="rg-summary-sub">Single product generation</div>
-                </div>
-
-                <div className="rg-summary-tile">
-                  <div className="rg-summary-label">Selected Tone</div>
-                  <div className="rg-summary-val">{singleTone.split(" ")[0]}</div>
-                  <div className="rg-summary-sub">{singleTone}</div>
-                </div>
-
-                <div className="rg-summary-tile">
-                  <div className="rg-summary-label">AI Engine</div>
-                  <div className="rg-summary-val">
-                    {selectedSingleEngine ? selectedSingleEngine.name : "None Selected"}
-                  </div>
-                  <div className="rg-summary-sub">
-                    {selectedSingleEngine?.hasKey ? "✓ Valid API Key" : "⚠️ Key Missing"}
-                  </div>
-                </div>
-              </div>
-
-              <div style={{ marginTop: "16px", padding: "12px 16px", background: "#f8fafc", borderRadius: "10px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px" }}>
-                <div style={{ fontSize: "13px", color: "#475569" }}>
-                  <strong>Destination:</strong> Generated reviews will be saved and can be published directly to your product page widget.
-                </div>
-                <div style={{ fontSize: "12.5px", color: "#64748b" }}>
-                  Includes verified purchase badges and high-converting 4-5 star ratings.
-                </div>
-              </div>
-            </div>
-
-            {/* STEP 4: GENERATE REVIEWS BUTTON */}
-            <div className="rg-step-card" style={{ textAlign: "center", padding: "32px 24px" }}>
-              <div style={{ maxWidth: "640px", margin: "0 auto" }}>
-                <span className="rg-step-badge" style={{ marginBottom: "12px" }}>Step 4</span>
-                <h3 style={{ fontSize: "20px", fontWeight: 700, color: "#111827", margin: "8px 0" }}>
-                  {`Ready to Generate Reviews for ${currentProduct.label}?`}
-                </h3>
-                <p style={{ fontSize: "14px", color: "#4b5563", margin: "0 0 24px 0" }}>
-                  Click below to create {singleCount} authentic reviews tailored specifically to {currentProduct.label} using {selectedSingleEngine?.name}.
-                </p>
-
-                {singleLoading && (
-                  <div style={{ marginBottom: "20px", textAlign: "left" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "6px", fontSize: "13px", color: "#374151" }}>
-                      <span>{`Generating ${singleCount} authentic reviews for ${currentProduct.label}...`}</span>
-                      <strong>{singleProgress}%</strong>
-                    </div>
-                    <ProgressBar progress={singleProgress} animated />
-                  </div>
-                )}
-
-                <button
-                  type="button"
-                  className="rg-generate-btn"
-                  disabled={singleLoading || !selectedSingleEngine?.hasKey}
-                  onClick={() => handleSingleGenerate(false)}
-                >
-                  <span>🪄</span>
-                  <span>
-                    {singleLoading
-                      ? `Generating Reviews for ${currentProduct.label}...`
-                      : `Generate ${singleCount} Authentic Reviews for ${currentProduct.label}`}
-                  </span>
-                </button>
-
-                {!selectedSingleEngine?.hasKey && (
-                  <div style={{ marginTop: "12px", fontSize: "13px", color: "#dc2626" }}>
-                    ⚠️ Please select an AI Engine with a valid saved API key above, or configure one in AI Settings.
-                  </div>
-                )}
-              </div>
-
-              {/* Generated Reviews Preview Cards */}
-              {generatedReviews.length > 0 && (
-                <div style={{ marginTop: "32px", textAlign: "left" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-                    <h4 style={{ margin: 0, fontSize: "16px", fontWeight: 700, color: "#0f172a" }}>
-                      {`Generated Reviews for ${currentProduct.label} (${generatedReviews.length})`}
-                    </h4>
-                    <button
-                      type="button"
-                      className="rg-outline-btn"
-                      onClick={() => handleSingleGenerate(true)}
-                    >
-                      + Generate More Reviews
-                    </button>
-                  </div>
-
-                  <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-                    {generatedReviews.map((rev, idx) => (
-                      <div
-                        key={`rev-item-${idx}`}
-                        style={{
-                          background: "#f8fafc",
-                          borderRadius: "12px",
-                          padding: "18px 20px",
-                          border: "1px solid #e2e8f0",
-                        }}
-                      >
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px", flexWrap: "wrap", gap: "8px" }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                            <strong style={{ fontSize: "15px", color: "#0f172a" }}>{rev.reviewerName}</strong>
-                            <span style={{ color: "#b45309", fontSize: "14px" }}>{"★".repeat(rev.rating || 5)}</span>
-                            <span className="rg-green-badge">Verified Buyer</span>
-                          </div>
-
-                          <div style={{ display: "flex", gap: "8px" }}>
-                            <button
-                              type="button"
-                              className="rg-outline-btn"
-                              style={{ padding: "6px 12px", fontSize: "12.5px" }}
-                              onClick={() => handleCopyText(rev.bodyFull, idx)}
-                            >
-                              {copiedIndex === idx ? "Copied! ✓" : "Copy"}
-                            </button>
-                            <button
-                              type="button"
-                              className="rg-generate-btn"
-                              style={{ padding: "6px 14px", fontSize: "12.5px" }}
-                              disabled={savedStatus[idx] || savingIndex === idx}
-                              onClick={() => handleSaveDraft(rev, idx)}
-                            >
-                              {savedStatus[idx] ? "Saved to Drafts ✓" : "Save as Draft Review"}
-                            </button>
-                          </div>
-                        </div>
-
-                        {rev.bodyShort && (
-                          <div style={{ fontSize: "13.5px", fontWeight: 600, color: "#1e293b", marginBottom: "4px" }}>
-                            "{rev.bodyShort}"
-                          </div>
-                        )}
-
-                        <p style={{ margin: "4px 0 0 0", fontSize: "13.5px", color: "#334155", lineHeight: 1.5 }}>
-                          {rev.bodyFull}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
+            )}
           </div>
         )}
 
