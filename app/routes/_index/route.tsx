@@ -80,6 +80,15 @@ export default function App() {
             <p>Works seamlessly on both Cart Drawer flyouts and dedicated Cart pages.</p>
           </div>
         </div>
+
+        <footer style={{ marginTop: "40px", paddingTop: "20px", borderTop: "1px solid #e5e7eb", textAlign: "center", fontSize: "14px", color: "#6b7280" }}>
+          <p>© 2026 AI Dynamic Review System. All rights reserved.</p>
+          <p style={{ marginTop: "8px" }}>
+            <a href="/privacy-policy" style={{ color: "#2563eb", textDecoration: "underline" }}>
+              Privacy Policy
+            </a>
+          </p>
+        </footer>
       </div>
     </div>
   );
