@@ -453,7 +453,6 @@ export default function App() {
             <a href="#transformation">Before vs After</a>
             <a href="#layouts">5 Review Layouts</a>
             <a href="#ai-engine">AI Review Engine</a>
-            <a href="#omnichannel">Omnichannel</a>
             <a href="/privacy-policy">Privacy Policy</a>
           </nav>
           <a href="#install" className="btn-header-install">Install Free 🚀</a>
@@ -783,36 +782,7 @@ export default function App() {
             </div>
           </div>
 
-          {/* Spotlight 2: Omnichannel */}
-          <div className="spotlight-row reverse" id="omnichannel">
-            <div className="spotlight-content">
-              <span className="section-badge">OMNICHANNEL FEEDBACK</span>
-              <h3>Capture Reviews Across WhatsApp, Email &amp; Phone</h3>
-              <p>
-                Your customers talk to you everywhere. Bring reviews received via WhatsApp chats, support tickets, and direct messages directly onto your Shopify store with verified order matching.
-              </p>
-              <ul className="spotlight-bullets">
-                <li><span className="bullet-check">✓</span> 4-step streamlined manual entry workflow</li>
-                <li><span className="bullet-check">✓</span> Automatic Shopify order verification for the "Verified Purchase" badge</li>
-                <li><span className="bullet-check">✓</span> Photo and customer permission compliance toggles</li>
-              </ul>
-            </div>
-            <div className="spotlight-visual-card">
-              <div style={{ width: "100%", maxWidth: "380px", margin: "0 auto" }}>
-                <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "14px", padding: "18px" }}>
-                  <div style={{ fontSize: "13px", fontWeight: 700, marginBottom: "10px" }}>📱 Feedback Source Channel</div>
-                  <div style={{ display: "flex", gap: "8px", marginBottom: "14px" }}>
-                    <span style={{ background: "#0f172a", color: "#ffffff", fontSize: "11px", fontWeight: 700, padding: "6px 12px", borderRadius: "9999px" }}>WhatsApp</span>
-                    <span style={{ background: "#ffffff", border: "1px solid #cbd5e1", fontSize: "11px", padding: "6px 12px", borderRadius: "9999px" }}>Email</span>
-                    <span style={{ background: "#ffffff", border: "1px solid #cbd5e1", fontSize: "11px", padding: "6px 12px", borderRadius: "9999px" }}>Phone</span>
-                  </div>
-                  <div style={{ background: "#ecfdf5", border: "1px solid #a7f3d0", padding: "10px", borderRadius: "8px", fontSize: "11.5px", color: "#065f46", fontWeight: 600 }}>
-                    ✓ Order #1042 matched with Rachel V.
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
+
         </div>
       </section>
 
