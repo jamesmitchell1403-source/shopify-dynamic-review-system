@@ -750,6 +750,7 @@ export default function App() {
           font-size: 15.5px;
           font-weight: 750;
           color: #0a281e;
+          margin-bottom: 6px;
         }
         .step-desc {
           font-size: 13.5px;
@@ -1552,10 +1553,7 @@ export default function App() {
                 </svg>
               </div>
               <div className="step-content-area">
-                <div className="step-num-title-row">
-                  <span className="step-num-circle">1</span>
-                  <div className="step-title">Install the app</div>
-                </div>
+                <div className="step-title">Install the app</div>
                 <div className="step-desc">
                   Add the app from the Shopify app store.
                 </div>
@@ -1573,10 +1571,7 @@ export default function App() {
                 </svg>
               </div>
               <div className="step-content-area">
-                <div className="step-num-title-row">
-                  <span className="step-num-circle">2</span>
-                  <div className="step-title">Configure &amp; customize</div>
-                </div>
+                <div className="step-title">Configure &amp; customize</div>
                 <div className="step-desc">
                   Set up AI, import reviews and style your popups.
                 </div>
@@ -1594,10 +1589,7 @@ export default function App() {
                 </svg>
               </div>
               <div className="step-content-area">
-                <div className="step-num-title-row">
-                  <span className="step-num-circle">3</span>
-                  <div className="step-title">Showcase &amp; grow</div>
-                </div>
+                <div className="step-title">Showcase &amp; grow</div>
                 <div className="step-desc">
                   Display reviews, popups and badges on your store.
                 </div>
