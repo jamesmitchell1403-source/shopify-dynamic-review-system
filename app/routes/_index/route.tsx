@@ -83,6 +83,39 @@ export default function App() {
     window.location.href = `/auth/login?shop=${encodeURIComponent(cleanShop)}`;
   };
 
+  
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    // Slide up animation on scroll for all sections (excludes header & footer)
+    const elements = document.querySelectorAll(".animate-on-scroll");
+    if (!elements.length) return;
+
+    if (!("IntersectionObserver" in window)) {
+      elements.forEach((el) => el.classList.add("is-visible"));
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add("is-visible");
+            observer.unobserve(entry.target);
+          }
+        });
+      },
+      {
+        threshold: 0.08,
+        rootMargin: "0px 0px -40px 0px",
+      }
+    );
+
+    elements.forEach((el) => observer.observe(el));
+
+    return () => observer.disconnect();
+  }, []);
+
   const toggleFaq = (index: number) => {
     setOpenFaq(openFaq === index ? null : index);
   };
@@ -121,6 +154,26 @@ export default function App() {
           line-height: 1.6;
           overflow-x: clip;
           position: relative;
+        }
+
+        
+        /* Smooth Scroll-Triggered Slide Up Animation (Sections only - Excludes Header & Footer) */
+        .animate-on-scroll {
+          opacity: 0;
+          transform: translateY(48px);
+          transition: opacity 0.85s cubic-bezier(0.16, 1, 0.3, 1), transform 0.85s cubic-bezier(0.16, 1, 0.3, 1);
+          will-change: opacity, transform;
+        }
+        .animate-on-scroll.is-visible {
+          opacity: 1;
+          transform: translateY(0);
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .animate-on-scroll {
+            opacity: 1 !important;
+            transform: none !important;
+            transition: none !important;
+          }
         }
 
         /* Sharp, clean, polished headings across all sections */
@@ -1255,7 +1308,7 @@ export default function App() {
       </header>
 
       {/* 2. Hero Section */}
-      <section className="hero-section">
+      <section className="hero-section animate-on-scroll">
         <div className="container hero-grid">
           {/* Left Column: Copy & Checklist (Buttons Removed as requested) */}
           <div>
@@ -1395,7 +1448,7 @@ export default function App() {
       </section>
 
       {/* 3. Powerful Features (3x2 Grid) */}
-      <section className="features-section" id="features">
+      <section className="features-section animate-on-scroll" id="features">
         <div className="container">
           <div className="section-header-center">
             <span className="section-tagline">— POWERFUL FEATURES —</span>
@@ -1502,7 +1555,7 @@ export default function App() {
 
       
       {/* 4. Product Review Popups Showcase */}
-      <section className="popup-showcase-section" id="review-popups">
+      <section className="popup-showcase-section animate-on-scroll" id="review-popups">
         <div className="container">
           <div className="section-header-center">
             <span className="section-tagline">— SOCIAL PROOF IN ACTION —</span>
@@ -1687,7 +1740,7 @@ export default function App() {
       </section>
 
       {/* 4. Key Benefits Section */}
-      <section className="benefits-section" id="benefits">
+      <section className="benefits-section animate-on-scroll" id="benefits">
         <div className="container benefits-layout-grid">
           {/* Left Column */}
           <div className="benefits-left-col">
@@ -1758,7 +1811,7 @@ export default function App() {
       </section>
 
       {/* 5. See The Difference (From Empty to Engaging) */}
-      <section className="difference-section">
+      <section className="difference-section animate-on-scroll">
         <div className="container">
           <div className="section-header-center">
             <span className="section-tagline">SEE THE DIFFERENCE</span>
@@ -1849,7 +1902,7 @@ export default function App() {
       </section>
 
       {/* 6. How It Works (3 Steps) */}
-      <section className="how-it-works-section" id="how-it-works">
+      <section className="how-it-works-section animate-on-scroll" id="how-it-works">
         <div className="container">
           <div className="section-header-center">
             <span className="section-tagline">HOW IT WORKS</span>
@@ -1914,7 +1967,7 @@ export default function App() {
       </section>
 
       {/* 7. FAQ Section */}
-      <section className="faq-section" id="faq">
+      <section className="faq-section animate-on-scroll" id="faq">
         <div className="container">
           <div className="section-header-center">
             <span className="section-tagline">QUESTIONS &amp; ANSWERS</span>
@@ -1961,7 +2014,7 @@ export default function App() {
       </section>
 
       {/* 8. Bottom CTA Banner (Ready to Build Trust and Drive More Sales?) */}
-      <section className="bottom-cta-wrap">
+      <section className="bottom-cta-wrap animate-on-scroll">
         <div className="container">
           <div className="cta-dark-card">
             <div className="cta-left-content">
