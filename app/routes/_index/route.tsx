@@ -1134,8 +1134,8 @@ export default function App() {
               ★ Social Proof for Your Shopify Store
             </div>
             <h1 className="hero-title">
-              Showcase product reviews, popups and trust badges to turn visitors into{" "}
-              <span className="highlight">confident buyers.</span>
+              Turn Visitors Into Buyers With{" "}
+              <span className="highlight">AI Product Reviews.</span>
             </h1>
             <p className="hero-sub">
               Import, manage and showcase product reviews with AI help.
