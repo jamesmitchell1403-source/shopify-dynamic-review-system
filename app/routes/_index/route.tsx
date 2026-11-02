@@ -89,16 +89,16 @@ export default function App() {
 
   return (
     <div className="landing-root">
-      {/* Google Fonts: Outfit (Headings & UI) + Inter (Body Text) */}
+      {/* Google Fonts: Manrope (Modern, Sharp, Geometric & Ultra-Clean) */}
       <link rel="preconnect" href="https://fonts.googleapis.com" />
       <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
       <link
-        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700;800;900&display=swap"
+        href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap"
         rel="stylesheet"
       />
 
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700;800;900&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
 
         * { box-sizing: border-box; margin: 0; padding: 0; }
         html { scroll-behavior: smooth; }
@@ -107,15 +107,11 @@ export default function App() {
           scroll-margin-top: 90px;
         }
 
-        :root {
-          --font-heading: 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-          --font-body: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-        }
-
         .landing-root,
+        .landing-root button,
         .landing-root input,
         .landing-root textarea {
-          font-family: var(--font-body);
+          font-family: 'Manrope', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
           -webkit-font-smoothing: antialiased;
           -moz-osx-font-smoothing: grayscale;
         }
@@ -127,7 +123,7 @@ export default function App() {
           position: relative;
         }
 
-        /* Heading typography with Outfit */
+        /* Sharp, clean, polished headings across all sections */
         h1, h2, h3, h4,
         .hero-title,
         .section-main-title,
@@ -145,20 +141,20 @@ export default function App() {
         .modal-title,
         .rating-score,
         .comp-badge-pill {
-          font-family: var(--font-heading);
+          font-family: 'Manrope', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+          font-weight: 800;
         }
 
         .hero-title {
-          letter-spacing: -0.025em;
-          font-weight: 800;
+          font-size: 46px;
+          line-height: 1.18;
+          letter-spacing: -0.03em;
         }
         .section-main-title {
-          letter-spacing: -0.02em;
-          font-weight: 800;
+          letter-spacing: -0.025em;
         }
         .cta-title {
-          letter-spacing: -0.015em;
-          font-weight: 800;
+          letter-spacing: -0.02em;
         }
 
         /* Subtle organic background glow */
