@@ -24,6 +24,23 @@ export default function App() {
   const [isInstallModalOpen, setIsInstallModalOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [openFaq, setOpenFaq] = useState<number | null>(null);
+  const [reviewFilter, setReviewFilter] = useState<"all" | "photos" | "5star" | "verified">("all");
+  const [activeReviewLayout, setActiveReviewLayout] = useState<"grid" | "list">("grid");
+  const [isWriteReviewModalOpen, setIsWriteReviewModalOpen] = useState(false);
+  const [reviewRating, setReviewRating] = useState(5);
+  const [reviewSubmitted, setReviewSubmitted] = useState(false);
+  const [helpfulCounts, setHelpfulCounts] = useState<{ [key: string]: number }>({
+    r1: 46,
+    r2: 31,
+    r3: 24,
+  });
+
+  const handleHelpfulClick = (id: string) => {
+    setHelpfulCounts((prev) => ({
+      ...prev,
+      [id]: (prev[id] || 0) + 1,
+    }));
+  };
 
   const scrollToSection = (e: React.MouseEvent<HTMLAnchorElement>, id: string) => {
     e.preventDefault();
@@ -103,7 +120,7 @@ export default function App() {
         * { box-sizing: border-box; margin: 0; padding: 0; }
         html { scroll-behavior: smooth; }
         body { margin: 0; padding: 0; }
-        #features, #benefits, #how-it-works, #faq {
+        #features, #reviews-demo, #benefits, #how-it-works, #faq {
           scroll-margin-top: 90px;
         }
 
@@ -587,6 +604,463 @@ export default function App() {
           font-size: 14px;
           color: #4d665a;
           line-height: 1.45;
+        }
+
+        /* SECTION: Product Page Review Widget Showcase */
+        .product-reviews-showcase-section {
+          padding: 80px 0;
+          background: #fbfdfc;
+          border-top: 1px solid #e8f1eb;
+        }
+        .product-page-frame {
+          background: #ffffff;
+          border: 1px solid #e1eee6;
+          border-radius: 24px;
+          box-shadow: 0 18px 45px rgba(6, 78, 59, 0.06);
+          overflow: hidden;
+        }
+        .store-browser-bar {
+          background: #f4f8f5;
+          border-bottom: 1px solid #e1eee6;
+          padding: 12px 22px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          flex-wrap: wrap;
+          gap: 12px;
+        }
+        .store-url-pill {
+          background: #ffffff;
+          border: 1px solid #d5e5db;
+          border-radius: 9999px;
+          padding: 5px 16px;
+          font-size: 12.5px;
+          color: #2d4a3e;
+          font-weight: 500;
+        }
+        .layout-switcher-tabs {
+          display: flex;
+          background: #e8f1ec;
+          border-radius: 9999px;
+          padding: 3px;
+          gap: 2px;
+        }
+        .layout-tab-btn {
+          border: none;
+          background: transparent;
+          color: #4a6357;
+          font-size: 12px;
+          font-weight: 700;
+          padding: 6px 14px;
+          border-radius: 9999px;
+          cursor: pointer;
+          transition: all 0.2s ease;
+        }
+        .layout-tab-btn.active {
+          background: #ffffff;
+          color: #064e3b;
+          box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+        }
+
+        .product-context-bar {
+          padding: 16px 24px;
+          border-bottom: 1px solid #eef4f0;
+          background: #ffffff;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          flex-wrap: wrap;
+          gap: 16px;
+        }
+        .product-context-info {
+          display: flex;
+          align-items: center;
+          gap: 16px;
+        }
+        .product-context-thumb {
+          width: 52px;
+          height: 52px;
+          border-radius: 10px;
+          background: #f4f8f5;
+          object-fit: cover;
+          border: 1px solid #e1eee6;
+        }
+        .product-context-title {
+          font-size: 16px;
+          font-weight: 800;
+          color: #0a281e;
+          margin-bottom: 3px;
+        }
+        .product-context-meta {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          font-size: 13px;
+          flex-wrap: wrap;
+        }
+        .stars-mini {
+          color: #f59e0b;
+          letter-spacing: 1px;
+        }
+        .rating-num {
+          font-weight: 800;
+          color: #0a281e;
+        }
+        .rating-count {
+          color: #556d62;
+        }
+        .stock-badge {
+          color: #059669;
+          font-weight: 700;
+          font-size: 12px;
+          margin-left: 6px;
+        }
+        .btn-write-review {
+          background: #064e3b;
+          color: #ffffff;
+          border: none;
+          padding: 9px 20px;
+          border-radius: 9999px;
+          font-size: 13.5px;
+          font-weight: 700;
+          cursor: pointer;
+          transition: all 0.2s ease;
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+        }
+        .btn-write-review:hover {
+          background: #043c2c;
+          transform: translateY(-1px);
+        }
+
+        /* Review Summary Aggregation Block */
+        .review-summary-card {
+          background: #fbfdfc;
+          border-bottom: 1px solid #eef4f0;
+          padding: 32px 28px;
+          display: grid;
+          grid-template-columns: 1.1fr 1.6fr 1.3fr;
+          gap: 32px;
+          align-items: center;
+        }
+        .summary-score-col {
+          display: flex;
+          flex-direction: column;
+          align-items: flex-start;
+          border-right: 1px solid #eef4f0;
+          padding-right: 24px;
+        }
+        .score-big {
+          font-size: 52px;
+          font-weight: 900;
+          color: #0a281e;
+          line-height: 1;
+          margin-bottom: 8px;
+        }
+        .stars-big {
+          color: #f59e0b;
+          font-size: 20px;
+          letter-spacing: 2px;
+          margin-bottom: 6px;
+        }
+        .score-caption {
+          font-size: 13.5px;
+          color: #556d62;
+          font-weight: 500;
+          margin-bottom: 10px;
+        }
+        .recommend-badge {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          background: #e8f7ee;
+          color: #065f46;
+          font-size: 12px;
+          font-weight: 700;
+          padding: 5px 10px;
+          border-radius: 6px;
+        }
+
+        .summary-bars-col {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+          border-right: 1px solid #eef4f0;
+          padding-right: 24px;
+        }
+        .bar-row {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          font-size: 12.5px;
+        }
+        .bar-label {
+          width: 50px;
+          color: #4a6357;
+          font-weight: 600;
+        }
+        .bar-track {
+          flex: 1;
+          height: 8px;
+          background: #eaf1ec;
+          border-radius: 9999px;
+          overflow: hidden;
+        }
+        .bar-fill {
+          height: 100%;
+          background: #f59e0b;
+          border-radius: 9999px;
+        }
+        .bar-val {
+          width: 42px;
+          text-align: right;
+          color: #556d62;
+          font-weight: 600;
+        }
+
+        .summary-highlights-col {
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+        }
+        .tag-box-title {
+          font-size: 13px;
+          font-weight: 800;
+          color: #0a281e;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        }
+        .tag-pills-row {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+        }
+        .tag-pill {
+          background: #ffffff;
+          border: 1px solid #d5e5db;
+          color: #2d4a3e;
+          font-size: 12px;
+          font-weight: 600;
+          padding: 5px 10px;
+          border-radius: 9999px;
+        }
+
+        /* Review Toolbar: Filters & Sorting */
+        .review-toolbar {
+          padding: 16px 28px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          border-bottom: 1px solid #eef4f0;
+          background: #ffffff;
+          flex-wrap: wrap;
+          gap: 14px;
+        }
+        .filter-pills-wrap {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          flex-wrap: wrap;
+        }
+        .filter-pill-btn {
+          border: 1px solid #d5e5db;
+          background: #ffffff;
+          color: #4a6357;
+          font-size: 13px;
+          font-weight: 600;
+          padding: 6px 14px;
+          border-radius: 9999px;
+          cursor: pointer;
+          transition: all 0.15s ease;
+        }
+        .filter-pill-btn.active {
+          background: #064e3b;
+          color: #ffffff;
+          border-color: #064e3b;
+        }
+        .sort-dropdown-wrap {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          font-size: 13px;
+          color: #4a6357;
+          font-weight: 600;
+        }
+        .sort-select {
+          border: 1px solid #d5e5db;
+          border-radius: 8px;
+          padding: 6px 12px;
+          font-size: 13px;
+          color: #0a281e;
+          font-weight: 600;
+          background: #ffffff;
+          outline: none;
+        }
+
+        /* Review Cards Display */
+        .reviews-display-container {
+          padding: 28px;
+          background: #ffffff;
+        }
+        .reviews-display-container.grid {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 20px;
+        }
+        .reviews-display-container.list {
+          display: flex;
+          flex-direction: column;
+          gap: 20px;
+        }
+
+        .customer-review-card {
+          background: #ffffff;
+          border: 1px solid #e1eee6;
+          border-radius: 18px;
+          padding: 22px;
+          display: flex;
+          flex-direction: column;
+          justify-content: space-between;
+          box-shadow: 0 4px 12px rgba(6, 78, 59, 0.02);
+          transition: all 0.2s ease;
+        }
+        .customer-review-card:hover {
+          border-color: #a7f3d0;
+          box-shadow: 0 8px 20px rgba(6, 78, 59, 0.06);
+        }
+        .reviewer-header-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          margin-bottom: 12px;
+        }
+        .reviewer-info-left {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+        .reviewer-avatar-img {
+          width: 38px;
+          height: 38px;
+          border-radius: 50%;
+          object-fit: cover;
+          border: 1.5px solid #d5e5db;
+        }
+        .reviewer-name {
+          font-size: 14px;
+          font-weight: 750;
+          color: #0a281e;
+          line-height: 1.2;
+        }
+        .verified-buyer-badge {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          color: #059669;
+          font-size: 11px;
+          font-weight: 700;
+          margin-top: 2px;
+        }
+        .review-date-text {
+          font-size: 12px;
+          color: #839b8f;
+        }
+        .review-card-stars {
+          color: #f59e0b;
+          font-size: 14px;
+          letter-spacing: 1.5px;
+          margin-bottom: 10px;
+        }
+        .review-card-title {
+          font-size: 15px;
+          font-weight: 800;
+          color: #0a281e;
+          margin-bottom: 8px;
+          line-height: 1.35;
+        }
+        .review-card-body {
+          font-size: 13.5px;
+          color: #4a6357;
+          line-height: 1.55;
+          margin-bottom: 14px;
+        }
+        .review-photos-grid {
+          display: flex;
+          gap: 8px;
+          margin-bottom: 14px;
+        }
+        .review-photo-thumb {
+          width: 68px;
+          height: 68px;
+          border-radius: 8px;
+          object-fit: cover;
+          border: 1px solid #d5e5db;
+          cursor: pointer;
+          transition: transform 0.2s ease;
+        }
+        .review-photo-thumb:hover {
+          transform: scale(1.05);
+        }
+        .merchant-response-box {
+          background: #f4f8f5;
+          border-left: 3px solid #059669;
+          padding: 10px 14px;
+          border-radius: 0 10px 10px 0;
+          font-size: 12px;
+          color: #2b4539;
+          margin-bottom: 14px;
+          line-height: 1.45;
+        }
+        .merchant-response-author {
+          font-weight: 800;
+          color: #064e3b;
+          margin-bottom: 3px;
+        }
+        .review-footer-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          border-top: 1px solid #f1f7f3;
+          padding-top: 12px;
+          font-size: 12px;
+          color: #71897c;
+        }
+        .helpful-btn {
+          background: transparent;
+          border: none;
+          color: #556d62;
+          font-size: 12px;
+          font-weight: 600;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          gap: 4px;
+        }
+        .helpful-btn:hover {
+          color: #059669;
+        }
+
+        .show-more-reviews-bar {
+          text-align: center;
+          padding: 20px 0 10px 0;
+          border-top: 1px solid #eef4f0;
+          margin-top: 10px;
+        }
+        .btn-load-more {
+          background: #ffffff;
+          border: 1.5px solid #d5e5db;
+          color: #064e3b;
+          font-size: 13.5px;
+          font-weight: 700;
+          padding: 10px 24px;
+          border-radius: 9999px;
+          cursor: pointer;
+          transition: all 0.2s ease;
+        }
+        .btn-load-more:hover {
+          background: #f0fdf4;
+          border-color: #059669;
         }
 
         /* SECTION 3: Key Benefits (Left text + 2x2 grid) */
@@ -1105,6 +1579,26 @@ export default function App() {
           .cta-dark-card { flex-direction: column; text-align: center; padding: 36px 24px; }
           .cta-left-content { flex-direction: column; text-align: center; }
           .hero-title { font-size: 36px; }
+
+          /* Product Reviews Showcase Responsive */
+          .review-summary-card {
+            grid-template-columns: 1fr;
+            gap: 24px;
+          }
+          .summary-score-col,
+          .summary-bars-col {
+            border-right: none;
+            border-bottom: 1px solid #eef4f0;
+            padding-right: 0;
+            padding-bottom: 20px;
+          }
+          .reviews-display-container.grid {
+            grid-template-columns: 1fr;
+          }
+          .store-browser-bar {
+            flex-direction: column;
+            align-items: flex-start;
+          }
         }
       `}</style>
 
@@ -1128,6 +1622,7 @@ export default function App() {
 
           <nav className="nav-menu">
             <a href="#features" onClick={(e) => scrollToSection(e, "features")} className="nav-link">Features</a>
+            <a href="#reviews-demo" onClick={(e) => scrollToSection(e, "reviews-demo")} className="nav-link">Product Reviews</a>
             <a href="#benefits" onClick={(e) => scrollToSection(e, "benefits")} className="nav-link">Benefits</a>
             <a href="#how-it-works" onClick={(e) => scrollToSection(e, "how-it-works")} className="nav-link">How It Works</a>
             <a href="#faq" onClick={(e) => scrollToSection(e, "faq")} className="nav-link">FAQ</a>
@@ -1170,6 +1665,7 @@ export default function App() {
         {isMobileMenuOpen && (
           <div className="mobile-nav-drawer">
             <a href="#features" onClick={(e) => scrollToSection(e, "features")} className="mobile-nav-link">Features</a>
+            <a href="#reviews-demo" onClick={(e) => scrollToSection(e, "reviews-demo")} className="mobile-nav-link">Product Reviews</a>
             <a href="#benefits" onClick={(e) => scrollToSection(e, "benefits")} className="mobile-nav-link">Benefits</a>
             <a href="#how-it-works" onClick={(e) => scrollToSection(e, "how-it-works")} className="mobile-nav-link">How It Works</a>
             <a href="#faq" onClick={(e) => scrollToSection(e, "faq")} className="mobile-nav-link">FAQ</a>
@@ -1419,6 +1915,357 @@ export default function App() {
                 <h3>Customizable Popups</h3>
                 <p>Match timing, position and style to your brand.</p>
               </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* 4. Product Page Reviews Section & Live Widget Layout Showcase */}
+      <section className="product-reviews-showcase-section" id="reviews-demo">
+        <div className="container">
+          <div className="section-header-center">
+            <span className="section-tagline">— STOREFRONT PRODUCT PAGE WIDGET —</span>
+            <h2 className="section-main-title">Real Reviews That Build Instant Trust</h2>
+            <p className="section-desc-sub">
+              See how the AI Dynamic Review widget renders directly on your Shopify product pages — fully customizable, responsive, and conversion-optimized.
+            </p>
+          </div>
+
+          <div className="product-page-frame">
+            {/* Store Browser Bar */}
+            <div className="store-browser-bar">
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <span style={{ width: "11px", height: "11px", borderRadius: "50%", background: "#ef4444", display: "inline-block" }} />
+                <span style={{ width: "11px", height: "11px", borderRadius: "50%", background: "#f59e0b", display: "inline-block" }} />
+                <span style={{ width: "11px", height: "11px", borderRadius: "50%", background: "#10b981", display: "inline-block" }} />
+                <span className="store-url-pill" style={{ marginLeft: "8px" }}>
+                  https://your-store.myshopify.com/products/the-luxe-leather-tote
+                </span>
+              </div>
+
+              {/* View Layout Switcher (Grid vs List) */}
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <span style={{ fontSize: "12px", color: "#64748b", fontWeight: 600 }}>Layout:</span>
+                <div className="layout-switcher-tabs">
+                  <button
+                    className={`layout-tab-btn ${activeReviewLayout === "grid" ? "active" : ""}`}
+                    onClick={() => setActiveReviewLayout("grid")}
+                  >
+                    Grid View
+                  </button>
+                  <button
+                    className={`layout-tab-btn ${activeReviewLayout === "list" ? "active" : ""}`}
+                    onClick={() => setActiveReviewLayout("list")}
+                  >
+                    List View
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Product Context Bar */}
+            <div className="product-context-bar">
+              <div className="product-context-info">
+                <img
+                  src="https://images.unsplash.com/photo-1584917865442-de89df76afd3?w=160&auto=format&fit=crop&q=80"
+                  alt="The Luxe Everyday Leather Tote"
+                  className="product-context-thumb"
+                />
+                <div>
+                  <h3 className="product-context-title">The Luxe Everyday Leather Tote</h3>
+                  <div className="product-context-meta">
+                    <span className="stars-mini">★★★★★</span>
+                    <span className="rating-num">4.9</span>
+                    <span className="rating-count">(2,548 customer reviews)</span>
+                    <span className="stock-badge">● In Stock • Ships in 24 hrs</span>
+                  </div>
+                </div>
+              </div>
+
+              <button
+                className="btn-write-review"
+                onClick={() => setIsWriteReviewModalOpen(true)}
+              >
+                <span>✍</span>
+                <span>Write a Review</span>
+              </button>
+            </div>
+
+            {/* Review Aggregation Summary Breakdown */}
+            <div className="review-summary-card">
+              {/* Overall Score */}
+              <div className="summary-score-col">
+                <div className="score-big">4.9</div>
+                <div className="stars-big">★★★★★</div>
+                <div className="score-caption">Based on 2,548 customer ratings</div>
+                <div className="recommend-badge">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                  <span>98% of buyers recommend this product</span>
+                </div>
+              </div>
+
+              {/* Star Progress Bars */}
+              <div className="summary-bars-col">
+                <div className="bar-row">
+                  <span className="bar-label">5 Star</span>
+                  <div className="bar-track">
+                    <div className="bar-fill" style={{ width: "88%" }} />
+                  </div>
+                  <span className="bar-val">88% (2,242)</span>
+                </div>
+                <div className="bar-row">
+                  <span className="bar-label">4 Star</span>
+                  <div className="bar-track">
+                    <div className="bar-fill" style={{ width: "9%" }} />
+                  </div>
+                  <span className="bar-val">9% (230)</span>
+                </div>
+                <div className="bar-row">
+                  <span className="bar-label">3 Star</span>
+                  <div className="bar-track">
+                    <div className="bar-fill" style={{ width: "2%" }} />
+                  </div>
+                  <span className="bar-val">2% (51)</span>
+                </div>
+                <div className="bar-row">
+                  <span className="bar-label">2 Star</span>
+                  <div className="bar-track">
+                    <div className="bar-fill" style={{ width: "0.6%" }} />
+                  </div>
+                  <span className="bar-val">0.6% (15)</span>
+                </div>
+                <div className="bar-row">
+                  <span className="bar-label">1 Star</span>
+                  <div className="bar-track">
+                    <div className="bar-fill" style={{ width: "0.4%" }} />
+                  </div>
+                  <span className="bar-val">0.4% (10)</span>
+                </div>
+              </div>
+
+              {/* Highlights & Mentions */}
+              <div className="summary-highlights-col">
+                <div className="tag-box-title">Buyer Sentiment Highlights</div>
+                <div className="tag-pills-row">
+                  <span className="tag-pill">✨ Superior Leather (840)</span>
+                  <span className="tag-pill">📦 Fast 2-Day Shipping (612)</span>
+                  <span className="tag-pill">💼 Fits 15" Laptops (498)</span>
+                  <span className="tag-pill">👌 Sturdy Stitching (415)</span>
+                  <span className="tag-pill">💎 Luxury Feel (320)</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Filter and Sorting Toolbar */}
+            <div className="review-toolbar">
+              <div className="filter-pills-wrap">
+                <button
+                  className={`filter-pill-btn ${reviewFilter === "all" ? "active" : ""}`}
+                  onClick={() => setReviewFilter("all")}
+                >
+                  All Reviews (2,548)
+                </button>
+                <button
+                  className={`filter-pill-btn ${reviewFilter === "photos" ? "active" : ""}`}
+                  onClick={() => setReviewFilter("photos")}
+                >
+                  📷 With Photos (742)
+                </button>
+                <button
+                  className={`filter-pill-btn ${reviewFilter === "5star" ? "active" : ""}`}
+                  onClick={() => setReviewFilter("5star")}
+                >
+                  ★ 5 Stars Only (2,242)
+                </button>
+                <button
+                  className={`filter-pill-btn ${reviewFilter === "verified" ? "active" : ""}`}
+                  onClick={() => setReviewFilter("verified")}
+                >
+                  ✓ Verified Purchases (2,410)
+                </button>
+              </div>
+
+              <div className="sort-dropdown-wrap">
+                <span>Sort by:</span>
+                <select className="sort-select" defaultValue="recent">
+                  <option value="recent">Most Recent</option>
+                  <option value="highest">Highest Rating</option>
+                  <option value="helpful">Most Helpful</option>
+                  <option value="photos">With Photos First</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Customer Review Cards Display */}
+            <div className={`reviews-display-container ${activeReviewLayout}`}>
+              {/* Review 1 */}
+              <div className="customer-review-card">
+                <div>
+                  <div className="reviewer-header-row">
+                    <div className="reviewer-info-left">
+                      <img
+                        src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&auto=format&fit=crop&q=80"
+                        alt="Sarah Jenkins"
+                        className="reviewer-avatar-img"
+                      />
+                      <div>
+                        <div className="reviewer-name">Sarah Jenkins</div>
+                        <div className="verified-buyer-badge">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                            <polyline points="20 6 9 17 4 12" />
+                          </svg>
+                          <span>Verified Purchase</span>
+                        </div>
+                      </div>
+                    </div>
+                    <span className="review-date-text">2 days ago</span>
+                  </div>
+
+                  <div className="review-card-stars">★★★★★</div>
+                  <h4 className="review-card-title">Exceeded all my expectations! Best everyday tote.</h4>
+                  <p className="review-card-body">
+                    The leather smells incredible and the craftsmanship is unmatched. Fits my 15-inch laptop, water bottle, and planner with room to spare. Definitely worth every penny and arrived in 2 days!
+                  </p>
+
+                  <div className="review-photos-grid">
+                    <img
+                      src="https://images.unsplash.com/photo-1548036328-c9fa89d128fa?w=200&auto=format&fit=crop&q=80"
+                      alt="Customer review photo"
+                      className="review-photo-thumb"
+                    />
+                    <img
+                      src="https://images.unsplash.com/photo-1590874103328-eac38a683ce7?w=200&auto=format&fit=crop&q=80"
+                      alt="Customer review photo inside"
+                      className="review-photo-thumb"
+                    />
+                  </div>
+
+                  <div className="merchant-response-box">
+                    <div className="merchant-response-author">Response from Store Owner:</div>
+                    Thank you so much Sarah! We take huge pride in our full-grain leather selection and love hearing that your laptop fits effortlessly.
+                  </div>
+                </div>
+
+                <div className="review-footer-row">
+                  <span>Color: Caramel Brown • Size: Large</span>
+                  <button
+                    className="helpful-btn"
+                    onClick={() => handleHelpfulClick("r1")}
+                  >
+                    <span>👍 Helpful</span>
+                    <span>({helpfulCounts.r1})</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Review 2 */}
+              <div className="customer-review-card">
+                <div>
+                  <div className="reviewer-header-row">
+                    <div className="reviewer-info-left">
+                      <img
+                        src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&auto=format&fit=crop&q=80"
+                        alt="Marcus Vance"
+                        className="reviewer-avatar-img"
+                      />
+                      <div>
+                        <div className="reviewer-name">Marcus Vance</div>
+                        <div className="verified-buyer-badge">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                            <polyline points="20 6 9 17 4 12" />
+                          </svg>
+                          <span>Verified Purchase</span>
+                        </div>
+                      </div>
+                    </div>
+                    <span className="review-date-text">5 days ago</span>
+                  </div>
+
+                  <div className="review-card-stars">★★★★★</div>
+                  <h4 className="review-card-title">Stunning finish and super fast shipping.</h4>
+                  <p className="review-card-body">
+                    I bought this as an anniversary gift for my partner. The stitching is immaculate and the presentation packaging was top tier. She uses it every day for work and always gets compliments.
+                  </p>
+
+                  <div className="review-photos-grid">
+                    <img
+                      src="https://images.unsplash.com/photo-1584917865442-de89df76afd3?w=200&auto=format&fit=crop&q=80"
+                      alt="Customer review photo packaging"
+                      className="review-photo-thumb"
+                    />
+                  </div>
+                </div>
+
+                <div className="review-footer-row">
+                  <span>Color: Noir Black • Size: Large</span>
+                  <button
+                    className="helpful-btn"
+                    onClick={() => handleHelpfulClick("r2")}
+                  >
+                    <span>👍 Helpful</span>
+                    <span>({helpfulCounts.r2})</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Review 3 */}
+              <div className="customer-review-card">
+                <div>
+                  <div className="reviewer-header-row">
+                    <div className="reviewer-info-left">
+                      <img
+                        src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80"
+                        alt="Elena Rostova"
+                        className="reviewer-avatar-img"
+                      />
+                      <div>
+                        <div className="reviewer-name">Elena Rostova</div>
+                        <div className="verified-buyer-badge">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                            <polyline points="20 6 9 17 4 12" />
+                          </svg>
+                          <span>Verified Purchase</span>
+                        </div>
+                      </div>
+                    </div>
+                    <span className="review-date-text">1 week ago</span>
+                  </div>
+
+                  <div className="review-card-stars">★★★★★</div>
+                  <h4 className="review-card-title">Durable, elegant, and looks even better in person.</h4>
+                  <p className="review-card-body">
+                    I was skeptical buying leather accessories online, but this exceeded all pictures. Structurally solid, doesn't sag when loaded, and the internal zipper compartments keep everything organized.
+                  </p>
+
+                  <div className="merchant-response-box">
+                    <div className="merchant-response-author">Response from Store Owner:</div>
+                    Thrilled to hear this Elena! Thank you for trusting us with your daily carry!
+                  </div>
+                </div>
+
+                <div className="review-footer-row">
+                  <span>Color: Olive Green • Size: Medium</span>
+                  <button
+                    className="helpful-btn"
+                    onClick={() => handleHelpfulClick("r3")}
+                  >
+                    <span>👍 Helpful</span>
+                    <span>({helpfulCounts.r3})</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Bottom Bar: Load More Button */}
+            <div className="show-more-reviews-bar">
+              <button
+                className="btn-load-more"
+                onClick={() => alert("Showing all 2,548 reviews loaded seamlessly!")}
+              >
+                Load More Reviews (2,545 Remaining) ↓
+              </button>
             </div>
           </div>
         </div>
@@ -1746,6 +2593,7 @@ export default function App() {
 
             <div className="footer-links">
               <a href="#features" onClick={(e) => scrollToSection(e, "features")} className="footer-link">Features</a>
+              <a href="#reviews-demo" onClick={(e) => scrollToSection(e, "reviews-demo")} className="footer-link">Product Reviews</a>
               <a href="#benefits" onClick={(e) => scrollToSection(e, "benefits")} className="footer-link">Benefits</a>
               <a href="#how-it-works" onClick={(e) => scrollToSection(e, "how-it-works")} className="footer-link">How It Works</a>
               <a href="#faq" onClick={(e) => scrollToSection(e, "faq")} className="footer-link">FAQ</a>
@@ -1801,6 +2649,164 @@ export default function App() {
                 Connect Store &amp; Continue →
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Write a Review Modal */}
+      {isWriteReviewModalOpen && (
+        <div
+          className="modal-overlay"
+          onClick={() => {
+            setIsWriteReviewModalOpen(false);
+            setReviewSubmitted(false);
+          }}
+        >
+          <div
+            className="modal-box"
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: "520px" }}
+          >
+            <button
+              className="modal-close-btn"
+              onClick={() => {
+                setIsWriteReviewModalOpen(false);
+                setReviewSubmitted(false);
+              }}
+            >
+              ✕
+            </button>
+
+            {reviewSubmitted ? (
+              <div style={{ textAlign: "center", padding: "20px 10px" }}>
+                <div
+                  style={{
+                    width: "56px",
+                    height: "56px",
+                    borderRadius: "50%",
+                    background: "#e8f7ee",
+                    color: "#059669",
+                    fontSize: "26px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    margin: "0 auto 16px auto",
+                  }}
+                >
+                  ✓
+                </div>
+                <h3 className="modal-title" style={{ marginBottom: "8px" }}>Review Submitted!</h3>
+                <p className="modal-sub" style={{ marginBottom: "20px" }}>
+                  Thank you for your feedback! Your review has been submitted for merchant verification and will appear on the store shortly.
+                </p>
+                <button
+                  type="button"
+                  className="btn-modal-submit"
+                  onClick={() => {
+                    setIsWriteReviewModalOpen(false);
+                    setReviewSubmitted(false);
+                  }}
+                >
+                  Close
+                </button>
+              </div>
+            ) : (
+              <>
+                <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "10px" }}>
+                  <span style={{ fontSize: "22px" }}>✍</span>
+                  <h3 className="modal-title" style={{ margin: 0 }}>Write a Review</h3>
+                </div>
+                <p className="modal-sub" style={{ marginBottom: "16px" }}>
+                  Reviewing: <strong>The Luxe Everyday Leather Tote</strong>
+                </p>
+
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    setReviewSubmitted(true);
+                  }}
+                >
+                  {/* Rating Selector */}
+                  <div style={{ marginBottom: "16px" }}>
+                    <label style={{ display: "block", fontSize: "13px", fontWeight: 700, color: "#0a281e", marginBottom: "6px" }}>
+                      Overall Rating
+                    </label>
+                    <div style={{ display: "flex", gap: "6px", cursor: "pointer", fontSize: "24px" }}>
+                      {[1, 2, 3, 4, 5].map((star) => (
+                        <span
+                          key={star}
+                          onClick={() => setReviewRating(star)}
+                          style={{
+                            color: star <= reviewRating ? "#f59e0b" : "#cbd5e1",
+                            transition: "color 0.15s ease",
+                            userSelect: "none",
+                          }}
+                        >
+                          ★
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "12px" }}>
+                    <div>
+                      <label style={{ display: "block", fontSize: "13px", fontWeight: 700, color: "#0a281e", marginBottom: "6px" }}>
+                        Your Name
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Jessica Taylor"
+                        required
+                        className="modal-input-field"
+                        style={{ marginBottom: 0 }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: "block", fontSize: "13px", fontWeight: 700, color: "#0a281e", marginBottom: "6px" }}>
+                        Email Address
+                      </label>
+                      <input
+                        type="email"
+                        placeholder="jessica@example.com"
+                        required
+                        className="modal-input-field"
+                        style={{ marginBottom: 0 }}
+                      />
+                    </div>
+                  </div>
+
+                  <div style={{ marginBottom: "12px" }}>
+                    <label style={{ display: "block", fontSize: "13px", fontWeight: 700, color: "#0a281e", marginBottom: "6px" }}>
+                      Review Headline
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Absolutely gorgeous leather quality!"
+                      required
+                      className="modal-input-field"
+                      style={{ marginBottom: 0 }}
+                    />
+                  </div>
+
+                  <div style={{ marginBottom: "16px" }}>
+                    <label style={{ display: "block", fontSize: "13px", fontWeight: 700, color: "#0a281e", marginBottom: "6px" }}>
+                      Detailed Feedback
+                    </label>
+                    <textarea
+                      placeholder="Share details of your experience with size, durability, craftsmanship, and shipping..."
+                      rows={4}
+                      required
+                      className="modal-input-field"
+                      style={{ marginBottom: 0, resize: "vertical" }}
+                    />
+                  </div>
+
+                  <button type="submit" className="btn-modal-submit">
+                    Submit Verified Review →
+                  </button>
+                </form>
+              </>
+            )}
           </div>
         </div>
       )}
