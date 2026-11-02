@@ -89,20 +89,43 @@ export default function App() {
 
   return (
     <div className="landing-root">
+      {/* Google Fonts: Plus Jakarta Sans */}
+      <link rel="preconnect" href="https://fonts.googleapis.com" />
+      <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+      <link
+        href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap"
+        rel="stylesheet"
+      />
+
       <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap');
+
         * { box-sizing: border-box; margin: 0; padding: 0; }
         html { scroll-behavior: smooth; }
         body { margin: 0; padding: 0; }
         #features, #benefits, #how-it-works, #faq {
           scroll-margin-top: 90px;
         }
+        .landing-root,
+        .landing-root button,
+        .landing-root input,
+        .landing-root textarea {
+          font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+          -webkit-font-smoothing: antialiased;
+          -moz-osx-font-smoothing: grayscale;
+        }
         .landing-root {
-          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
           background: #f8faf8;
           color: #0e291e;
-          line-height: 1.55;
+          line-height: 1.6;
           overflow-x: clip;
           position: relative;
+        }
+        .hero-title,
+        .section-main-title,
+        .cta-title,
+        .benefits-left-col h2 {
+          letter-spacing: -0.035em;
         }
 
         /* Subtle organic background glow */
