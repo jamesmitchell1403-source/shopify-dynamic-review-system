@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  if (window.__rw_widget_initialized) {
+  if (window.__rw_widget_initialized && document.querySelector('.rw-notification-card')) {
     return; // Strictly prevent duplicate script execution / multiple popup loops
   }
   window.__rw_widget_initialized = true;
@@ -135,12 +135,26 @@
   }
 
   function initWidget(reviews, settings) {
-    if (window.__rw_widget_running) return;
+    if (window.__rw_widget_running && document.querySelector('.rw-notification-card')) return;
     window.__rw_widget_running = true;
 
     let position = settings.position || 'bottom-left';
-    const rawStyle = settings.layoutStyle || 'layout-1';
-    const layoutStyle = rawStyle.startsWith('layout-') ? rawStyle : `layout-${rawStyle}`;
+    const styleMap = {
+      'classic': 'layout-1',
+      'photo': 'layout-2',
+      'social': 'layout-3',
+      'pill': 'layout-4',
+      'product': 'layout-5',
+      '1': 'layout-1',
+      '2': 'layout-2',
+      '3': 'layout-3',
+      '4': 'layout-4',
+      '5': 'layout-5',
+    };
+    const rawStyle = (settings.layoutStyle || 'layout-1').toLowerCase().trim();
+    const cleanNum = rawStyle.replace(/^layout-/, '');
+    const resolvedStyle = styleMap[cleanNum] || styleMap[rawStyle] || (rawStyle.startsWith('layout-') ? rawStyle : 'layout-' + rawStyle);
+    const layoutStyle = resolvedStyle.startsWith('layout-') ? resolvedStyle : 'layout-' + resolvedStyle;
     const numStyle = layoutStyle.replace(/^layout-/, '');
     const layoutClass = `rw-layout-${layoutStyle} rw-${layoutStyle} rw-layout-${numStyle} rw-layout-layout-${numStyle}`;
 
@@ -642,7 +656,10 @@
           resolve();
         };
 
+        const timer = setTimeout(finish, 1200);
+
         img.onload = function() {
+          clearTimeout(timer);
           if (typeof img.decode === 'function') {
             img.decode().then(finish).catch(finish);
           } else {
@@ -650,10 +667,14 @@
           }
         };
 
-        img.onerror = finish;
+        img.onerror = function() {
+          clearTimeout(timer);
+          finish();
+        };
         img.src = url;
 
         if (img.complete && img.naturalWidth > 0) {
+          clearTimeout(timer);
           if (typeof img.decode === 'function') {
             img.decode().then(finish).catch(finish);
           } else {

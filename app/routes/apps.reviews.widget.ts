@@ -37,8 +37,22 @@ export async function loader({ request }: LoaderFunctionArgs) {
   }
 
   const rawPosition = settings?.widgetPosition || "bottom-left";
-  const rawStyle = settings?.widgetLayoutStyle || "layout-1";
-  const layoutStyle = rawStyle.startsWith("layout-") ? rawStyle : `layout-${rawStyle}`;
+  const rawStyle = (settings?.widgetLayoutStyle || "layout-1").toLowerCase().trim();
+  const styleMap: Record<string, string> = {
+    classic: "layout-1",
+    photo: "layout-2",
+    social: "layout-3",
+    pill: "layout-4",
+    product: "layout-5",
+    "1": "layout-1",
+    "2": "layout-2",
+    "3": "layout-3",
+    "4": "layout-4",
+    "5": "layout-5",
+  };
+  const normalizedKey = rawStyle.replace(/^layout-/, "");
+  const resolvedStyle = styleMap[normalizedKey] || styleMap[rawStyle] || rawStyle;
+  const layoutStyle = resolvedStyle.startsWith("layout-") ? resolvedStyle : `layout-${resolvedStyle}`;
 
   const widgetConfig = {
     position: rawPosition,
@@ -57,16 +71,22 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const rawId = productId ? String(productId).replace(/^gid:\/\/shopify\/Product\//, "").trim() : "";
   const fullGid = rawId ? `gid://shopify/Product/${rawId}` : "";
   const cleanHandle = productHandle && productHandle !== "all" ? String(productHandle).trim() : "";
+  const lowerHandle = cleanHandle.toLowerCase();
+  const spacedHandle = cleanHandle.replace(/[-_]+/g, " ");
 
   const whereProductMatch: any[] = [];
   if (rawId && rawId !== "all") {
     whereProductMatch.push({ productId: fullGid });
     whereProductMatch.push({ productId: rawId });
     whereProductMatch.push({ productHandle: rawId });
+    whereProductMatch.push({ productHandle: rawId.toLowerCase() });
   }
   if (cleanHandle) {
     whereProductMatch.push({ productHandle: cleanHandle });
+    whereProductMatch.push({ productHandle: lowerHandle });
+    whereProductMatch.push({ productHandle: spacedHandle });
     whereProductMatch.push({ productId: cleanHandle });
+    whereProductMatch.push({ productId: lowerHandle });
   }
 
   const isAllProductsRequest = (productId === "all" || productHandle === "all");
@@ -97,7 +117,29 @@ export async function loader({ request }: LoaderFunctionArgs) {
     });
   }
 
-  const safeProductReviews = productReviews.filter((r) => r.isPublished);
+  let safeProductReviews = productReviews.filter((r) => r.isPublished);
+
+  // If no exact match, try matching partial handle keywords (e.g. "bundle", "demo")
+  if (safeProductReviews.length === 0 && cleanHandle) {
+    const handleParts = cleanHandle.toLowerCase().split(/[-_]+/).filter((p) => p.length > 2);
+    for (const part of handleParts) {
+      const partialMatches = await db.review.findMany({
+        where: {
+          AND: [
+            baseWhere,
+            { productHandle: { contains: part } },
+          ],
+        },
+        orderBy: { createdAt: "desc" },
+        take: 30,
+      }).catch(() => []);
+      const safePartial = partialMatches.filter((r) => r.isPublished);
+      if (safePartial.length > 0) {
+        safeProductReviews = safePartial;
+        break;
+      }
+    }
+  }
 
   let reviewsToReturn: any[] = [];
   let totalCount = 0;
@@ -109,23 +151,38 @@ export async function loader({ request }: LoaderFunctionArgs) {
     const sumRating = safeProductReviews.reduce((sum, r) => sum + (r.rating || 5), 0);
     averageRating = (sumRating / totalCount).toFixed(1);
   } else {
-    // If shop genuinely has 0 published reviews -> return empty array
-    return json(
-      {
-        reviews: [],
-        settings: widgetConfig,
-        averageRating: "0.0",
-        totalCount: 0,
-      },
-      {
-        headers: {
-          "Access-Control-Allow-Origin": "*",
-          "Cache-Control": "no-cache, no-store, must-revalidate, max-age=0",
-          "Pragma": "no-cache",
-          "Expires": "0",
+    // Fallback to published store reviews for the popup widget so social proof notifications always pop up
+    const fallbackReviews = await db.review.findMany({
+      where: baseWhere,
+      orderBy: { createdAt: "desc" },
+      take: 50,
+    }).catch(() => []);
+
+    const safeFallback = fallbackReviews.filter((r) => r.isPublished);
+    if (safeFallback.length > 0) {
+      reviewsToReturn = safeFallback;
+      totalCount = safeFallback.length;
+      const sumRating = safeFallback.reduce((sum, r) => sum + (r.rating || 5), 0);
+      averageRating = (sumRating / totalCount).toFixed(1);
+    } else {
+      // If shop genuinely has 0 published reviews -> return empty array
+      return json(
+        {
+          reviews: [],
+          settings: widgetConfig,
+          averageRating: "0.0",
+          totalCount: 0,
         },
-      }
-    );
+        {
+          headers: {
+            "Access-Control-Allow-Origin": "*",
+            "Cache-Control": "no-cache, no-store, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+          },
+        }
+      );
+    }
   }
 
   // Parsing customer tags if available
