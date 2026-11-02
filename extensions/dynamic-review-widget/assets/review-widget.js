@@ -141,7 +141,8 @@
     let position = settings.position || 'bottom-left';
     const rawStyle = settings.layoutStyle || 'layout-1';
     const layoutStyle = rawStyle.startsWith('layout-') ? rawStyle : `layout-${rawStyle}`;
-    const layoutClass = `rw-layout-${layoutStyle}`;
+    const numStyle = layoutStyle.replace(/^layout-/, '');
+    const layoutClass = `rw-layout-${layoutStyle} rw-${layoutStyle} rw-layout-${numStyle} rw-layout-layout-${numStyle}`;
 
     const delayMs = (settings.delaySeconds !== undefined ? settings.delaySeconds : 1) * 1000;
     const durationMs = (settings.displayDuration || 10) * 1000;
