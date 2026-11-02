@@ -3,8 +3,12 @@ import { redirect } from "@remix-run/node";
 import { useState } from "react";
 
 export const meta: MetaFunction = () => [
-  { title: "AI Dynamic Review System - Shopify Product Reviews & Social Proof" },
-  { name: "description", content: "Elevate your Shopify store conversions with AI-assisted review drafts, marketplace imports, and rotating floating social proof widgets." },
+  { title: "AI Dynamic Review System - Showcase Reviews, Popups & Trust Badges" },
+  {
+    name: "description",
+    content:
+      "Showcase product reviews, popups and trust badges to turn visitors into confident buyers. Import, manage and showcase product reviews with AI help.",
+  },
 ];
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
@@ -17,9 +21,11 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
 export default function App() {
   const [shopUrl, setShopUrl] = useState("");
-  const [activeLayout, setActiveLayout] = useState<"layout-1" | "layout-2" | "layout-3" | "layout-4" | "layout-5">("layout-1");
+  const [isInstallModalOpen, setIsInstallModalOpen] = useState(false);
+  const [openFaq, setOpenFaq] = useState<number | null>(null);
 
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleInstallSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
     let cleanShop = shopUrl.trim().toLowerCase();
     if (!cleanShop) return;
 
@@ -30,582 +36,1113 @@ export default function App() {
     }
 
     window.location.href = `/auth/login?shop=${encodeURIComponent(cleanShop)}`;
-    e.preventDefault();
+  };
+
+  const toggleFaq = (index: number) => {
+    setOpenFaq(openFaq === index ? null : index);
   };
 
   return (
     <div className="landing-root">
       <style>{`
-        * { box-sizing: border-box; }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        html { scroll-behavior: smooth; }
+        body { margin: 0; padding: 0; }
         .landing-root {
-          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-          background: #fafafc;
-          color: #0f172a;
-          line-height: 1.6;
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+          background: #f8faf8;
+          color: #0e291e;
+          line-height: 1.55;
           overflow-x: hidden;
+          position: relative;
+        }
+
+        /* Subtle organic background glow */
+        .bg-glow-1 {
+          position: absolute;
+          top: 0;
+          right: 0;
+          width: 650px;
+          height: 650px;
+          background: radial-gradient(circle, rgba(167, 243, 208, 0.35) 0%, rgba(248, 250, 248, 0) 70%);
+          pointer-events: none;
+          z-index: 0;
+        }
+        .bg-glow-2 {
+          position: absolute;
+          top: 900px;
+          left: -150px;
+          width: 550px;
+          height: 550px;
+          background: radial-gradient(circle, rgba(209, 250, 229, 0.4) 0%, rgba(248, 250, 248, 0) 70%);
+          pointer-events: none;
+          z-index: 0;
         }
 
         .container {
-          max-width: 1200px;
+          max-width: 1140px;
           margin: 0 auto;
           padding: 0 24px;
+          position: relative;
+          z-index: 1;
         }
 
-        /* Top Header */
-        .landing-header {
-          background: #ffffff;
-          border-bottom: 1px solid #f1f5f9;
+        /* Header / Navbar */
+        .site-header {
           position: sticky;
           top: 0;
           z-index: 100;
+          background: rgba(248, 250, 248, 0.94);
+          backdrop-filter: blur(12px);
+          border-bottom: 1px solid rgba(226, 238, 230, 0.8);
+          padding: 16px 0;
         }
-        .nav-row {
+        .nav-wrapper {
           display: flex;
+          align-items: center;
           justify-content: space-between;
-          align-items: center;
-          height: 72px;
+          gap: 20px;
         }
-        .brand-logo {
-          font-size: 19px;
-          font-weight: 800;
-          color: #0f172a;
+        .logo-wrap {
           display: flex;
           align-items: center;
-          gap: 8px;
+          gap: 10px;
           text-decoration: none;
         }
-        .brand-logo span { color: #6366f1; }
-        .nav-links {
+        .logo-icon-box {
+          width: 38px;
+          height: 38px;
+          background: #064e3b;
+          border-radius: 10px;
           display: flex;
-          gap: 28px;
+          align-items: center;
+          justify-content: center;
+          color: #ffffff;
+          box-shadow: 0 3px 10px rgba(6, 78, 59, 0.25);
+        }
+        .logo-text {
+          font-size: 17px;
+          font-weight: 800;
+          color: #064e3b;
+          letter-spacing: -0.3px;
+        }
+        .logo-text span {
+          color: #092f24;
+          font-weight: 500;
+          margin-left: 4px;
+        }
+
+        .nav-menu {
+          display: flex;
+          align-items: center;
+          gap: 32px;
+        }
+        .nav-link {
+          color: #2d4a3e;
+          font-size: 14.5px;
+          font-weight: 500;
+          text-decoration: none;
+          transition: color 0.18s ease;
+        }
+        .nav-link:hover {
+          color: #059669;
+        }
+
+        .btn-install-header {
+          background: #064e3b;
+          color: #ffffff;
           font-size: 14px;
           font-weight: 600;
-          color: #475569;
-        }
-        .nav-links a {
-          color: #475569;
-          text-decoration: none;
-          transition: color 0.15s;
-        }
-        .nav-links a:hover { color: #0f172a; }
-        .btn-header-install {
-          background: #0f172a;
-          color: #ffffff;
-          padding: 10px 20px;
+          padding: 10px 22px;
           border-radius: 9999px;
-          font-size: 13.5px;
-          font-weight: 700;
           text-decoration: none;
-          transition: background 0.15s;
+          border: none;
+          cursor: pointer;
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          transition: all 0.2s ease;
+          box-shadow: 0 4px 12px rgba(6, 78, 59, 0.2);
         }
-        .btn-header-install:hover { background: #1e293b; }
+        .btn-install-header:hover {
+          background: #043c2c;
+          transform: translateY(-1px);
+          box-shadow: 0 6px 16px rgba(6, 78, 59, 0.28);
+        }
 
-        /* Hero */
-        .hero {
-          padding: 64px 0 88px 0;
-          text-align: center;
-          background: radial-gradient(circle at 50% 20%, rgba(99, 102, 241, 0.08) 0%, rgba(250, 250, 252, 0) 70%);
+        /* Hero Section */
+        .hero-section {
+          padding: 60px 0 80px 0;
         }
-        .hero-badge {
+        .hero-grid {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 56px;
+          align-items: center;
+        }
+
+        .pill-tag {
           display: inline-flex;
           align-items: center;
           gap: 8px;
-          background: #eef2ff;
-          border: 1px solid #e0e7ff;
-          color: #4f46e5;
-          padding: 6px 16px;
+          background: #eaf5ef;
+          color: #08533c;
+          border: 1px solid #d1ebd9;
+          padding: 6px 14px;
           border-radius: 9999px;
-          font-size: 13px;
+          font-size: 12.5px;
           font-weight: 700;
-          margin-bottom: 24px;
+          margin-bottom: 22px;
+          letter-spacing: 0.2px;
         }
         .hero-title {
-          font-size: 50px;
+          font-size: 46px;
           font-weight: 900;
+          line-height: 1.18;
+          color: #0a281e;
           letter-spacing: -1.2px;
-          line-height: 1.15;
-          color: #0f172a;
-          max-width: 860px;
-          margin: 0 auto 20px auto;
-        }
-        .hero-title span {
-          background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
-          -webkit-background-clip: text;
-          -webkit-text-fill-color: transparent;
-        }
-        .hero-subtitle {
-          font-size: 19px;
-          color: #64748b;
-          max-width: 660px;
-          margin: 0 auto 36px auto;
-        }
-
-        /* 1-Click Install Form in Hero */
-        .install-box {
-          max-width: 540px;
-          margin: 0 auto 52px auto;
-          background: #ffffff;
-          padding: 8px 8px 8px 18px;
-          border-radius: 9999px;
-          border: 1px solid #cbd5e1;
-          box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.08);
-          display: flex;
-          align-items: center;
-          gap: 12px;
-        }
-        .install-input {
-          flex: 1;
-          border: none;
-          outline: none;
-          font-size: 14.5px;
-          color: #0f172a;
-          background: transparent;
-        }
-        .btn-install-submit {
-          background: #4f46e5;
-          color: #ffffff;
-          border: none;
-          padding: 12px 26px;
-          border-radius: 9999px;
-          font-size: 14px;
-          font-weight: 700;
-          cursor: pointer;
-          white-space: nowrap;
-          transition: background 0.15s;
-        }
-        .btn-install-submit:hover { background: #4338ca; }
-
-        /* Hero Device Mockup */
-        .hero-phone-wrap {
-          display: flex;
-          justify-content: center;
-          position: relative;
-          max-width: 900px;
-          margin: 0 auto;
-        }
-        .phone-frame {
-          width: 330px;
-          height: 600px;
-          background: #ffffff;
-          border: 10px solid #0f172a;
-          border-radius: 46px;
-          box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.25);
-          position: relative;
-          overflow: hidden;
-          display: flex;
-          flex-direction: column;
-          text-align: left;
-        }
-        .phone-notch {
-          width: 90px;
-          height: 16px;
-          background: #0f172a;
-          border-radius: 0 0 12px 12px;
-          margin: 0 auto 12px auto;
-          flex-shrink: 0;
-        }
-
-        .hero-floating-chip {
-          position: absolute;
-          background: #ffffff;
-          border: 1px solid #e2e8f0;
-          border-radius: 14px;
-          padding: 12px 18px;
-          box-shadow: 0 12px 28px rgba(15, 23, 42, 0.12);
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          font-size: 13px;
-          font-weight: 700;
-          z-index: 10;
-          text-align: left;
-        }
-        .chip-left { top: 120px; left: 80px; }
-        .chip-right { bottom: 140px; right: 80px; }
-
-        @media (max-width: 900px) {
-          .hero-floating-chip { display: none; }
-          .nav-links { display: none; }
-          .hero-title { font-size: 36px; }
-        }
-
-        /* Section Layouts */
-        .section-wrap {
-          padding: 88px 0;
-          border-top: 1px solid #f1f5f9;
-        }
-        .section-header {
-          text-align: center;
-          margin-bottom: 56px;
-        }
-        .section-badge {
-          font-size: 12px;
-          font-weight: 800;
-          color: #6366f1;
-          background: #eef2ff;
-          padding: 4px 12px;
-          border-radius: 9999px;
-          text-transform: uppercase;
-          letter-spacing: 0.5px;
-          display: inline-block;
-          margin-bottom: 12px;
-        }
-        .section-title {
-          font-size: 36px;
-          font-weight: 800;
-          color: #0f172a;
-          letter-spacing: -0.5px;
-          margin-bottom: 12px;
-        }
-        .section-desc {
-          font-size: 16px;
-          color: #64748b;
-          max-width: 600px;
-          margin: 0 auto;
-        }
-
-        /* Before vs After Dual Frame */
-        .transform-stage {
-          display: flex;
-          justify-content: center;
-          align-items: center;
-          gap: 48px;
-          flex-wrap: wrap;
-        }
-        .transform-card {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-        }
-        .transform-label {
-          font-size: 14px;
-          font-weight: 800;
-          padding: 6px 18px;
-          border-radius: 9999px;
           margin-bottom: 20px;
         }
-        .label-before { background: #fee2e2; color: #dc2626; }
-        .label-after { background: #dcfce7; color: #15803d; }
-
-        /* 5 Layouts Showcase Grid */
-        .layout-nav-pills {
-          display: flex;
-          justify-content: center;
-          gap: 10px;
-          margin-bottom: 40px;
-          flex-wrap: wrap;
+        .hero-title .highlight {
+          color: #059669;
         }
-        .pill-btn {
-          padding: 9px 20px;
-          border-radius: 9999px;
-          border: 1px solid #cbd5e1;
-          background: #ffffff;
-          color: #475569;
+        .hero-sub {
+          font-size: 17.5px;
+          color: #446153;
+          line-height: 1.5;
+          margin-bottom: 34px;
+          max-width: 480px;
+        }
+
+        /* Trust Checklist (under hero text) */
+        .trust-checklist {
+          display: flex;
+          align-items: center;
+          gap: 24px;
+          flex-wrap: wrap;
+          padding-top: 8px;
+        }
+        .trust-check-item {
+          display: flex;
+          align-items: center;
+          gap: 8px;
           font-size: 13.5px;
           font-weight: 700;
-          cursor: pointer;
-          transition: all 0.15s ease;
+          color: #1f3b2f;
         }
-        .pill-btn.active {
-          background: #4f46e5;
-          color: #ffffff;
-          border-color: #4f46e5;
-          box-shadow: 0 4px 12px rgba(79, 70, 229, 0.25);
+        .trust-check-icon {
+          width: 18px;
+          height: 18px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          color: #059669;
         }
 
-        /* Zig-Zag Feature Spotlights */
-        .spotlight-row {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 64px;
+        /* Hero Visual (Right Side) */
+        .hero-visual-container {
+          position: relative;
+          background: #ffffff;
+          border-radius: 24px;
+          border: 1px solid #e1eee6;
+          box-shadow: 0 20px 45px -10px rgba(6, 78, 59, 0.08);
+          padding: 24px;
+        }
+        .browser-header-dots {
+          display: flex;
           align-items: center;
-          margin-bottom: 88px;
+          gap: 6px;
+          margin-bottom: 18px;
         }
-        .spotlight-row.reverse {
-          direction: rtl;
+        .dot {
+          width: 9px;
+          height: 9px;
+          border-radius: 50%;
         }
-        .spotlight-row.reverse > * {
-          direction: ltr;
+        .dot.red { background: #fda4af; }
+        .dot.yellow { background: #fde047; }
+        .dot.green { background: #86efac; }
+
+        .product-preview-layout {
+          display: grid;
+          grid-template-columns: 140px 1fr;
+          gap: 20px;
+          align-items: center;
         }
-        .spotlight-content h3 {
-          font-size: 28px;
-          font-weight: 800;
-          color: #0f172a;
-          margin-bottom: 16px;
-          line-height: 1.25;
+        .product-img-box {
+          background: #f4f8f5;
+          border-radius: 14px;
+          padding: 12px;
+          text-align: center;
         }
-        .spotlight-content p {
-          font-size: 16px;
-          color: #475569;
-          margin-bottom: 24px;
+        .product-img-box img {
+          width: 100%;
+          height: 140px;
+          object-fit: contain;
+          border-radius: 8px;
         }
-        .spotlight-bullets {
-          list-style: none;
-          padding: 0;
+        .thumbnails-row {
+          display: flex;
+          gap: 6px;
+          justify-content: center;
+          margin-top: 8px;
+        }
+        .thumb-box {
+          width: 26px;
+          height: 26px;
+          border-radius: 6px;
+          background: #eaf1ec;
+          border: 1px solid #d5e5db;
+        }
+
+        .rating-summary-box {
           display: flex;
           flex-direction: column;
-          gap: 12px;
+          gap: 6px;
         }
-        .spotlight-bullets li {
+        .stars-row {
+          color: #f59e0b;
+          font-size: 15px;
+          letter-spacing: 2px;
+        }
+        .rating-score {
+          font-size: 14px;
+          font-weight: 700;
+          color: #0a281e;
+        }
+        .verified-pill {
+          display: inline-flex;
+          align-items: center;
+          gap: 5px;
+          background: #d1fae5;
+          color: #065f46;
+          font-size: 11.5px;
+          font-weight: 700;
+          padding: 4px 10px;
+          border-radius: 9999px;
+          width: fit-content;
+        }
+
+        /* Floating Badge 1: Top Right (Sarah J.) */
+        .floating-review-top {
+          position: absolute;
+          top: -24px;
+          right: -20px;
+          background: #ffffff;
+          border-radius: 16px;
+          padding: 12px 16px;
+          border: 1px solid #d5ece0;
+          box-shadow: 0 14px 30px rgba(6, 78, 59, 0.12);
+          display: flex;
+          gap: 12px;
+          align-items: flex-start;
+          width: 230px;
+        }
+        .avatar-circle {
+          width: 34px;
+          height: 34px;
+          border-radius: 50%;
+          background: #dbeafe;
+          overflow: hidden;
+          flex-shrink: 0;
+        }
+        .avatar-circle img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+        }
+        .review-text-bubble {
+          font-size: 11.5px;
+          color: #2b4539;
+          line-height: 1.35;
+        }
+
+        /* Floating Badge 2: Bottom Popup ("New Review") */
+        .floating-popup-bottom {
+          position: absolute;
+          bottom: -22px;
+          left: 30px;
+          background: #ffffff;
+          border-radius: 14px;
+          padding: 10px 14px;
+          border: 1px solid #d5ece0;
+          box-shadow: 0 12px 28px rgba(6, 78, 59, 0.12);
           display: flex;
           align-items: center;
           gap: 10px;
-          font-size: 14px;
-          font-weight: 600;
-          color: #1e293b;
+          font-size: 11.5px;
         }
-        .bullet-check {
-          width: 22px;
-          height: 22px;
-          border-radius: 50%;
-          background: #eef2ff;
-          color: #4f46e5;
+        .popup-bag-thumb {
+          width: 32px;
+          height: 32px;
+          border-radius: 6px;
+          background: #f2f7f4;
+          object-fit: cover;
+        }
+
+        /* Floating Badge 3: Right Trust Card ("Trusted by 10K+") */
+        .floating-trust-right {
+          position: absolute;
+          bottom: 40px;
+          right: -24px;
+          background: #ffffff;
+          border-radius: 14px;
+          padding: 10px 14px;
+          border: 1px solid #d5ece0;
+          box-shadow: 0 12px 28px rgba(6, 78, 59, 0.12);
           display: flex;
           align-items: center;
-          justify-content: center;
+          gap: 10px;
+        }
+        .avatar-stack {
+          display: flex;
+          margin-right: 4px;
+        }
+        .avatar-stack-item {
+          width: 24px;
+          height: 24px;
+          border-radius: 50%;
+          border: 2px solid #ffffff;
+          margin-left: -8px;
+          background: #cbd5e1;
+          object-fit: cover;
+        }
+        .avatar-stack-item:first-child {
+          margin-left: 0;
+        }
+
+        /* SECTION COMMON HEADINGS */
+        .section-header-center {
+          text-align: center;
+          margin-bottom: 52px;
+        }
+        .section-tagline {
           font-size: 12px;
           font-weight: 800;
-          flex-shrink: 0;
+          text-transform: uppercase;
+          letter-spacing: 1.5px;
+          color: #059669;
+          margin-bottom: 10px;
+          display: block;
+        }
+        .section-main-title {
+          font-size: 36px;
+          font-weight: 800;
+          color: #0a281e;
+          letter-spacing: -0.8px;
+        }
+        .section-desc-sub {
+          font-size: 16px;
+          color: #4a6357;
+          margin-top: 10px;
+          max-width: 600px;
+          margin-left: auto;
+          margin-right: auto;
         }
 
-        .spotlight-visual-card {
-          background: #ffffff;
-          border: 1px solid #e2e8f0;
-          border-radius: 24px;
-          padding: 36px;
-          box-shadow: 0 10px 30px rgba(15,23,42,0.05);
+        /* SECTION 2: Powerful Features 3x2 Grid */
+        .features-section {
+          padding: 80px 0;
         }
-
-        /* 3x2 Platform Grid */
-        .features-grid {
+        .features-grid-3x2 {
           display: grid;
           grid-template-columns: repeat(3, 1fr);
           gap: 24px;
         }
-        @media (max-width: 860px) {
-          .features-grid { grid-template-columns: 1fr; }
-          .spotlight-row { grid-template-columns: 1fr; gap: 32px; }
-          .spotlight-row.reverse { direction: ltr; }
-        }
-        .grid-box {
+        .feature-card-item {
           background: #ffffff;
-          border: 1px solid #e2e8f0;
-          border-radius: 16px;
-          padding: 28px;
-          box-shadow: 0 2px 6px rgba(0,0,0,0.02);
+          border: 1px solid #e1eee6;
+          border-radius: 18px;
+          padding: 28px 24px;
+          box-shadow: 0 4px 14px rgba(6, 78, 59, 0.03);
+          transition: transform 0.2s ease, box-shadow 0.2s ease;
+          display: flex;
+          gap: 16px;
+          align-items: flex-start;
         }
-        .grid-box-icon {
-          font-size: 28px;
-          margin-bottom: 16px;
+        .feature-card-item:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 10px 24px rgba(6, 78, 59, 0.08);
+          border-color: #c9e4d5;
         }
-        .grid-box-title {
-          font-size: 17px;
-          font-weight: 800;
-          color: #0f172a;
+        .feature-icon-sq {
+          width: 44px;
+          height: 44px;
+          border-radius: 12px;
+          background: #e8f7ee;
+          color: #064e3b;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+        }
+        .feature-item-content h3 {
+          font-size: 16.5px;
+          font-weight: 750;
+          color: #0a281e;
           margin-bottom: 8px;
+          line-height: 1.35;
         }
-        .grid-box-text {
-          font-size: 13.5px;
-          color: #64748b;
-          line-height: 1.5;
+        .feature-item-content p {
+          font-size: 14px;
+          color: #4d665a;
+          line-height: 1.45;
         }
 
-        /* Bottom CTA */
-        .bottom-cta {
-          background: #0f172a;
-          border-radius: 28px;
-          padding: 64px 48px;
-          text-align: center;
-          color: #ffffff;
-          margin-top: 60px;
-          margin-bottom: 40px;
+        /* SECTION 3: Key Benefits (Left text + 2x2 grid) */
+        .benefits-section {
+          padding: 80px 0;
+          background: #ffffff;
+          border-top: 1px solid #e8f1eb;
+          border-bottom: 1px solid #e8f1eb;
         }
-        .bottom-cta h2 {
+        .benefits-layout-grid {
+          display: grid;
+          grid-template-columns: 1fr 1.25fr;
+          gap: 60px;
+          align-items: center;
+        }
+        .benefits-left-col h2 {
           font-size: 38px;
-          font-weight: 900;
-          margin-bottom: 16px;
-          letter-spacing: -0.5px;
+          font-weight: 850;
+          line-height: 1.18;
+          color: #0a281e;
+          letter-spacing: -0.8px;
+          margin-bottom: 18px;
         }
-        .bottom-cta p {
-          font-size: 18px;
+        .benefits-left-col p {
+          font-size: 16.5px;
+          color: #4d665a;
+          line-height: 1.55;
+        }
+        .benefits-2x2 {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 28px;
+        }
+        .benefit-sub-item {
+          display: flex;
+          gap: 14px;
+          align-items: flex-start;
+        }
+        .benefit-circle-icon {
+          width: 40px;
+          height: 40px;
+          border-radius: 50%;
+          background: #e8f7ee;
+          color: #059669;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+        }
+        .benefit-sub-item h4 {
+          font-size: 16px;
+          font-weight: 750;
+          color: #0a281e;
+          margin-bottom: 6px;
+        }
+        .benefit-sub-item p {
+          font-size: 13.5px;
+          color: #556d62;
+          line-height: 1.45;
+        }
+
+        /* SECTION 4: See The Difference (Before vs After) */
+        .difference-section {
+          padding: 90px 0;
+        }
+        .comparison-cards-row {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 32px;
+          margin-top: 20px;
+        }
+        .comparison-card {
+          flex: 1;
+          max-width: 490px;
+          background: #ffffff;
+          border: 1px solid #e1eee6;
+          border-radius: 20px;
+          padding: 24px;
+          position: relative;
+          box-shadow: 0 10px 30px rgba(6, 78, 59, 0.05);
+        }
+        .comp-badge-pill {
+          position: absolute;
+          top: -14px;
+          left: 24px;
+          font-size: 12px;
+          font-weight: 750;
+          padding: 5px 14px;
+          border-radius: 9999px;
+        }
+        .comp-badge-pill.without {
+          background: #f1f5f9;
+          color: #475569;
+          border: 1px solid #cbd5e1;
+        }
+        .comp-badge-pill.with {
+          background: #064e3b;
+          color: #ffffff;
+          box-shadow: 0 4px 10px rgba(6, 78, 59, 0.25);
+        }
+
+        .comp-browser-top {
+          display: flex;
+          gap: 5px;
+          margin-bottom: 16px;
+        }
+        .comp-content-grid {
+          display: grid;
+          grid-template-columns: 100px 1fr;
+          gap: 16px;
+          align-items: center;
+        }
+        .comp-img-placeholder {
+          background: #f8faf9;
+          border-radius: 12px;
+          padding: 8px;
+          text-align: center;
+        }
+        .comp-img-placeholder img {
+          width: 100%;
+          height: 100px;
+          object-fit: contain;
+        }
+
+        .skeleton-line {
+          height: 10px;
+          background: #e2e8f0;
+          border-radius: 4px;
+          margin-bottom: 8px;
+        }
+        .empty-stars-text {
+          font-size: 12.5px;
           color: #94a3b8;
-          max-width: 600px;
-          margin: 0 auto 36px auto;
+          margin-top: 8px;
+        }
+
+        .comparison-arrow {
+          width: 44px;
+          height: 44px;
+          border-radius: 50%;
+          background: #e8f7ee;
+          color: #059669;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 20px;
+          font-weight: 800;
+          flex-shrink: 0;
+        }
+
+        /* SECTION 5: How It Works (3 Steps) */
+        .how-it-works-section {
+          padding: 80px 0;
+          background: #ffffff;
+          border-top: 1px solid #e8f1eb;
+        }
+        .steps-flex-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 16px;
+        }
+        .step-box-card {
+          flex: 1;
+          background: #f8faf9;
+          border: 1px solid #e1eee6;
+          border-radius: 18px;
+          padding: 24px;
+          display: flex;
+          gap: 16px;
+          align-items: flex-start;
+          transition: transform 0.2s ease;
+        }
+        .step-box-card:hover {
+          transform: translateY(-2px);
+          border-color: #a7f3d0;
+        }
+        .step-icon-bubble {
+          width: 46px;
+          height: 46px;
+          border-radius: 14px;
+          background: #e8f7ee;
+          color: #064e3b;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+        }
+        .step-content-area {
+          display: flex;
+          flex-direction: column;
+        }
+        .step-num-title-row {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          margin-bottom: 6px;
+        }
+        .step-num-circle {
+          width: 22px;
+          height: 22px;
+          background: #064e3b;
+          color: #ffffff;
+          border-radius: 50%;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 11.5px;
+          font-weight: 800;
+        }
+        .step-title {
+          font-size: 15.5px;
+          font-weight: 750;
+          color: #0a281e;
+        }
+        .step-desc {
+          font-size: 13.5px;
+          color: #556d62;
+          line-height: 1.4;
+        }
+        .step-arrow-divider {
+          color: #059669;
+          font-size: 20px;
+          font-weight: bold;
+          flex-shrink: 0;
+        }
+
+        /* FAQ Section */
+        .faq-section {
+          padding: 80px 0;
+        }
+        .faq-list {
+          max-width: 800px;
+          margin: 0 auto;
+          display: flex;
+          flex-direction: column;
+          gap: 14px;
+        }
+        .faq-item {
+          background: #ffffff;
+          border: 1px solid #e1eee6;
+          border-radius: 14px;
+          padding: 20px 24px;
+          cursor: pointer;
+          transition: all 0.2s ease;
+        }
+        .faq-item:hover {
+          border-color: #a7f3d0;
+        }
+        .faq-question {
+          font-size: 16px;
+          font-weight: 700;
+          color: #0a281e;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+        .faq-toggle-icon {
+          font-size: 18px;
+          color: #059669;
+          font-weight: 700;
+        }
+        .faq-answer {
+          margin-top: 12px;
+          font-size: 14.5px;
+          color: #4a6357;
+          line-height: 1.5;
+          padding-top: 10px;
+          border-top: 1px solid #f1f7f3;
+        }
+
+        /* SECTION 7: Dark Bottom CTA Banner */
+        .bottom-cta-wrap {
+          padding: 40px 0 80px 0;
+        }
+        .cta-dark-card {
+          background: #043c2c;
+          border-radius: 28px;
+          padding: 44px 50px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 32px;
+          color: #ffffff;
+          position: relative;
+          overflow: hidden;
+          box-shadow: 0 20px 45px rgba(4, 60, 44, 0.28);
+        }
+        .cta-left-content {
+          display: flex;
+          gap: 20px;
+          align-items: center;
+        }
+        .cta-star-badge {
+          width: 52px;
+          height: 52px;
+          border-radius: 14px;
+          background: #059669;
+          color: #ffffff;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 24px;
+          flex-shrink: 0;
+          box-shadow: 0 4px 12px rgba(5, 150, 105, 0.3);
+        }
+        .cta-title {
+          font-size: 26px;
+          font-weight: 800;
+          color: #ffffff;
+          margin-bottom: 6px;
+        }
+        .cta-sub {
+          font-size: 14.5px;
+          color: #a7f3d0;
+          max-width: 520px;
+          line-height: 1.45;
+        }
+        .cta-right-action {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 8px;
+          flex-shrink: 0;
+        }
+        .btn-cta-white {
+          background: #ffffff;
+          color: #064e3b;
+          font-size: 15px;
+          font-weight: 750;
+          padding: 12px 28px;
+          border-radius: 9999px;
+          text-decoration: none;
+          border: none;
+          cursor: pointer;
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          transition: all 0.2s ease;
+          box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+        }
+        .btn-cta-white:hover {
+          background: #f0fdf4;
+          transform: translateY(-2px);
+          box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+        }
+        .cta-mini-caption {
+          font-size: 11.5px;
+          color: #a7f3d0;
+          letter-spacing: 0.2px;
         }
 
         /* Footer */
-        .landing-footer {
-          padding: 48px 0;
-          border-top: 1px solid #e2e8f0;
+        .site-footer {
+          border-top: 1px solid #e2ece6;
+          background: #ffffff;
+          padding: 44px 0 32px 0;
+        }
+        .footer-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          flex-wrap: wrap;
+          gap: 20px;
+          margin-bottom: 24px;
+        }
+        .footer-links {
+          display: flex;
+          gap: 24px;
+          align-items: center;
+          flex-wrap: wrap;
+        }
+        .footer-link {
+          color: #446153;
+          font-size: 14px;
+          text-decoration: none;
+          font-weight: 500;
+          transition: color 0.15s ease;
+        }
+        .footer-link:hover {
+          color: #059669;
+        }
+        .copyright-text {
+          font-size: 13px;
+          color: #71897c;
           text-align: center;
-          font-size: 13.5px;
-          color: #94a3b8;
+          border-top: 1px solid #eef4f0;
+          padding-top: 20px;
+        }
+
+        /* Install Store Modal */
+        .modal-overlay {
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background: rgba(6, 78, 59, 0.5);
+          backdrop-filter: blur(5px);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 1000;
+          padding: 20px;
+        }
+        .modal-box {
+          background: #ffffff;
+          border-radius: 24px;
+          max-width: 480px;
+          width: 100%;
+          padding: 32px;
+          box-shadow: 0 25px 60px rgba(6, 78, 59, 0.2);
+          position: relative;
+        }
+        .modal-close-btn {
+          position: absolute;
+          top: 18px;
+          right: 18px;
+          background: #f1f7f3;
+          border: none;
+          width: 32px;
+          height: 32px;
+          border-radius: 50%;
+          font-size: 16px;
+          cursor: pointer;
+          color: #446153;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .modal-title {
+          font-size: 22px;
+          font-weight: 800;
+          color: #0a281e;
+          margin-bottom: 8px;
+        }
+        .modal-sub {
+          font-size: 14px;
+          color: #4d665a;
+          margin-bottom: 24px;
+        }
+        .modal-input-field {
+          width: 100%;
+          border: 1.5px solid #cbd5e1;
+          border-radius: 12px;
+          padding: 12px 16px;
+          font-size: 15px;
+          outline: none;
+          transition: border-color 0.2s ease;
+          margin-bottom: 16px;
+        }
+        .modal-input-field:focus {
+          border-color: #059669;
+          box-shadow: 0 0 0 3px rgba(5, 150, 105, 0.15);
+        }
+        .btn-modal-submit {
+          width: 100%;
+          background: #064e3b;
+          color: #ffffff;
+          padding: 13px;
+          border-radius: 12px;
+          font-size: 15px;
+          font-weight: 700;
+          border: none;
+          cursor: pointer;
+          transition: background 0.2s ease;
+        }
+        .btn-modal-submit:hover {
+          background: #043c2c;
+        }
+
+        /* Responsive Breakpoints */
+        @media (max-width: 900px) {
+          .hero-grid { grid-template-columns: 1fr; gap: 40px; }
+          .features-grid-3x2 { grid-template-columns: 1fr; }
+          .benefits-layout-grid { grid-template-columns: 1fr; gap: 36px; }
+          .comparison-cards-row { flex-direction: column; }
+          .steps-flex-row { flex-direction: column; }
+          .step-arrow-divider { transform: rotate(90deg); margin: 6px 0; }
+          .cta-dark-card { flex-direction: column; text-align: center; padding: 36px 24px; }
+          .cta-left-content { flex-direction: column; text-align: center; }
+          .nav-menu { display: none; }
+          .hero-title { font-size: 36px; }
         }
       `}</style>
 
-      {/* 1. Header */}
-      <header className="landing-header">
-        <div className="container nav-row">
-          <a href="/" className="brand-logo">
-            ⭐ AI Dynamic Review <span>System</span>
+      {/* Decorative background glow elements */}
+      <div className="bg-glow-1" />
+      <div className="bg-glow-2" />
+
+      {/* 1. Header (Navbar) */}
+      <header className="site-header">
+        <div className="container nav-wrapper">
+          <a href="/" className="logo-wrap">
+            <div className="logo-icon-box">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+              </svg>
+            </div>
+            <div className="logo-text">
+              AI Dynamic <span>Review System</span>
+            </div>
           </a>
-          <nav className="nav-links">
-            <a href="#transformation">Before vs After</a>
-            <a href="#layouts">5 Review Layouts</a>
-            <a href="#ai-engine">AI Review Engine</a>
-            <a href="/privacy-policy">Privacy Policy</a>
+
+          <nav className="nav-menu">
+            <a href="#features" className="nav-link">Features</a>
+            <a href="#benefits" className="nav-link">Benefits</a>
+            <a href="#how-it-works" className="nav-link">How It Works</a>
+            <a href="#faq" className="nav-link">FAQ</a>
+            {/* Privacy Policy link added as requested */}
+            <a href="/privacy-policy" className="nav-link">Privacy Policy</a>
           </nav>
-          <a href="#install" className="btn-header-install">Install Free 🚀</a>
+
+          <button
+            onClick={() => setIsInstallModalOpen(true)}
+            className="btn-install-header"
+          >
+            Install App →
+          </button>
         </div>
       </header>
 
       {/* 2. Hero Section */}
-      <section className="hero" id="install">
-        <div className="container">
-          <div className="hero-badge">
-            ✨ BUILT EXCLUSIVELY FOR SHOPIFY STORES
-          </div>
-          <h1 className="hero-title">
-            Turn Store Visitors Into <span>Confident Buyers</span> With Intelligent Social Proof
-          </h1>
-          <p className="hero-subtitle">
-            Generate authentic AI-assisted review drafts, import past marketplace feedback, and display floating trust widgets on any Shopify theme.
-          </p>
-
-          {/* 1-Click Store Installation Form */}
-          <form className="install-box" onSubmit={handleSubmit}>
-            <input
-              type="text"
-              className="install-input"
-              placeholder="e.g. your-store.myshopify.com"
-              value={shopUrl}
-              onChange={(e) => setShopUrl(e.target.value)}
-              required
-            />
-            <button type="submit" className="btn-install-submit">
-              Install App 🚀
-            </button>
-          </form>
-
-          {/* Hero Device Mockup with Floating Benefit Chips */}
-          <div className="hero-phone-wrap">
-            <div className="hero-floating-chip chip-left">
-              <span style={{ fontSize: "22px" }}>📈</span>
-              <div>
-                <div style={{ color: "#059669", fontWeight: 800 }}>+34% Conversion Lift</div>
-                <div style={{ fontSize: "11px", color: "#64748b", fontWeight: 500 }}>Average merchant impact</div>
-              </div>
+      <section className="hero-section">
+        <div className="container hero-grid">
+          {/* Left Column: Copy & Checklist (Buttons Removed as requested) */}
+          <div>
+            <div className="pill-tag">
+              ★ Social Proof for Your Shopify Store
             </div>
-
-            <div className="phone-frame">
-              <div className="phone-notch" />
-              <div style={{ padding: "16px", flex: 1, display: "flex", flexDirection: "column" }}>
-                {/* Store Mini Header */}
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-                  <span style={{ fontSize: "11px", fontWeight: 900, letterSpacing: "1px" }}>LUMINOUS STORE</span>
-                  <span style={{ fontSize: "14px" }}>🛒</span>
-                </div>
-                {/* Product Image */}
-                <div style={{ background: "#f1f5f9", borderRadius: "12px", height: "180px", display: "flex", alignItems: "center", justifyCenter: "center", marginBottom: "14px" }}>
-                  <span style={{ fontSize: "44px", margin: "auto" }}>📦</span>
-                </div>
-                <div style={{ fontSize: "16px", fontWeight: 800 }}>6 piece towel set</div>
-                <div style={{ color: "#f59e0b", fontSize: "12.5px", margin: "4px 0 8px 0" }}>★★★★★ (48 reviews)</div>
-                <div style={{ fontSize: "18px", fontWeight: 800, marginBottom: "14px" }}>$29.99</div>
-                <div style={{ background: "#0f172a", color: "#ffffff", textAlign: "center", padding: "10px", borderRadius: "8px", fontWeight: 700, fontSize: "13px" }}>
-                  Add to cart
-                </div>
-
-                {/* Floating Review Widget */}
-                <div style={{ marginTop: "auto", background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: "12px", padding: "12px", boxShadow: "0 10px 25px rgba(0,0,0,0.12)" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
-                    <div style={{ width: "24px", height: "24px", borderRadius: "50%", background: "#e0f2fe", color: "#0284c7", fontSize: "10px", fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                      PP
-                    </div>
-                    <div style={{ fontSize: "12px", fontWeight: 700 }}>Priya P.</div>
-                    <div style={{ color: "#f59e0b", fontSize: "10px", marginLeft: "auto" }}>★★★★★</div>
-                  </div>
-                  <div style={{ fontSize: "11px", color: "#334155", lineHeight: 1.35, marginBottom: "6px" }}>
-                    "Very soft and absorbent. Colour matches photo perfectly."
-                  </div>
-                  <div style={{ background: "#ecfdf5", color: "#059669", fontSize: "9.5px", fontWeight: 700, padding: "2px 6px", borderRadius: "4px", display: "inline-block" }}>
-                    ✓ Verified purchase
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="hero-floating-chip chip-right">
-              <span style={{ fontSize: "22px" }}>⚡</span>
-              <div>
-                <div style={{ fontWeight: 800 }}>&lt; 30ms Load Time</div>
-                <div style={{ fontSize: "11px", color: "#64748b", fontWeight: 500 }}>Zero impact on store speed</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* 3. Transformation Section (Before vs After) */}
-      <section className="section-wrap" id="transformation">
-        <div className="container">
-          <div className="section-header">
-            <span className="section-badge">THE CONVERSION TRANSFORMATION</span>
-            <h2 className="section-title">See The Clear Difference In Buyer Trust</h2>
-            <p className="section-desc">
-              Compare a cold, silent product page with one elevated by authentic reviews and floating social proof.
+            <h1 className="hero-title">
+              Showcase product reviews, popups and trust badges to turn visitors into{" "}
+              <span className="highlight">confident buyers.</span>
+            </h1>
+            <p className="hero-sub">
+              Import, manage and showcase product reviews with AI help.
             </p>
+
+            {/* Checklist with Build Trust, Increase Sales, Save Time */}
+            <div className="trust-checklist">
+              <div className="trust-check-item">
+                <span className="trust-check-icon">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                </span>
+                Build Trust
+              </div>
+              <div className="trust-check-item">
+                <span className="trust-check-icon">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="18" y1="20" x2="18" y2="10" />
+                    <line x1="12" y1="20" x2="12" y2="4" />
+                    <line x1="6" y1="20" x2="6" y2="14" />
+                  </svg>
+                </span>
+                Increase Sales
+              </div>
+              <div className="trust-check-item">
+                <span className="trust-check-icon">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+                  </svg>
+                </span>
+                Save Time
+              </div>
+            </div>
           </div>
 
-          <div className="transform-stage">
-            {/* Before */}
-            <div className="transform-card">
-              <span className="transform-label label-before">✕ BEFORE (No Social Proof)</span>
-              <div className="phone-frame" style={{ borderColor: "#cbd5e1", opacity: 0.9 }}>
-                <div className="phone-notch" style={{ background: "#cbd5e1" }} />
-                <div style={{ padding: "16px", flex: 1 }}>
-                  <div style={{ background: "#f1f5f9", borderRadius: "12px", height: "180px", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: "16px" }}>
-                    <span style={{ fontSize: "42px", opacity: 0.5, margin: "auto" }}>📦</span>
-                  </div>
-                  <div style={{ fontSize: "16px", fontWeight: 800, color: "#334155" }}>6 piece towel set</div>
-                  <div style={{ height: "20px", margin: "6px 0 10px 0", fontSize: "11px", color: "#94a3b8", fontStyle: "italic" }}>No reviews yet</div>
-                  <div style={{ fontSize: "18px", fontWeight: 800, marginBottom: "18px" }}>$29.99</div>
-                  <div style={{ background: "#64748b", color: "#ffffff", textAlign: "center", padding: "10px", borderRadius: "8px", fontWeight: 700, fontSize: "13px" }}>
-                    Add to cart
-                  </div>
-                  <div style={{ marginTop: "36px", padding: "14px", background: "#fff1f2", border: "1px dashed #fca5a5", borderRadius: "8px", textAlign: "center", fontSize: "11.5px", color: "#991b1b", fontWeight: 600 }}>
-                    ⚠️ High buyer hesitation & cart abandonment
-                  </div>
+          {/* Right Column: Visual Product Mockup with Floating Review Cards */}
+          <div className="hero-visual-container">
+            {/* Top-Right Floating Card: Sarah J. */}
+            <div className="floating-review-top">
+              <div className="avatar-circle">
+                <img
+                  src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=120&q=80"
+                  alt="Sarah J."
+                />
+              </div>
+              <div>
+                <div style={{ fontSize: "11px", fontWeight: 700, color: "#0a281e" }}>Sarah J.</div>
+                <div style={{ color: "#f59e0b", fontSize: "11px", marginBottom: "2px" }}>★★★★★</div>
+                <div className="review-text-bubble">
+                  Great quality! Really love this product.
+                </div>
+                <div style={{ fontSize: "10px", color: "#059669", fontWeight: 700, marginTop: "3px" }}>
+                  ✓ Verified Purchase
                 </div>
               </div>
             </div>
 
-            {/* After */}
-            <div className="transform-card">
-              <span className="transform-label label-after">✓ AFTER (AI Dynamic Reviews)</span>
-              <div className="phone-frame" style={{ borderColor: "#059669", boxShadow: "0 20px 45px rgba(5, 150, 105, 0.18)" }}>
-                <div className="phone-notch" style={{ background: "#059669" }} />
-                <div style={{ padding: "16px", flex: 1, display: "flex", flexDirection: "column" }}>
-                  <div style={{ background: "#f1f5f9", borderRadius: "12px", height: "180px", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: "16px" }}>
-                    <span style={{ fontSize: "42px", margin: "auto" }}>📦</span>
-                  </div>
-                  <div style={{ fontSize: "16px", fontWeight: 800, color: "#0f172a" }}>6 piece towel set</div>
-                  <div style={{ color: "#f59e0b", fontSize: "12px", margin: "4px 0 8px 0", fontWeight: 700 }}>★★★★★ 4.9 (48 verified reviews)</div>
-                  <div style={{ fontSize: "18px", fontWeight: 800, marginBottom: "18px" }}>$29.99</div>
-                  <div style={{ background: "#0f172a", color: "#ffffff", textAlign: "center", padding: "10px", borderRadius: "8px", fontWeight: 700, fontSize: "13px" }}>
-                    Add to cart
-                  </div>
+            {/* Browser top dots */}
+            <div className="browser-header-dots">
+              <span className="dot red" />
+              <span className="dot yellow" />
+              <span className="dot green" />
+            </div>
 
-                  {/* Floating Popup */}
-                  <div style={{ marginTop: "auto", background: "#ffffff", border: "1px solid #bbf7d0", borderRadius: "12px", padding: "12px", boxShadow: "0 8px 24px rgba(0,0,0,0.1)" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
-                      <div style={{ width: "24px", height: "24px", borderRadius: "50%", background: "#e0f2fe", color: "#0369a1", fontSize: "10px", fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>PP</div>
-                      <div style={{ fontSize: "12px", fontWeight: 700 }}>Priya P.</div>
-                      <div style={{ color: "#f59e0b", fontSize: "10px", marginLeft: "auto" }}>★★★★★</div>
-                    </div>
-                    <div style={{ fontSize: "11px", color: "#334155", lineHeight: 1.35, marginBottom: "6px" }}>"Very soft and absorbent. Colour matches photo perfectly."</div>
-                    <div style={{ background: "#ecfdf5", color: "#059669", fontSize: "9.5px", fontWeight: 700, padding: "2px 6px", borderRadius: "4px", display: "inline-block" }}>✓ Verified purchase</div>
+            {/* Product Card Layout */}
+            <div className="product-preview-layout">
+              <div className="product-img-box">
+                <img
+                  src="https://images.unsplash.com/photo-1584917865442-de89df76afd3?auto=format&fit=crop&w=400&q=80"
+                  alt="Premium Leather Handbag"
+                />
+                <div className="thumbnails-row">
+                  <span className="thumb-box" style={{ background: "#e8ded4" }} />
+                  <span className="thumb-box" style={{ background: "#cbb7a1" }} />
+                  <span className="thumb-box" style={{ background: "#6c8074" }} />
+                </div>
+              </div>
+
+              <div className="rating-summary-box">
+                <div className="stars-row">★★★★★</div>
+                <div className="rating-score">4.8 (2.5k reviews)</div>
+                <div className="verified-pill">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                  Verified Purchase
+                </div>
+              </div>
+            </div>
+
+            {/* Bottom-Center Floating Review Popup */}
+            <div className="floating-popup-bottom">
+              <img
+                src="https://images.unsplash.com/photo-1584917865442-de89df76afd3?auto=format&fit=crop&w=100&q=80"
+                alt="Product"
+                className="popup-bag-thumb"
+              />
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <span style={{ color: "#059669", fontWeight: 800 }}>🟢 New Review</span>
+                  <span style={{ color: "#f59e0b", fontSize: "11px" }}>★★★★★</span>
+                </div>
+                <div style={{ color: "#2d4a3e", fontSize: "11px", fontWeight: 500 }}>
+                  This product is amazing! Highly recommend!
+                </div>
+              </div>
+            </div>
+
+            {/* Middle-Right Floating Trust Card */}
+            <div className="floating-trust-right">
+              <div>
+                <div style={{ fontSize: "10.5px", fontWeight: 700, color: "#446153" }}>
+                  Trusted by 10K+ Happy Customers
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "4px" }}>
+                  <div className="avatar-stack">
+                    <img className="avatar-stack-item" src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=60&q=80" alt="Customer" />
+                    <img className="avatar-stack-item" src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=60&q=80" alt="Customer" />
+                    <img className="avatar-stack-item" src="https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=60&q=80" alt="Customer" />
                   </div>
+                  <span style={{ color: "#f59e0b", fontSize: "11px", fontWeight: 700 }}>★★★★★</span>
                 </div>
               </div>
             </div>
@@ -613,246 +1150,501 @@ export default function App() {
         </div>
       </section>
 
-      {/* 4. The 5 Layouts Showcase */}
-      <section className="section-wrap" id="layouts" style={{ background: "#ffffff" }}>
+      {/* 3. Powerful Features (3x2 Grid) */}
+      <section className="features-section" id="features">
         <div className="container">
-          <div className="section-header">
-            <span className="section-badge">CURATED STYLES</span>
-            <h2 className="section-title">5 Distinct Layouts Designed For Any Theme</h2>
-            <p className="section-desc">
-              Seamlessly match minimalist fashion boutiques, bold tech electronics, or luxury beauty catalogs.
+          <div className="section-header-center">
+            <span className="section-tagline">— POWERFUL FEATURES —</span>
+            <h2 className="section-main-title">Everything You Need in One App</h2>
+          </div>
+
+          <div className="features-grid-3x2">
+            {/* Feature 1: Show Review Popups, Star Ratings & Trust Badges */}
+            <div className="feature-card-item">
+              <div className="feature-icon-sq">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                </svg>
+              </div>
+              <div className="feature-item-content">
+                <h3>Show Review Popups, Star Ratings and Trust Badges</h3>
+                <p>Display social proof on product pages and across your store.</p>
+              </div>
+            </div>
+
+            {/* Feature 2: Draft Reviews with AI */}
+            <div className="feature-card-item">
+              <div className="feature-icon-sq">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="4" y="4" width="16" height="16" rx="2" />
+                  <rect x="9" y="9" width="6" height="6" />
+                  <line x1="9" y1="1" x2="9" y2="4" />
+                  <line x1="15" y1="1" x2="15" y2="4" />
+                  <line x1="9" y1="20" x2="9" y2="23" />
+                  <line x1="15" y1="20" x2="15" y2="23" />
+                  <line x1="20" y1="9" x2="23" y2="9" />
+                  <line x1="20" y1="15" x2="23" y2="15" />
+                  <line x1="1" y1="9" x2="4" y2="9" />
+                  <line x1="1" y1="15" x2="4" y2="15" />
+                </svg>
+              </div>
+              <div className="feature-item-content">
+                <h3>Draft Reviews with AI</h3>
+                <p>Use OpenAI, Claude or Gemini to create review drafts, then edit.</p>
+              </div>
+            </div>
+
+            {/* Feature 3: Bulk Import Reviews from CSV */}
+            <div className="feature-card-item">
+              <div className="feature-icon-sq">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                  <polyline points="17 8 12 3 7 8" />
+                  <line x1="12" y1="3" x2="12" y2="15" />
+                </svg>
+              </div>
+              <div className="feature-item-content">
+                <h3>Bulk Import Reviews from CSV</h3>
+                <p>Save time with automatic column mapping.</p>
+              </div>
+            </div>
+
+            {/* Feature 4: Manage Reviews in One Place */}
+            <div className="feature-card-item">
+              <div className="feature-icon-sq">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="3" width="18" height="18" rx="2" />
+                  <line x1="8" y1="8" x2="16" y2="8" />
+                  <line x1="8" y1="12" x2="16" y2="12" />
+                  <line x1="8" y1="16" x2="12" y2="16" />
+                </svg>
+              </div>
+              <div className="feature-item-content">
+                <h3>Manage Reviews in One Place</h3>
+                <p>Edit, approve and publish all reviews from a single dashboard.</p>
+              </div>
+            </div>
+
+            {/* Feature 5: Theme App Extension */}
+            <div className="feature-card-item">
+              <div className="feature-icon-sq">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="16 18 22 12 16 6" />
+                  <polyline points="8 6 2 12 8 18" />
+                </svg>
+              </div>
+              <div className="feature-item-content">
+                <h3>Theme App Extension</h3>
+                <p>Add widgets in a few clicks, no code needed.</p>
+              </div>
+            </div>
+
+            {/* Feature 6: Customizable Popups */}
+            <div className="feature-card-item">
+              <div className="feature-icon-sq">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="3" />
+                  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                </svg>
+              </div>
+              <div className="feature-item-content">
+                <h3>Customizable Popups</h3>
+                <p>Match timing, position and style to your brand.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* 4. Key Benefits Section */}
+      <section className="benefits-section" id="benefits">
+        <div className="container benefits-layout-grid">
+          {/* Left Column */}
+          <div className="benefits-left-col">
+            <div className="pill-tag" style={{ background: "#e8f7ee", color: "#064e3b" }}>
+              ◎ KEY BENEFITS
+            </div>
+            <h2>More Trust. More Sales. Less Effort.</h2>
+            <p>
+              Build credibility with real customer feedback, showcase social proof and save hours of manual work — all from one simple app.
             </p>
           </div>
 
-          <div className="layout-nav-pills">
-            <button type="button" className={`pill-btn ${activeLayout === "layout-1" ? "active" : ""}`} onClick={() => setActiveLayout("layout-1")}>
-              1. Classic Social
-            </button>
-            <button type="button" className={`pill-btn ${activeLayout === "layout-2" ? "active" : ""}`} onClick={() => setActiveLayout("layout-2")}>
-              2. Photo Spotlight
-            </button>
-            <button type="button" className={`pill-btn ${activeLayout === "layout-3" ? "active" : ""}`} onClick={() => setActiveLayout("layout-3")}>
-              3. Social Dark
-            </button>
-            <button type="button" className={`pill-btn ${activeLayout === "layout-4" ? "active" : ""}`} onClick={() => setActiveLayout("layout-4")}>
-              4. Compact Pill
-            </button>
-            <button type="button" className={`pill-btn ${activeLayout === "layout-5" ? "active" : ""}`} onClick={() => setActiveLayout("layout-5")}>
-              5. Product Focus
-            </button>
+          {/* Right Column: 2x2 Grid */}
+          <div className="benefits-2x2">
+            <div className="benefit-sub-item">
+              <div className="benefit-circle-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                  <polyline points="9 12 11 14 15 10" />
+                </svg>
+              </div>
+              <div>
+                <h4>Build shopper confidence</h4>
+                <p>Real reviews and trust badges help shoppers buy with trust.</p>
+              </div>
+            </div>
+
+            <div className="benefit-sub-item">
+              <div className="benefit-circle-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="23 6 13.5 15.5 8.5 10.5 1 18" />
+                  <polyline points="17 6 23 6 23 12" />
+                </svg>
+              </div>
+              <div>
+                <h4>Increase conversion rates</h4>
+                <p>Social proof reduces hesitation and drives more sales.</p>
+              </div>
+            </div>
+
+            <div className="benefit-sub-item">
+              <div className="benefit-circle-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="10" />
+                  <polyline points="12 6 12 12 16 14" />
+                </svg>
+              </div>
+              <div>
+                <h4>Save time &amp; automate</h4>
+                <p>AI drafts and bulk import streamline your workflow.</p>
+              </div>
+            </div>
+
+            <div className="benefit-sub-item">
+              <div className="benefit-circle-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="3" />
+                  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                </svg>
+              </div>
+              <div>
+                <h4>Keep full control</h4>
+                <p>Moderate, edit and approve reviews easily.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* 5. See The Difference (From Empty to Engaging) */}
+      <section className="difference-section">
+        <div className="container">
+          <div className="section-header-center">
+            <span className="section-tagline">SEE THE DIFFERENCE</span>
+            <h2 className="section-main-title">From Empty to Engaging</h2>
+            <p className="section-desc-sub">
+              Turn your store into a trust-building machine with reviews, popups and badges.
+            </p>
           </div>
 
-          {/* Active Layout Showcase Card */}
-          <div style={{ display: "flex", justifyContent: "center" }}>
-            <div style={{
-              width: "380px",
-              background: activeLayout === "layout-3" ? "#0f172a" : "#ffffff",
-              border: activeLayout === "layout-3" ? "1px solid #334155" : "1px solid #e2e8f0",
-              borderRadius: activeLayout === "layout-4" ? "9999px" : "16px",
-              padding: activeLayout === "layout-4" ? "14px 22px" : "18px 20px",
-              boxShadow: "0 14px 34px rgba(15, 23, 42, 0.12)",
-              color: activeLayout === "layout-3" ? "#ffffff" : "#0f172a",
-              transition: "all 0.2s ease",
-            }}>
-              {/* Layout 1: Classic */}
-              {activeLayout === "layout-1" && (
-                <>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                      <div style={{ width: "34px", height: "34px", borderRadius: "50%", background: "#dbeafe", color: "#1e40af", fontSize: "12px", fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                        PP
-                      </div>
-                      <div>
-                        <div style={{ fontSize: "14px", fontWeight: 700 }}>Priya P.</div>
-                        <div style={{ color: "#f59e0b", fontSize: "11px" }}>★★★★★</div>
-                      </div>
-                    </div>
-                    <span style={{ color: "#94a3b8", fontSize: "14px" }}>✕</span>
-                  </div>
-                  <div style={{ fontSize: "12.5px", color: "#334155", lineHeight: 1.4, margin: "6px 0 10px 0" }}>
-                    "Very soft and absorbent. Colour matches the photo perfectly."
-                  </div>
-                  <span style={{ background: "#ecfdf5", color: "#059669", fontSize: "11px", fontWeight: 600, padding: "3px 9px", borderRadius: "9999px", display: "inline-flex", alignItems: "center", gap: "4px" }}>
-                    ✓ Verified purchase
-                  </span>
-                </>
-              )}
-
-              {/* Layout 2: Photo Spotlight */}
-              {activeLayout === "layout-2" && (
-                <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
-                  <div style={{ width: "48px", height: "48px", borderRadius: "8px", background: "#fef3c7", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "20px", flexShrink: 0 }}>
-                    🧺
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: "13px", fontWeight: 700 }}>
-                      Sophia Martinez <span style={{ color: "#f59e0b", fontSize: "11px" }}>★★★★★</span>
-                    </div>
-                    <div style={{ fontSize: "12px", color: "#475569", marginTop: "2px", lineHeight: 1.3 }}>
-                      "Fluffy, premium cotton unboxing experience!"
-                    </div>
-                  </div>
+          <div className="comparison-cards-row">
+            {/* Card Left: Without the App */}
+            <div className="comparison-card">
+              <span className="comp-badge-pill without">Without the App</span>
+              <div className="comp-browser-top">
+                <span className="dot red" />
+                <span className="dot yellow" />
+                <span className="dot green" />
+              </div>
+              <div className="comp-content-grid">
+                <div className="comp-img-placeholder">
+                  <img
+                    src="https://images.unsplash.com/photo-1584917865442-de89df76afd3?auto=format&fit=crop&w=300&q=80"
+                    alt="Product"
+                  />
                 </div>
-              )}
-
-              {/* Layout 3: Social Dark */}
-              {activeLayout === "layout-3" && (
                 <div>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <div style={{ fontSize: "13px", fontWeight: 700, color: "#ffffff" }}>
-                      Rachel V.
-                    </div>
-                    <div style={{ color: "#f59e0b", fontSize: "11px" }}>★★★★★</div>
-                  </div>
-                  <div style={{ fontSize: "12px", color: "#cbd5e1", marginTop: "4px", lineHeight: 1.35 }}>
-                    "Super luxury finish. Customer support on WhatsApp was 10/10."
+                  <div className="skeleton-line" style={{ width: "85%" }} />
+                  <div className="skeleton-line" style={{ width: "65%" }} />
+                  <div className="skeleton-line" style={{ width: "45%" }} />
+                  <div className="empty-stars-text">No reviews yet</div>
+                  <div style={{ color: "#cbd5e1", fontSize: "14px", letterSpacing: "2px", marginTop: "4px" }}>
+                    ☆☆☆☆☆
                   </div>
                 </div>
-              )}
+              </div>
+            </div>
 
-              {/* Layout 4: Compact Pill */}
-              {activeLayout === "layout-4" && (
-                <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                  <div style={{ width: "28px", height: "28px", borderRadius: "50%", background: "#e0e7ff", color: "#3730a3", fontSize: "11px", fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                    ⚡
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <span style={{ fontSize: "12px", fontWeight: 700, color: "#0f172a" }}>Verified Buyer</span>{" "}
-                    <span style={{ color: "#f59e0b", fontSize: "10.5px" }}>★★★★★</span>
-                    <div style={{ fontSize: "11.5px", color: "#475569", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                      Arrived in 2 days. Exactly what I needed!
-                    </div>
+            {/* Center Arrow */}
+            <div className="comparison-arrow">➔</div>
+
+            {/* Card Right: With the App */}
+            <div className="comparison-card">
+              <span className="comp-badge-pill with">With the App</span>
+              <div className="comp-browser-top">
+                <span className="dot red" />
+                <span className="dot yellow" />
+                <span className="dot green" />
+              </div>
+              <div className="comp-content-grid">
+                <div className="comp-img-placeholder">
+                  <img
+                    src="https://images.unsplash.com/photo-1584917865442-de89df76afd3?auto=format&fit=crop&w=300&q=80"
+                    alt="Product"
+                  />
+                  <div className="thumbnails-row">
+                    <span className="thumb-box" style={{ background: "#e8ded4" }} />
+                    <span className="thumb-box" style={{ background: "#cbb7a1" }} />
+                    <span className="thumb-box" style={{ background: "#6c8074" }} />
                   </div>
                 </div>
-              )}
-
-              {/* Layout 5: Product Focus */}
-              {activeLayout === "layout-5" && (
-                <>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
-                    <span style={{ fontSize: "10.5px", fontWeight: 700, color: "#4f46e5", textTransform: "uppercase" }}>
-                      Verified Purchase
-                    </span>
-                    <span style={{ color: "#f59e0b", fontSize: "11px" }}>★★★★★</span>
+                <div>
+                  <div style={{ color: "#f59e0b", fontSize: "13px", letterSpacing: "2px" }}>★★★★★</div>
+                  <div style={{ fontSize: "13px", fontWeight: 700, color: "#0a281e", margin: "2px 0 6px 0" }}>
+                    4.8 (2.5k reviews)
                   </div>
-                  <div style={{ fontSize: "13px", fontWeight: 700, color: "#0f172a", marginBottom: "3px" }}>
-                    Deluxe 6-Piece Set
+                  <div className="verified-pill">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                    Verified Purchase
                   </div>
-                  <div style={{ fontSize: "12px", color: "#334155", lineHeight: 1.4 }}>
-                    "Highly recommended. Beautiful packaging and reliable quality."
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* 5. Feature Spotlights (Zig-Zag) */}
-      <section className="section-wrap" id="ai-engine">
-        <div className="container">
-          {/* Spotlight 1: AI Engine */}
-          <div className="spotlight-row">
-            <div className="spotlight-content">
-              <span className="section-badge">AI REVIEW ENGINE</span>
-              <h3>Generate High-Converting Review Drafts in Seconds</h3>
-              <p>
-                Powered by dual AI models (Claude 3.5 &amp; Google Gemini) to craft believable, nuance-rich customer feedback tailored to your exact product catalog.
-              </p>
-              <ul className="spotlight-bullets">
-                <li><span className="bullet-check">✓</span> 4 distinct tone presets (Friendly, Enthusiastic, Professional, Punchy)</li>
-                <li><span className="bullet-check">✓</span> Keyword guardrails to avoid competitor mentions and prohibited words</li>
-                <li><span className="bullet-check">✓</span> 100% human moderation control before any review goes live</li>
-              </ul>
-            </div>
-            <div className="spotlight-visual-card">
-              <div style={{ width: "100%", maxWidth: "380px", margin: "0 auto" }}>
-                <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "14px", padding: "18px" }}>
-                  <div style={{ fontSize: "13px", fontWeight: 700, marginBottom: "10px" }}>⚡ AI Prompt Customization</div>
-                  <div style={{ background: "#ffffff", border: "1px solid #cbd5e1", borderRadius: "8px", padding: "10px", fontSize: "12px", color: "#475569", marginBottom: "12px" }}>
-                    Tone: Friendly &amp; Relatable<br />
-                    Product: 6 piece towel set<br />
-                    Key Feature: Ultra-absorbent &amp; fast drying
-                  </div>
-                  <div style={{ background: "#4f46e5", color: "#ffffff", textAlign: "center", padding: "10px", borderRadius: "8px", fontSize: "12px", fontWeight: 700 }}>
-                    ✨ Generate 5 Authentic Drafts
+                  <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: "10px", padding: "8px 10px", marginTop: "10px", display: "flex", gap: "8px", alignItems: "center" }}>
+                    <img
+                      src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=60&q=80"
+                      alt="Customer"
+                      style={{ width: "22px", height: "22px", borderRadius: "50%" }}
+                    />
+                    <div>
+                      <div style={{ color: "#f59e0b", fontSize: "9px" }}>★★★★★</div>
+                      <div style={{ fontSize: "10.5px", fontWeight: 700, color: "#065f46" }}>Amazing quality!</div>
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
           </div>
-
-
         </div>
       </section>
 
-      {/* 6. Shopify 3x2 Grid */}
-      <section className="section-wrap" style={{ background: "#ffffff" }}>
+      {/* 6. How It Works (3 Steps) */}
+      <section className="how-it-works-section" id="how-it-works">
         <div className="container">
-          <div className="section-header">
-            <span className="section-badge">SHOPIFY NATIVE</span>
-            <h2 className="section-title">Engineered For Performance &amp; Security</h2>
-            <p className="section-desc">
-              Built according to official Shopify App Store standards to ensure rock-solid stability and zero store slowdown.
-            </p>
+          <div className="section-header-center">
+            <span className="section-tagline">HOW IT WORKS</span>
+            <h2 className="section-main-title">Get Started in 3 Simple Steps</h2>
           </div>
 
-          <div className="features-grid">
-            <div className="grid-box">
-              <div className="grid-box-icon">⚡</div>
-              <div className="grid-box-title">Zero Speed Penalty</div>
-              <div className="grid-box-text">Loads asynchronously through edge CDNs with under 30ms latency. Zero impact on your Lighthouse score.</div>
+          <div className="steps-flex-row">
+            {/* Step 1 */}
+            <div className="step-box-card">
+              <div className="step-icon-bubble">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                  <polyline points="7 10 12 15 17 10" />
+                  <line x1="12" y1="15" x2="12" y2="3" />
+                </svg>
+              </div>
+              <div className="step-content-area">
+                <div className="step-num-title-row">
+                  <span className="step-num-circle">1</span>
+                  <div className="step-title">Install the app</div>
+                </div>
+                <div className="step-desc">
+                  Add the app from the Shopify app store.
+                </div>
+              </div>
             </div>
-            <div className="grid-box">
-              <div className="grid-box-icon">🎨</div>
-              <div className="grid-box-title">Theme App Extension</div>
-              <div className="grid-box-text">Activates via Shopify 2.0 Theme Editor with 1 toggle. No manual Liquid code editing required.</div>
+
+            <div className="step-arrow-divider">➔</div>
+
+            {/* Step 2 */}
+            <div className="step-box-card">
+              <div className="step-icon-bubble">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="3" />
+                  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                </svg>
+              </div>
+              <div className="step-content-area">
+                <div className="step-num-title-row">
+                  <span className="step-num-circle">2</span>
+                  <div className="step-title">Configure &amp; customize</div>
+                </div>
+                <div className="step-desc">
+                  Set up AI, import reviews and style your popups.
+                </div>
+              </div>
             </div>
-            <div className="grid-box">
-              <div className="grid-box-icon">🔒</div>
-              <div className="grid-box-title">GDPR &amp; Privacy Compliant</div>
-              <div className="grid-box-text">Fully equipped with mandatory data erasure webhooks. We never sell or share merchant data.</div>
-            </div>
-            <div className="grid-box">
-              <div className="grid-box-icon">📱</div>
-              <div className="grid-box-title">Mobile-First Responsiveness</div>
-              <div className="grid-box-text">Adaptive popups that float elegantly on desktop and dock seamlessly on mobile screens.</div>
-            </div>
-            <div className="grid-box">
-              <div className="grid-box-icon">📦</div>
-              <div className="grid-box-title">1-Click CSV Migration</div>
-              <div className="grid-box-text">Seamlessly import reviews from Judge.me, Loox, AliExpress, Amazon, and custom CSV spreadsheets.</div>
-            </div>
-            <div className="grid-box">
-              <div className="grid-box-icon">🌐</div>
-              <div className="grid-box-title">Multi-Language Ready</div>
-              <div className="grid-box-text">Automatically formats and displays review dates, names, and verification pills in your store's locale.</div>
+
+            <div className="step-arrow-divider">➔</div>
+
+            {/* Step 3 */}
+            <div className="step-box-card">
+              <div className="step-icon-bubble">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                  <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07" />
+                </svg>
+              </div>
+              <div className="step-content-area">
+                <div className="step-num-title-row">
+                  <span className="step-num-circle">3</span>
+                  <div className="step-title">Showcase &amp; grow</div>
+                </div>
+                <div className="step-desc">
+                  Display reviews, popups and badges on your store.
+                </div>
+              </div>
             </div>
           </div>
         </div>
       </section>
 
-      {/* 7. Bottom CTA */}
-      <div className="container">
-        <div className="bottom-cta">
-          <h2>Ready To Turn Browsers Into Buyers?</h2>
-          <p>Install AI Dynamic Review System today and start displaying authentic social proof in under 3 minutes.</p>
-          <a href="#install" className="btn-header-install" style={{ background: "#ffffff", color: "#0f172a", fontSize: "15px", padding: "14px 34px" }}>
-            Add to Shopify Store Now 🚀
-          </a>
-        </div>
-      </div>
-
-      {/* Footer */}
-      <footer className="landing-footer">
+      {/* 7. FAQ Section */}
+      <section className="faq-section" id="faq">
         <div className="container">
-          <p>© 2026 AI Dynamic Review System. Built exclusively for Shopify merchants.</p>
-          <p style={{ marginTop: "8px" }}>
-            <a href="/privacy-policy" style={{ color: "#4f46e5", textDecoration: "underline" }}>Privacy Policy</a> • 
-            Support: <a href="mailto:developerr6620@gmail.com" style={{ color: "#4f46e5", textDecoration: "none" }}>developerr6620@gmail.com</a>
-          </p>
+          <div className="section-header-center">
+            <span className="section-tagline">QUESTIONS &amp; ANSWERS</span>
+            <h2 className="section-main-title">Frequently Asked Questions</h2>
+          </div>
+
+          <div className="faq-list">
+            {[
+              {
+                q: "Does this app slow down my Shopify store?",
+                a: "No. The widget loads asynchronously through high-speed edge CDNs with under 30ms latency, ensuring zero impact on your store's page speed and Lighthouse scores.",
+              },
+              {
+                q: "Can I import reviews from AliExpress or CSV files?",
+                a: "Yes! You can bulk-import existing reviews in seconds using our automatic column-mapping CSV importer, complete with star ratings and customer names.",
+              },
+              {
+                q: "How does the AI review drafting work?",
+                a: "Our built-in AI assistant uses OpenAI, Claude, or Gemini to suggest natural, contextually accurate review drafts based on your product title, features, and tone.",
+              },
+              {
+                q: "Does it support Shopify Online Store 2.0 theme app extensions?",
+                a: "Yes. It installs cleanly as a native Theme App Extension. You can enable or disable widgets directly inside your Shopify Theme Editor with zero code edits.",
+              },
+            ].map((faq, idx) => (
+              <div
+                key={idx}
+                className="faq-item"
+                onClick={() => toggleFaq(idx)}
+              >
+                <div className="faq-question">
+                  <span>{faq.q}</span>
+                  <span className="faq-toggle-icon">
+                    {openFaq === idx ? "−" : "+"}
+                  </span>
+                </div>
+                {openFaq === idx && (
+                  <div className="faq-answer">{faq.a}</div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* 8. Bottom CTA Banner (Ready to Build Trust and Drive More Sales?) */}
+      <section className="bottom-cta-wrap">
+        <div className="container">
+          <div className="cta-dark-card">
+            <div className="cta-left-content">
+              <div className="cta-star-badge">★</div>
+              <div>
+                <h3 className="cta-title">
+                  Ready to Build Trust and Drive More Sales?
+                </h3>
+                <p className="cta-sub">
+                  Install the app today and start showcasing real reviews, popups and trust badges on your store.
+                </p>
+              </div>
+            </div>
+
+            <div className="cta-right-action">
+              <button
+                onClick={() => setIsInstallModalOpen(true)}
+                className="btn-cta-white"
+              >
+                Install App →
+              </button>
+              <span className="cta-mini-caption">
+                No coding. No hassle. Just results.
+              </span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* 9. Footer */}
+      <footer className="site-footer">
+        <div className="container">
+          <div className="footer-row">
+            <div className="logo-wrap">
+              <div className="logo-icon-box" style={{ width: "32px", height: "32px" }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                </svg>
+              </div>
+              <div className="logo-text" style={{ fontSize: "15px" }}>
+                AI Dynamic <span>Review System</span>
+              </div>
+            </div>
+
+            <div className="footer-links">
+              <a href="#features" className="footer-link">Features</a>
+              <a href="#benefits" className="footer-link">Benefits</a>
+              <a href="#how-it-works" className="footer-link">How It Works</a>
+              <a href="#faq" className="footer-link">FAQ</a>
+              <a href="/privacy-policy" className="footer-link">Privacy Policy</a>
+              <a href="mailto:developerr6620@gmail.com" className="footer-link">Support</a>
+            </div>
+          </div>
+
+          <div className="copyright-text">
+            © 2026 AI Dynamic Review System. All rights reserved.
+          </div>
         </div>
       </footer>
+
+      {/* 1-Click Install Modal */}
+      {isInstallModalOpen && (
+        <div
+          className="modal-overlay"
+          onClick={() => setIsInstallModalOpen(false)}
+        >
+          <div
+            className="modal-box"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              className="modal-close-btn"
+              onClick={() => setIsInstallModalOpen(false)}
+            >
+              ✕
+            </button>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "12px" }}>
+              <div className="logo-icon-box" style={{ width: "32px", height: "32px" }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                </svg>
+              </div>
+              <h3 className="modal-title" style={{ margin: 0 }}>Install on Shopify</h3>
+            </div>
+            <p className="modal-sub">
+              Enter your Shopify store domain to connect your store and start showcasing reviews.
+            </p>
+            <form onSubmit={handleInstallSubmit}>
+              <input
+                type="text"
+                placeholder="your-store-name.myshopify.com"
+                value={shopUrl}
+                onChange={(e) => setShopUrl(e.target.value)}
+                className="modal-input-field"
+                required
+                autoFocus
+              />
+              <button type="submit" className="btn-modal-submit">
+                Connect Store &amp; Continue →
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
