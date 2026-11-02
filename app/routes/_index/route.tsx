@@ -1,6 +1,6 @@
 import type { LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
 import { redirect } from "@remix-run/node";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 export const meta: MetaFunction = () => [
   { title: "AI Dynamic Review System - Showcase Reviews, Popups & Trust Badges" },
@@ -22,7 +22,52 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 export default function App() {
   const [shopUrl, setShopUrl] = useState("");
   const [isInstallModalOpen, setIsInstallModalOpen] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [openFaq, setOpenFaq] = useState<number | null>(null);
+
+  const scrollToSection = (e: React.MouseEvent<HTMLAnchorElement>, id: string) => {
+    e.preventDefault();
+    setIsMobileMenuOpen(false);
+    const element = document.getElementById(id);
+    if (element) {
+      const headerOffset = 85;
+      const elementPosition = element.getBoundingClientRect().top;
+      const offsetPosition = elementPosition + window.pageYOffset - headerOffset;
+      window.scrollTo({
+        top: offsetPosition,
+        behavior: "smooth",
+      });
+      window.history.pushState(null, "", `#${id}`);
+    }
+  };
+
+  const scrollToTop = (e: React.MouseEvent<HTMLAnchorElement | HTMLDivElement>) => {
+    e.preventDefault();
+    setIsMobileMenuOpen(false);
+    window.scrollTo({
+      top: 0,
+      behavior: "smooth",
+    });
+    window.history.pushState(null, "", window.location.pathname);
+  };
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.location.hash) {
+      const id = window.location.hash.replace("#", "");
+      const element = document.getElementById(id);
+      if (element) {
+        setTimeout(() => {
+          const headerOffset = 85;
+          const elementPosition = element.getBoundingClientRect().top;
+          const offsetPosition = elementPosition + window.pageYOffset - headerOffset;
+          window.scrollTo({
+            top: offsetPosition,
+            behavior: "smooth",
+          });
+        }, 150);
+      }
+    }
+  }, []);
 
   const handleInstallSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -48,12 +93,15 @@ export default function App() {
         * { box-sizing: border-box; margin: 0; padding: 0; }
         html { scroll-behavior: smooth; }
         body { margin: 0; padding: 0; }
+        #features, #benefits, #how-it-works, #faq {
+          scroll-margin-top: 90px;
+        }
         .landing-root {
           font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
           background: #f8faf8;
           color: #0e291e;
           line-height: 1.55;
-          overflow-x: hidden;
+          overflow-x: clip;
           position: relative;
         }
 
@@ -959,8 +1007,42 @@ export default function App() {
           background: #043c2c;
         }
 
+        /* Mobile Navigation */
+        .mobile-menu-btn {
+          display: none;
+          background: transparent;
+          border: none;
+          cursor: pointer;
+          color: #064e3b;
+          padding: 6px;
+        }
+        .mobile-nav-drawer {
+          display: flex;
+          flex-direction: column;
+          background: #ffffff;
+          border-bottom: 1px solid #e1eee6;
+          padding: 16px 24px;
+          gap: 12px;
+          box-shadow: 0 12px 28px rgba(6, 78, 59, 0.08);
+        }
+        .mobile-nav-link {
+          color: #2d4a3e;
+          font-size: 15px;
+          font-weight: 600;
+          text-decoration: none;
+          padding: 10px 0;
+          border-bottom: 1px solid #f1f7f3;
+          display: block;
+        }
+        .mobile-nav-link:hover {
+          color: #059669;
+        }
+
         /* Responsive Breakpoints */
         @media (max-width: 900px) {
+          .nav-menu { display: none; }
+          .mobile-menu-btn { display: flex; align-items: center; justify-content: center; }
+          .btn-install-header { padding: 8px 16px; font-size: 13px; }
           .hero-grid { grid-template-columns: 1fr; gap: 40px; }
           .features-grid-3x2 { grid-template-columns: 1fr; }
           .benefits-layout-grid { grid-template-columns: 1fr; gap: 36px; }
@@ -969,7 +1051,6 @@ export default function App() {
           .step-arrow-divider { transform: rotate(90deg); margin: 6px 0; }
           .cta-dark-card { flex-direction: column; text-align: center; padding: 36px 24px; }
           .cta-left-content { flex-direction: column; text-align: center; }
-          .nav-menu { display: none; }
           .hero-title { font-size: 36px; }
         }
       `}</style>
@@ -981,7 +1062,7 @@ export default function App() {
       {/* 1. Header (Navbar) */}
       <header className="site-header">
         <div className="container nav-wrapper">
-          <a href="/" className="logo-wrap">
+          <a href="/" onClick={scrollToTop} className="logo-wrap">
             <div className="logo-icon-box">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
@@ -993,21 +1074,55 @@ export default function App() {
           </a>
 
           <nav className="nav-menu">
-            <a href="#features" className="nav-link">Features</a>
-            <a href="#benefits" className="nav-link">Benefits</a>
-            <a href="#how-it-works" className="nav-link">How It Works</a>
-            <a href="#faq" className="nav-link">FAQ</a>
+            <a href="#features" onClick={(e) => scrollToSection(e, "features")} className="nav-link">Features</a>
+            <a href="#benefits" onClick={(e) => scrollToSection(e, "benefits")} className="nav-link">Benefits</a>
+            <a href="#how-it-works" onClick={(e) => scrollToSection(e, "how-it-works")} className="nav-link">How It Works</a>
+            <a href="#faq" onClick={(e) => scrollToSection(e, "faq")} className="nav-link">FAQ</a>
             {/* Privacy Policy link added as requested */}
             <a href="/privacy-policy" className="nav-link">Privacy Policy</a>
           </nav>
 
-          <button
-            onClick={() => setIsInstallModalOpen(true)}
-            className="btn-install-header"
-          >
-            Install App →
-          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+            <button
+              onClick={() => setIsInstallModalOpen(true)}
+              className="btn-install-header"
+            >
+              Install App →
+            </button>
+
+            <button
+              className="mobile-menu-btn"
+              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+              aria-label="Toggle navigation menu"
+            >
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                {isMobileMenuOpen ? (
+                  <>
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </>
+                ) : (
+                  <>
+                    <line x1="3" y1="12" x2="21" y2="12" />
+                    <line x1="3" y1="6" x2="21" y2="6" />
+                    <line x1="3" y1="18" x2="21" y2="18" />
+                  </>
+                )}
+              </svg>
+            </button>
+          </div>
         </div>
+
+        {/* Mobile Navigation Drawer */}
+        {isMobileMenuOpen && (
+          <div className="mobile-nav-drawer">
+            <a href="#features" onClick={(e) => scrollToSection(e, "features")} className="mobile-nav-link">Features</a>
+            <a href="#benefits" onClick={(e) => scrollToSection(e, "benefits")} className="mobile-nav-link">Benefits</a>
+            <a href="#how-it-works" onClick={(e) => scrollToSection(e, "how-it-works")} className="mobile-nav-link">How It Works</a>
+            <a href="#faq" onClick={(e) => scrollToSection(e, "faq")} className="mobile-nav-link">FAQ</a>
+            <a href="/privacy-policy" className="mobile-nav-link">Privacy Policy</a>
+          </div>
+        )}
       </header>
 
       {/* 2. Hero Section */}
@@ -1574,7 +1689,7 @@ export default function App() {
       <footer className="site-footer">
         <div className="container">
           <div className="footer-row">
-            <div className="logo-wrap">
+            <a href="/" onClick={scrollToTop} className="logo-wrap" style={{ textDecoration: "none" }}>
               <div className="logo-icon-box" style={{ width: "32px", height: "32px" }}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                   <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
@@ -1583,13 +1698,13 @@ export default function App() {
               <div className="logo-text" style={{ fontSize: "15px" }}>
                 AI Dynamic <span>Review System</span>
               </div>
-            </div>
+            </a>
 
             <div className="footer-links">
-              <a href="#features" className="footer-link">Features</a>
-              <a href="#benefits" className="footer-link">Benefits</a>
-              <a href="#how-it-works" className="footer-link">How It Works</a>
-              <a href="#faq" className="footer-link">FAQ</a>
+              <a href="#features" onClick={(e) => scrollToSection(e, "features")} className="footer-link">Features</a>
+              <a href="#benefits" onClick={(e) => scrollToSection(e, "benefits")} className="footer-link">Benefits</a>
+              <a href="#how-it-works" onClick={(e) => scrollToSection(e, "how-it-works")} className="footer-link">How It Works</a>
+              <a href="#faq" onClick={(e) => scrollToSection(e, "faq")} className="footer-link">FAQ</a>
               <a href="/privacy-policy" className="footer-link">Privacy Policy</a>
               <a href="mailto:developerr6620@gmail.com" className="footer-link">Support</a>
             </div>
