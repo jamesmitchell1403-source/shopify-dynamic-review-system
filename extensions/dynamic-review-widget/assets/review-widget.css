@@ -71,10 +71,14 @@
 
 /* Circular Initials Avatar */
 .rw-avatar {
-  width: 42px;
-  height: 42px;
-  min-width: 42px;
-  border-radius: 50%;
+  width: 42px !important;
+  height: 42px !important;
+  min-width: 42px !important;
+  min-height: 42px !important;
+  border-radius: 50% !important;
+  flex-shrink: 0 !important;
+  aspect-ratio: 1 / 1 !important;
+  box-sizing: border-box !important;
   background: #E8799E;
   color: #FFFFFF;
   font-weight: 700;
@@ -511,6 +515,11 @@
   width: 34px !important;
   height: 34px !important;
   min-width: 34px !important;
+  min-height: 34px !important;
+  border-radius: 50% !important;
+  flex-shrink: 0 !important;
+  aspect-ratio: 1 / 1 !important;
+  box-sizing: border-box !important;
   font-size: 13px !important;
 }
 

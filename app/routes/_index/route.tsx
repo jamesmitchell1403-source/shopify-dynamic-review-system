@@ -554,11 +554,16 @@ export default function App() {
         .avatar-stack-item {
           width: 24px;
           height: 24px;
+          min-width: 24px;
+          min-height: 24px;
           border-radius: 50%;
           border: 2px solid #ffffff;
           margin-left: -8px;
           background: #cbd5e1;
           object-fit: cover;
+          flex-shrink: 0;
+          aspect-ratio: 1 / 1;
+          box-sizing: border-box;
         }
         .avatar-stack-item:first-child {
           margin-left: 0;
@@ -1583,12 +1588,40 @@ export default function App() {
                 </div>
 
                 <div style={{ display: "flex", gap: "14px", alignItems: "flex-start" }}>
-                  <img
-                    src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&auto=format&fit=crop&q=80"
-                    alt="Sarah Jenkins"
-                    style={{ width: "48px", height: "48px", borderRadius: "50%", objectFit: "cover", border: "1.5px solid #a7f3d0" }}
-                  />
-                  <div>
+                  <div
+                    style={{
+                      width: "48px",
+                      height: "48px",
+                      minWidth: "48px",
+                      minHeight: "48px",
+                      maxWidth: "48px",
+                      maxHeight: "48px",
+                      borderRadius: "50%",
+                      overflow: "hidden",
+                      flexShrink: 0,
+                      aspectRatio: "1 / 1",
+                      border: "1.5px solid #a7f3d0",
+                      background: "#e8f7ee",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      boxSizing: "border-box",
+                    }}
+                  >
+                    <img
+                      src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&auto=format&fit=crop&q=80"
+                      alt="Sarah Jenkins"
+                      style={{
+                        width: "100%",
+                        height: "100%",
+                        borderRadius: "50%",
+                        objectFit: "cover",
+                        display: "block",
+                        aspectRatio: "1 / 1",
+                      }}
+                    />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap", marginBottom: "2px" }}>
                       <span style={{ fontSize: "14.5px", fontWeight: 800, color: "#0a281e" }}>Sarah Jenkins</span>
                       <span style={{ background: "#e8f7ee", color: "#059669", fontSize: "10.5px", fontWeight: 750, padding: "2px 8px", borderRadius: "4px" }}>
@@ -1884,11 +1917,25 @@ export default function App() {
                     Verified Purchase
                   </div>
                   <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: "10px", padding: "8px 10px", marginTop: "10px", display: "flex", gap: "8px", alignItems: "center" }}>
-                    <img
-                      src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=60&q=80"
-                      alt="Customer"
-                      style={{ width: "22px", height: "22px", borderRadius: "50%" }}
-                    />
+                    <div
+                      style={{
+                        width: "22px",
+                        height: "22px",
+                        minWidth: "22px",
+                        minHeight: "22px",
+                        borderRadius: "50%",
+                        overflow: "hidden",
+                        flexShrink: 0,
+                        aspectRatio: "1 / 1",
+                        boxSizing: "border-box",
+                      }}
+                    >
+                      <img
+                        src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=60&q=80"
+                        alt="Customer"
+                        style={{ width: "100%", height: "100%", objectFit: "cover", display: "block", borderRadius: "50%" }}
+                      />
+                    </div>
                     <div>
                       <div style={{ color: "#f59e0b", fontSize: "9px" }}>★★★★★</div>
                       <div style={{ fontSize: "10.5px", fontWeight: 700, color: "#065f46" }}>Amazing quality!</div>
