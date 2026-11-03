@@ -3,7 +3,7 @@ import { redirect } from "@remix-run/node";
 import { useState, useEffect } from "react";
 
 export const meta: MetaFunction = () => [
-  { title: "AI Dynamic Review System - Showcase Reviews, Popups & Trust Badges" },
+  { title: "Revio: AI Product Reviews - Showcase Reviews, Popups & Trust Badges" },
   {
     name: "description",
     content:
@@ -1254,7 +1254,7 @@ export default function App() {
               </svg>
             </div>
             <div className="logo-text">
-              AI Dynamic <span>Review System</span>
+              Revio: <span>AI Product Reviews</span>
             </div>
           </a>
 
@@ -2102,7 +2102,7 @@ export default function App() {
                 </svg>
               </div>
               <div className="logo-text" style={{ fontSize: "15px" }}>
-                AI Dynamic <span>Review System</span>
+                Revio: <span>AI Product Reviews</span>
               </div>
             </a>
 
@@ -2118,7 +2118,7 @@ export default function App() {
           </div>
 
           <div className="copyright-text">
-            © 2026 AI Dynamic Review System. All rights reserved.
+            © 2026 Revio: AI Product Reviews. All rights reserved.
           </div>
         </div>
       </footer>

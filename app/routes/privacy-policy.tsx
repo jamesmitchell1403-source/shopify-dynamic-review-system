@@ -1,8 +1,8 @@
 import type { MetaFunction } from "@remix-run/node";
 
 export const meta: MetaFunction = () => [
-  { title: "Privacy Policy – AI Dynamic Review System" },
-  { name: "description", content: "Official Privacy Policy for AI Dynamic Review System Shopify Application" },
+  { title: "Privacy Policy – Revio: AI Product Reviews" },
+  { name: "description", content: "Official Privacy Policy for Revio: AI Product Reviews Shopify Application" },
 ];
 
 export default function PrivacyPolicy() {
@@ -12,7 +12,7 @@ export default function PrivacyPolicy() {
         {/* 1. TOP HEADER ROW */}
         <header style={styles.headerRow}>
           <div>
-            <h1 style={styles.appTitle}>AI Dynamic Review System</h1>
+            <h1 style={styles.appTitle}>Revio: AI Product Reviews</h1>
             <p style={styles.appSubtitle}>AI-Powered Customer Reviews, Video Proof & Social Popups for Shopify</p>
           </div>
           <div style={styles.badgePill}>
@@ -25,7 +25,7 @@ export default function PrivacyPolicy() {
           <h2 style={styles.pageHeading}>Privacy Policy</h2>
           <p style={styles.effectiveDates}>Effective Date: October 13, 2026 | Last Updated: November 2, 2026</p>
           <p style={styles.introParagraph}>
-            AI Dynamic Review System (&ldquo;we&rdquo;, &ldquo;us&rdquo;, or &ldquo;our&rdquo;) provides this Privacy Policy to explain how merchant and store information is collected, used, and protected when you install and use the AI Dynamic Review System application (the &ldquo;App&rdquo;) on Shopify.
+            Revio: AI Product Reviews (&ldquo;we&rdquo;, &ldquo;us&rdquo;, or &ldquo;our&rdquo;) provides this Privacy Policy to explain how merchant and store information is collected, used, and protected when you install and use the Revio: AI Product Reviews application (the &ldquo;App&rdquo;) on Shopify.
           </p>
         </div>
 
@@ -57,7 +57,7 @@ export default function PrivacyPolicy() {
               <strong style={styles.calloutTitle}>End-Consumer Personal Data Protection:</strong>
             </div>
             <p style={styles.calloutText}>
-              AI Dynamic Review System <strong>DOES NOT</strong> collect, process, store, or sell any sensitive personal identifiable information (PII) belonging to your store&rsquo;s customers. We do not collect customer passwords, credit cards, or financial records. Review submissions only store the reviewer display name, rating, and review text provided voluntarily.
+              Revio: AI Product Reviews <strong>DOES NOT</strong> collect, process, store, or sell any sensitive personal identifiable information (PII) belonging to your store&rsquo;s customers. We do not collect customer passwords, credit cards, or financial records. Review submissions only store the reviewer display name, rating, and review text provided voluntarily.
             </p>
           </div>
         </section>
@@ -127,7 +127,7 @@ export default function PrivacyPolicy() {
         <section style={styles.section}>
           <h3 style={styles.sectionTitle}>5. Mandatory Shopify &amp; GDPR Compliance</h3>
           <p style={styles.sectionLead}>
-            AI Dynamic Review System strictly adheres to Shopify&rsquo;s API Terms and European GDPR / California CCPA regulations. We implement all required Shopify privacy compliance webhooks:
+            Revio: AI Product Reviews strictly adheres to Shopify&rsquo;s API Terms and European GDPR / California CCPA regulations. We implement all required Shopify privacy compliance webhooks:
           </p>
           <ul style={styles.bulletList}>
             <li style={styles.bulletItem}>
@@ -178,7 +178,7 @@ export default function PrivacyPolicy() {
         {/* 10. CARD FOOTER */}
         <footer style={styles.footerRow}>
           <span style={styles.footerCopyright}>
-            &copy; 2026 AI Dynamic Review System. Built natively for Shopify.
+            &copy; 2026 Revio: AI Product Reviews. Built natively for Shopify.
           </span>
           <a href="/" style={styles.backHomeLink}>
             &larr; Back to Home
