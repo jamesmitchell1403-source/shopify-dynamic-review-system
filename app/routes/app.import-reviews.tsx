@@ -767,7 +767,7 @@ export default function ImportReviewsPage() {
           display: flex;
           align-items: center;
           justify-content: center;
-          margin-bottom: 16px;
+          margin: 0 auto 16px auto;
           color: #2563eb;
           transition: transform 0.2s ease;
         }
@@ -1112,7 +1112,7 @@ export default function ImportReviewsPage() {
                   </div>
                 </div>
               ) : (
-                <div>
+                <div style={{ maxWidth: "480px", width: "100%", display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}>
                   <div className="upload-cloud-icon">
                     <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                       <path
