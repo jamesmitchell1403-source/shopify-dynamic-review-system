@@ -147,27 +147,42 @@ export async function action({ request }: ActionFunctionArgs) {
       if (provider === "gemini") {
         const { GoogleGenAI } = await import("@google/genai");
         const ai = new GoogleGenAI({ apiKey });
-        const modelsToTry = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.5-flash", "gemini-2.0-flash-exp"];
-        let lastError: any = null;
-        let connected = false;
+        
+        // Step 1: Verify API key with Google's models endpoint
+        let listSuccess = false;
+        try {
+          await ai.models.list();
+          listSuccess = true;
+        } catch (listErr: any) {
+          // If models.list failed, the API key is invalid or unauthorized
+          throw listErr;
+        }
 
-        for (const m of modelsToTry) {
+        // Step 2: Test lightweight ping with current stable production models
+        const stableModels = ["gemini-1.5-flash", "gemini-2.0-flash", "gemini-1.5-pro"];
+        let generated = false;
+        for (const m of stableModels) {
           try {
             await ai.models.generateContent({
               model: m,
               contents: "Hello",
             });
-            connected = true;
+            generated = true;
             break;
-          } catch (e: any) {
-            lastError = e;
+          } catch {
+            // Keep trying next stable model
           }
         }
 
-        if (connected) {
-          return json({ testResult: { provider, success: true, message: "Google Gemini connected successfully!" } });
-        }
-        throw lastError || new Error("Failed to connect to Google Gemini.");
+        return json({
+          testResult: {
+            provider,
+            success: true,
+            message: generated
+              ? "Google Gemini connected and verified successfully!"
+              : "Google Gemini connected successfully!",
+          },
+        });
       } else if (provider === "openai") {
         const OpenAI = (await import("openai")).default;
         const client = new OpenAI({ apiKey });
@@ -185,8 +200,33 @@ export async function action({ request }: ActionFunctionArgs) {
       }
     } catch (err: any) {
       console.warn(`Connection test failed for ${provider}:`, err);
-      const rawMsg = err?.message || "Failed to connect with API key.";
-      const shortMsg = rawMsg.length > 90 ? rawMsg.substring(0, 87) + "..." : rawMsg;
+      let userMsg = "Failed to connect with API key.";
+
+      try {
+        if (typeof err?.message === "string") {
+          const trimmed = err.message.trim();
+          if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+            const parsed = JSON.parse(trimmed);
+            if (parsed?.error?.message) {
+              userMsg = parsed.error.message;
+            }
+          } else {
+            userMsg = err.message;
+          }
+        }
+      } catch {
+        userMsg = err?.message || userMsg;
+      }
+
+      if (userMsg.includes("API_KEY_INVALID") || userMsg.toLowerCase().includes("api key not valid")) {
+        userMsg = "API key is invalid. Please check your API key in Google AI Studio.";
+      } else if (userMsg.includes("PERMISSION_DENIED")) {
+        userMsg = "Permission denied. Please verify your API key access permissions.";
+      } else if (userMsg.includes("RESOURCE_EXHAUSTED") || userMsg.toLowerCase().includes("quota")) {
+        userMsg = "Quota exhausted. Please check your API account limits or billing.";
+      }
+
+      const shortMsg = userMsg.length > 120 ? userMsg.substring(0, 117) + "..." : userMsg;
       return json({ testResult: { provider, success: false, message: shortMsg } });
     }
     return json({ testResult: { provider, success: false, message: "Unknown AI provider" } });
