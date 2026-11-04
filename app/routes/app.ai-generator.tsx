@@ -47,9 +47,15 @@ export async function loader({ request }: LoaderFunctionArgs) {
   let products: AiProductOption[] = [];
   let isScopeForbidden = false;
 
+  const url = new URL(request.url);
+  const forceRefresh = url.searchParams.get("refresh") === "1";
+  if (forceRefresh) {
+    aiProductsCache.delete(shop);
+  }
+
   // 1. Try fetching via in-memory cache or GraphQL
   const now = Date.now();
-  const cached = aiProductsCache.get(shop);
+  const cached = forceRefresh ? null : aiProductsCache.get(shop);
 
   if (cached && cached.expiresAt > now && cached.products && cached.products.length > 0) {
     products = cached.products;
