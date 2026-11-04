@@ -60,6 +60,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const adminToken = session?.accessToken || process.env.SHOPIFY_ADMIN_ACCESS_TOKEN || "";
   let products: AiProductOption[] = [];
   let isScopeForbidden = false;
+  let diagError: string | null = null;
 
   const diag: any = {
     lastRunAt: new Date().toISOString(),
@@ -95,7 +96,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   } else {
     try {
       console.log(`[AI Generator] Fetching products via GraphQL for ${shop}, token: ${session.accessToken ? session.accessToken.substring(0, 10) + "..." : "MISSING"}, scope: ${session.scope}`);
-      // Lean, high-speed query (first: 50) to strictly stay under Shopify's 1000 single query cost limit
+      // Universal, robust GraphQL query using images(first: 1)
       const res = await admin.graphql(`
         #graphql
         query getProductsForAI {
@@ -105,28 +106,15 @@ export async function loader({ request }: LoaderFunctionArgs) {
               title
               handle
               status
-              featuredImage {
-                url
+              images(first: 1) {
+                nodes {
+                  url
+                }
               }
             }
           }
         }
       `);
-
-      console.log(`[AI Generator] GraphQL HTTP status: ${res.status} for ${shop}`);
-
-      if (res.status === 401) {
-        console.warn(`[AI Generator] Token expired or invalid for ${shop}. Purging dead session...`);
-        try {
-          await db.session.deleteMany({ where: { shop } });
-        } catch (_) {}
-        return redirect(request.url);
-      }
-
-      if (res.status === 403) {
-        isScopeForbidden = true;
-        console.warn(`[AI Generator] 403 Forbidden for ${shop} - scope issue`);
-      }
 
       diag.graphqlStatus = res.status;
       const jsonRes = (await res.json()) as any;
@@ -154,7 +142,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
       diag.rawNodesCount = rawNodes?.length ?? 0;
       diag.rawProductsSample = rawNodes?.slice(0, 3)?.map((n: any) => ({ id: n.id, title: n.title, status: n.status })) || null;
-      console.log(`[AI Generator] rawNodes count: ${rawNodes?.length ?? 0} for ${shop}`);
 
       if (rawNodes.length > 0) {
         const activeNodes = rawNodes.filter(
@@ -166,21 +153,64 @@ export async function loader({ request }: LoaderFunctionArgs) {
           value: p.id,
           handle: p.handle || "",
           description: p.title || "",
-          imageUrl: p.featuredImage?.url || null,
+          imageUrl: p.images?.nodes?.[0]?.url || null,
         }));
         console.log(`[AI Generator] Products mapped: ${products.length} (active: ${activeNodes.length}) for ${shop}`);
-      } else {
-        console.warn(`[AI Generator] GraphQL returned 0 products for ${shop}. Full response: ${JSON.stringify(jsonRes).substring(0, 500)}`);
       }
     } catch (err: any) {
-      console.error("GraphQL product fetch error:", err?.message || err);
+      console.error("[AI Generator] Primary GraphQL query error:", err?.message || err);
+      diagError = err?.message || String(err);
+      diag.errorMessage = diagError;
+
+      const errStr = String(err?.message || err);
+      if (errStr.includes("ACCESS_DENIED") || errStr.includes("read_products") || errStr.includes("scope")) {
+        isScopeForbidden = true;
+      }
+      if (errStr.includes("Invalid API key") || errStr.includes("access token") || errStr.includes("Unauthorized")) {
+        try {
+          await db.session.deleteMany({ where: { shop } });
+        } catch (_) {}
+        return redirect(request.url);
+      }
+
+      // Secondary fallback: minimal GraphQL query with only id, title, handle
+      try {
+        console.log(`[AI Generator] Attempting secondary minimal GraphQL query for ${shop}...`);
+        const simpleRes = await admin.graphql(`
+          #graphql
+          query getSimpleProductsForAI {
+            products(first: 50) {
+              nodes {
+                id
+                title
+                handle
+              }
+            }
+          }
+        `);
+        const simpleJson = (await simpleRes.json()) as any;
+        const simpleNodes = simpleJson.data?.products?.nodes || [];
+        if (simpleNodes.length > 0) {
+          products = simpleNodes.map((p: any) => ({
+            label: p.title,
+            value: p.id,
+            handle: p.handle || "",
+            description: p.title || "",
+            imageUrl: null,
+          }));
+          console.log(`[AI Generator] Secondary GraphQL SUCCESS: mapped ${products.length} products for ${shop}`);
+          diagError = null;
+        }
+      } catch (err2: any) {
+        console.error("[AI Generator] Secondary GraphQL also failed:", err2?.message || err2);
+      }
     }
   }
 
-  // 2. Fallback: Fetch via Admin / Session REST API (limit=50)
+  // 2. Fallback: Fetch via Admin REST API (limit=50)
   if (products.length === 0 && !isScopeForbidden) {
     const token = adminToken || session.accessToken;
-    console.log(`[AI Generator] GraphQL returned 0, trying REST fallback for ${shop}. Token: ${token ? token.substring(0, 10) + "..." : "MISSING"}`);
+    console.log(`[AI Generator] Trying REST fallback for ${shop}...`);
     if (token) {
       try {
         const restRes = await fetch(`https://${session.shop}/admin/api/2025-01/products.json?limit=50`, {
@@ -189,8 +219,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
             "Content-Type": "application/json",
           },
         });
-
-        console.log(`[AI Generator] REST fallback HTTP status: ${restRes.status} for ${shop}`);
 
         diag.restStatus = restRes.status;
         if (restRes.status === 401) {
@@ -203,13 +231,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
         if (restRes.status === 403) {
           isScopeForbidden = true;
-          console.warn(`[AI Generator] REST 403 Forbidden for ${shop}`);
         }
 
         if (restRes.ok) {
           const restJson = await restRes.json();
           diag.restCount = restJson.products?.length ?? 0;
-          console.log(`[AI Generator] REST returned ${restJson.products?.length ?? 0} products for ${shop}`);
           if (restJson.products && restJson.products.length > 0) {
             const activeRest = restJson.products.filter(
               (p: any) => (p.status || "").toLowerCase() === "active",
@@ -222,41 +248,17 @@ export async function loader({ request }: LoaderFunctionArgs) {
               description: p.body_html ? p.body_html.replace(/<[^>]*>?/gm, "") : p.title,
               imageUrl: p.image?.src || p.images?.[0]?.src || null,
             }));
+            console.log(`[AI Generator] REST fallback SUCCESS: mapped ${products.length} products for ${shop}`);
+            diagError = null;
           }
-        } else {
-          const errText = await restRes.text().catch(() => "");
-          console.warn(`[AI Generator] REST not OK for ${shop}: ${restRes.status} - ${errText.substring(0, 200)}`);
         }
       } catch (restErr: any) {
-        console.error("Admin REST product fetch error:", restErr?.message || restErr);
+        console.error("[AI Generator] Admin REST product fetch error:", restErr?.message || restErr);
       }
-    } else {
-      console.warn(`[AI Generator] No access token available for ${shop}`);
     }
   }
 
-  // 3. Fallback: If still 0 products, look up from known database imports
-  if (products.length === 0) {
-    try {
-      const dbProducts = await db.productImportHistory.findMany({
-        where: { shop: session.shop },
-        distinct: ["productId"],
-        select: { productId: true, productTitle: true },
-        take: 250,
-      });
-      if (dbProducts.length > 0) {
-        products = dbProducts.map((p) => ({
-          label: p.productTitle,
-          value: p.productId.startsWith("gid://") ? p.productId : `gid://shopify/Product/${p.productId}`,
-          handle: "",
-          description: p.productTitle,
-          imageUrl: null,
-        }));
-      }
-    } catch (_) {}
-  }
-
-  // Only cache if we actually found products
+  // Only cache if we actually found real products
   if (products.length > 0) {
     aiProductsCache.set(shop, { products, expiresAt: now + AI_PRODUCTS_CACHE_TTL });
   }
@@ -401,6 +403,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     recentOrders,
     recentJobs,
     isScopeForbidden,
+    diagError,
     shop: session.shop,
     aiConfig,
   });
@@ -415,6 +418,7 @@ export default function AiGeneratorPage() {
     recentOrders,
     recentJobs = [],
     isScopeForbidden,
+    diagError,
     shop,
     aiConfig,
   } = useLoaderData<typeof loader>();
@@ -1917,6 +1921,11 @@ export default function AiGeneratorPage() {
               }}
             >
               <p>
+                {diagError ? (
+                  <span style={{ display: "block", marginBottom: "8px", color: "#b91c1c", fontWeight: 600 }}>
+                    Shopify Catalog Notice: {diagError}
+                  </span>
+                ) : null}
                 If your products do not appear, click <strong>Force Refresh Catalog</strong> to bypass cache, or click <strong>Re-Authorize Permissions</strong> to ensure your store has granted the <code>read_products</code> scope.
               </p>
             </Banner>

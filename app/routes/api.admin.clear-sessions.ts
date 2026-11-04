@@ -25,25 +25,42 @@ export async function loader({ request }: LoaderFunctionArgs) {
     return json({ error: "Unauthorized" }, { status: 403 });
   }
 
+  if (action === "diag") {
+    return json({
+      success: true,
+      diag: (globalThis as any).__AI_GEN_DIAG__ || null,
+      env: {
+        SHOPIFY_API_KEY: process.env.SHOPIFY_API_KEY || "NOT_SET",
+        SHOPIFY_API_KEY_2: process.env.SHOPIFY_API_KEY_2 || "NOT_SET",
+        SHOPIFY_API_SECRET_SET: Boolean(process.env.SHOPIFY_API_SECRET),
+        SHOPIFY_APP_URL: process.env.SHOPIFY_APP_URL || "NOT_SET",
+        SCOPES: process.env.SCOPES || "NOT_SET",
+      },
+      serverTime: new Date().toISOString(),
+    });
+  }
+
+  if (action === "purge_mock_data") {
+    const deletedHistory = await db.productImportHistory.deleteMany({
+      where: {
+        OR: [
+          { productTitle: { contains: "Cotton Towel" } },
+          { productTitle: { contains: "Luminous" } },
+        ],
+      },
+    });
+    return json({
+      success: true,
+      message: `Purged ${deletedHistory.count} mock product import history items.`,
+      deletedCount: deletedHistory.count,
+    });
+  }
+
   if (!shop) {
     return json({ error: "Missing shop parameter" }, { status: 400 });
   }
 
   try {
-    if (action === "diag") {
-      return json({
-        success: true,
-        diag: (globalThis as any).__AI_GEN_DIAG__ || null,
-        env: {
-          SHOPIFY_API_KEY: process.env.SHOPIFY_API_KEY || "NOT_SET",
-          SHOPIFY_API_KEY_2: process.env.SHOPIFY_API_KEY_2 || "NOT_SET",
-          SHOPIFY_API_SECRET_SET: Boolean(process.env.SHOPIFY_API_SECRET),
-          SHOPIFY_APP_URL: process.env.SHOPIFY_APP_URL || "NOT_SET",
-          SCOPES: process.env.SCOPES || "NOT_SET",
-        },
-        serverTime: new Date().toISOString(),
-      });
-    }
 
     if (action === "list") {
       // List all sessions or sessions for the shop
