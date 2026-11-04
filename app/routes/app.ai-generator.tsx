@@ -47,18 +47,18 @@ export async function loader({ request }: LoaderFunctionArgs) {
   let products: AiProductOption[] = [];
   let isScopeForbidden = false;
 
-  // 1. Try fetching via in-memory cache or GraphQL (query only active/published products)
+  // 1. Try fetching via in-memory cache or GraphQL
   const now = Date.now();
   const cached = aiProductsCache.get(shop);
 
-  if (cached && cached.expiresAt > now) {
+  if (cached && cached.expiresAt > now && cached.products && cached.products.length > 0) {
     products = cached.products;
   } else {
     try {
       const res = await admin.graphql(`
         #graphql
         query getProductsForAI {
-          products(first: 250, query: "status:active") {
+          products(first: 250) {
             nodes {
               id
               title
@@ -82,9 +82,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
         if (rawNodes.length > 0) {
           const activeNodes = rawNodes.filter(
-            (p: any) => (p.status || "").toUpperCase() === "ACTIVE" || !p.status,
+            (p: any) => (p.status || "").toUpperCase() === "ACTIVE",
           );
-          products = activeNodes.map((p: any) => ({
+          const nodesToUse = activeNodes.length > 0 ? activeNodes : rawNodes;
+          products = nodesToUse.map((p: any) => ({
             label: p.title,
             value: p.id,
             handle: p.handle || "",
@@ -92,71 +93,70 @@ export async function loader({ request }: LoaderFunctionArgs) {
             imageUrl: p.featuredImage?.url || null,
           }));
         }
-        aiProductsCache.set(shop, { products, expiresAt: now + AI_PRODUCTS_CACHE_TTL });
       }
     } catch (err: any) {
       console.error("GraphQL product fetch error:", err);
     }
   }
 
-  // 2. Fallback: Fetch via Admin Access Token REST API (status=active)
+  // 2. Fallback: Fetch via Admin / Session REST API
   if (products.length === 0) {
-    try {
-      const restRes = await fetch(`https://${session.shop}/admin/api/2025-01/products.json?limit=250&status=active`, {
-        headers: {
-          "X-Shopify-Access-Token": adminToken,
-          "Content-Type": "application/json",
-        },
-      });
+    const token = adminToken || session.accessToken;
+    if (token) {
+      try {
+        const restRes = await fetch(`https://${session.shop}/admin/api/2025-01/products.json?limit=250`, {
+          headers: {
+            "X-Shopify-Access-Token": token,
+            "Content-Type": "application/json",
+          },
+        });
 
-      if (restRes.ok) {
-        const restJson = await restRes.json();
-        if (restJson.products && restJson.products.length > 0) {
-          const activeRest = restJson.products.filter(
-            (p: any) => (p.status || "").toLowerCase() === "active" || !p.status,
-          );
-          products = activeRest.map((p: any) => ({
-            label: p.title,
-            value: p.admin_graphql_api_id || `gid://shopify/Product/${p.id}`,
-            handle: p.handle || "",
-            description: p.body_html ? p.body_html.replace(/<[^>]*>?/gm, "") : p.title,
-            imageUrl: p.image?.src || p.images?.[0]?.src || null,
-          }));
+        if (restRes.ok) {
+          const restJson = await restRes.json();
+          if (restJson.products && restJson.products.length > 0) {
+            const activeRest = restJson.products.filter(
+              (p: any) => (p.status || "").toLowerCase() === "active",
+            );
+            const restToUse = activeRest.length > 0 ? activeRest : restJson.products;
+            products = restToUse.map((p: any) => ({
+              label: p.title,
+              value: p.admin_graphql_api_id || `gid://shopify/Product/${p.id}`,
+              handle: p.handle || "",
+              description: p.body_html ? p.body_html.replace(/<[^>]*>?/gm, "") : p.title,
+              imageUrl: p.image?.src || p.images?.[0]?.src || null,
+            }));
+          }
         }
+      } catch (restErr: any) {
+        console.error("Admin REST product fetch error:", restErr);
       }
-    } catch (restErr: any) {
-      console.error("Admin REST product fetch error:", restErr);
     }
   }
 
-  // 3. Fallback: Fetch via session.accessToken REST API (status=active)
-  if (products.length === 0 && session.accessToken) {
+  // 3. Fallback: If still 0 products, look up from known database imports
+  if (products.length === 0) {
     try {
-      const restRes = await fetch(`https://${session.shop}/admin/api/2025-01/products.json?limit=250&status=active`, {
-        headers: {
-          "X-Shopify-Access-Token": session.accessToken,
-          "Content-Type": "application/json",
-        },
+      const dbProducts = await db.productImportHistory.findMany({
+        where: { shop: session.shop },
+        distinct: ["productId"],
+        select: { productId: true, productTitle: true },
+        take: 250,
       });
-
-      if (restRes.ok) {
-        const restJson = await restRes.json();
-        if (restJson.products && restJson.products.length > 0) {
-          const activeRest = restJson.products.filter(
-            (p: any) => (p.status || "").toLowerCase() === "active" || !p.status,
-          );
-          products = activeRest.map((p: any) => ({
-            label: p.title,
-            value: p.admin_graphql_api_id || `gid://shopify/Product/${p.id}`,
-            handle: p.handle || "",
-            description: p.body_html ? p.body_html.replace(/<[^>]*>?/gm, "") : p.title,
-            imageUrl: p.image?.src || p.images?.[0]?.src || null,
-          }));
-        }
+      if (dbProducts.length > 0) {
+        products = dbProducts.map((p) => ({
+          label: p.productTitle,
+          value: p.productId.startsWith("gid://") ? p.productId : `gid://shopify/Product/${p.productId}`,
+          handle: "",
+          description: p.productTitle,
+          imageUrl: null,
+        }));
       }
-    } catch (restErr: any) {
-      console.error("Session REST product fetch error:", restErr);
-    }
+    } catch (_) {}
+  }
+
+  // Only cache if we actually found products
+  if (products.length > 0) {
+    aiProductsCache.set(shop, { products, expiresAt: now + AI_PRODUCTS_CACHE_TTL });
   }
 
   if (products.length > 0) {

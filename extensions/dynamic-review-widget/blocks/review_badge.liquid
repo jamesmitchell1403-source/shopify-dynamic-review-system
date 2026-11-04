@@ -1,9 +1,9 @@
 {% comment %}
-  Dynamic Review Badge Block for Storefront Product Page
+  Revio: Review Badge - App Block for Storefront Product Page
 {% endcomment %}
 
 {% if template.name == 'product' or template contains 'product' %}
-<link rel="stylesheet" href="/apps/reviews/widget.css?v=3.8" id="rw-widget-style">
+<link rel="stylesheet" href="{{ 'review-widget.css' | asset_url }}" id="rw-widget-style">
 
 <div 
   class="dynamic-review-badge-wrapper"
@@ -22,12 +22,12 @@
   </div>
 </div>
 
-<script src="/apps/reviews/widget.js?v=3.8" defer="defer"></script>
+<script src="{{ 'review-widget.js' | asset_url }}" defer="defer"></script>
 {% endif %}
 
 {% schema %}
 {
-  "name": "Dynamic Review Badge",
+  "name": "Revio: Review Badge",
   "target": "section",
   "settings": [
     {

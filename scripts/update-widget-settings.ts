@@ -262,3 +262,4 @@ const replacement = `{/* RIGHT COLUMN: LIVE STOREFRONT PREVIEW (Exact match to s
 content = content.substring(0, startIndex) + replacement + content.substring(finalEndIndex);
 fs.writeFileSync(file, content, "utf8");
 console.log("Successfully updated app.widget-settings.tsx to match screenshot!");
+

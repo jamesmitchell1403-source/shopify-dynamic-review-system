@@ -54,7 +54,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     try {
       const res = await admin.graphql(`
         query getProductsForImport {
-          products(first: 100, query: "status:active") {
+          products(first: 250) {
             nodes {
               id
               title
@@ -69,8 +69,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
       const activeNodes = rawNodes.filter(
         (p: any) => (p.status || "").toUpperCase() === "ACTIVE" || !p.status,
       );
-      if (activeNodes.length > 0) {
-        products = activeNodes.map((p: any) => {
+      const nodesToUse = activeNodes.length > 0 ? activeNodes : rawNodes;
+      if (nodesToUse.length > 0) {
+        products = nodesToUse.map((p: any) => {
           catalogProductMap.set(p.id, p.title);
           const rawId = p.id.replace("gid://shopify/Product/", "");
           catalogProductMap.set(rawId, p.title);
@@ -83,11 +84,13 @@ export async function loader({ request }: LoaderFunctionArgs) {
           };
         });
       }
-      importProductsCache.set(shop, {
-        products,
-        catalogProductMap,
-        expiresAt: now + IMPORT_PRODUCTS_CACHE_TTL,
-      });
+      if (products.length > 0) {
+        importProductsCache.set(shop, {
+          products,
+          catalogProductMap,
+          expiresAt: now + IMPORT_PRODUCTS_CACHE_TTL,
+        });
+      }
     } catch (e) {
       console.warn("GraphQL products fetch error:", e);
     }

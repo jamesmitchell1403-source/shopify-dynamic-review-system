@@ -210,7 +210,7 @@ export async function action({ request }: ActionFunctionArgs) {
           const res: any = await admin.graphql(
             `#graphql
             query getAllProductsForBulkAI($cursor: String) {
-              products(first: 250, query: "status:active", after: $cursor) {
+              products(first: 250, after: $cursor) {
                 pageInfo {
                   hasNextPage
                   endCursor
@@ -237,7 +237,7 @@ export async function action({ request }: ActionFunctionArgs) {
           const activeNodes = rawNodes.filter(
             (p: any) => (p.status || "").toUpperCase() === "ACTIVE" || !p.status,
           );
-          productsList.push(...activeNodes);
+          productsList.push(...(activeNodes.length > 0 ? activeNodes : rawNodes));
 
           hasNextPage = Boolean(productConnection?.pageInfo?.hasNextPage);
           cursor = productConnection?.pageInfo?.endCursor || null;

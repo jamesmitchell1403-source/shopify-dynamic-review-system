@@ -58,7 +58,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     const gqlRes = await admin.graphql(`
       #graphql
       query getStorefrontProductsForPreview {
-        products(first: 25, query: "status:active") {
+        products(first: 50) {
           nodes {
             id
             title

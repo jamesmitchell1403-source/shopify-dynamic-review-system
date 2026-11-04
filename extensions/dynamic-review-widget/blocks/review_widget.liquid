@@ -1,9 +1,9 @@
 {% comment %}
-  Dynamic Review Widget Liquid Block for Storefront - Product Page Only
+  Revio: Review Widget - App Embed for Storefront
 {% endcomment %}
 
 {% if template.name == 'product' or template contains 'product' %}
-<link rel="stylesheet" href="/apps/reviews/widget.css?v={{ 'now' | date: '%s' }}" id="rw-widget-style">
+<link rel="stylesheet" href="{{ 'review-widget.css' | asset_url }}" id="rw-widget-style">
 
 <div
   id="dynamic-review-widget-root"
@@ -12,12 +12,12 @@
   data-shop="{{ shop.permanent_domain }}"
 ></div>
 
-<script src="/apps/reviews/widget.js?v={{ 'now' | date: '%s' }}" defer="defer"></script>
+<script src="{{ 'review-widget.js' | asset_url }}" defer="defer"></script>
 {% endif %}
 
 {% schema %}
 {
-  "name": "Dynamic Review Widget",
+  "name": "Revio: Review Widget",
   "target": "body",
   "settings": [
     {
