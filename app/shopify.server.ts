@@ -73,32 +73,16 @@ function getShopifyApp(request?: Request) {
         "utf-8",
       );
       const payload = JSON.parse(payloadJson);
-      const dest = payload.dest || payload.aud || "";
-      if (
-        dest.includes("james-practice") ||
-        dest.includes("5fe66fb979009479c3678cbb052c4032")
-      ) {
-        return shopifyInstance1;
-      }
-      if (
-        dest.includes("develops-test-store") ||
-        dest.includes("5fe66fb979009479c3678cbb052c4032")
-      ) {
+      // Only route to instance 2 if the token was specifically issued for apiKey2
+      if (payload.aud && apiKey2 && payload.aud === apiKey2) {
         return shopifyInstance2;
       }
     } catch {
-      // Fallback to URL inspection
+      // Fallback
     }
   }
 
-  const url = new URL(request.url);
-  const shop =
-    url.searchParams.get("shop") || request.headers.get("referer") || "";
-  if (shop.includes("james-practice")) {
-    return shopifyInstance1;
-  }
-
-  return shopifyInstance2;
+  return shopifyInstance1;
 }
 
 export default shopifyInstance1;
