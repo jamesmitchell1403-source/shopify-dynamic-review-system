@@ -1,5 +1,5 @@
 import { json, LoaderFunctionArgs } from "@remix-run/node";
-import { useLoaderData, Link } from "@remix-run/react";
+import { useLoaderData, Link, useRouteError } from "@remix-run/react";
 import { useState, useMemo } from "react";
 import {
   Page,
@@ -48,37 +48,13 @@ interface OrdersCacheEntry {
 
 export async function loader({ request }: LoaderFunctionArgs) {
   await ensureTablesExist();
-  const { admin, session, redirect } = await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
   const shop = session.shop;
-
-  try {
-    await ensureReviewsAndSettingsRestored(admin, shop);
-  } catch (e) {
-    console.warn("AI Generator review restore warning:", e);
-  }
 
   const adminToken = session?.accessToken || process.env.SHOPIFY_ADMIN_ACCESS_TOKEN || "";
   let products: AiProductOption[] = [];
   let isScopeForbidden = false;
   let diagError: string | null = null;
-
-  const diag: any = {
-    lastRunAt: new Date().toISOString(),
-    shop,
-    hasSession: Boolean(session),
-    hasAccessToken: Boolean(session?.accessToken),
-    tokenPrefix: session?.accessToken ? session.accessToken.substring(0, 10) + "..." : null,
-    scope: session?.scope || null,
-    graphqlStatus: null,
-    graphqlErrors: null,
-    rawNodesCount: null,
-    rawProductsSample: null,
-    restStatus: null,
-    restCount: null,
-    finalProductsCount: 0,
-    errorMessage: null,
-  };
-  (globalThis as any).__AI_GEN_DIAG__ = diag;
 
   const url = new URL(request.url);
   const forceRefresh = url.searchParams.get("refresh") === "1";
@@ -92,11 +68,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   if (cached && cached.expiresAt > now && cached.products && cached.products.length > 0) {
     products = cached.products;
-    console.log(`[AI Generator] Cache HIT for ${shop}: ${products.length} products`);
   } else {
+    // Attempt 1: Fetch with images
     try {
-      console.log(`[AI Generator] Fetching products via GraphQL for ${shop}, token: ${session.accessToken ? session.accessToken.substring(0, 10) + "..." : "MISSING"}, scope: ${session.scope}`);
-      // Universal, robust GraphQL query using images(first: 1)
       const res = await admin.graphql(`
         #graphql
         query getProductsForAI {
@@ -105,7 +79,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
               id
               title
               handle
-              status
               images(first: 1) {
                 nodes {
                   url
@@ -116,66 +89,24 @@ export async function loader({ request }: LoaderFunctionArgs) {
         }
       `);
 
-      diag.graphqlStatus = res.status;
       const jsonRes = (await res.json()) as any;
-      diag.graphqlErrors = jsonRes?.errors || null;
-      const errMsg = JSON.stringify(jsonRes?.errors || "");
-      console.log(`[AI Generator] GraphQL response preview for ${shop}: errors=${errMsg.substring(0, 200)}, nodeCount=${jsonRes.data?.products?.nodes?.length ?? "N/A"}`);
-
-      if (errMsg.includes("ACCESS_DENIED") || errMsg.includes("read_products") || errMsg.includes("scope")) {
-        console.warn(`[AI Generator] Access denied for products on ${shop}: ${errMsg}`);
-        isScopeForbidden = true;
-      }
-
-      if (errMsg.includes("Invalid API key") || errMsg.includes("access token") || errMsg.includes("Unauthorized")) {
-        console.warn(`[AI Generator] GraphQL auth error for ${shop}. Purging dead session...`);
-        try {
-          await db.session.deleteMany({ where: { shop } });
-        } catch (_) {}
-        return redirect(request.url);
-      }
-
-      let rawNodes = jsonRes.data?.products?.nodes;
-      if (!rawNodes || rawNodes.length === 0) {
-        rawNodes = jsonRes.data?.products?.edges?.map((e: any) => e.node) || [];
-      }
-
-      diag.rawNodesCount = rawNodes?.length ?? 0;
-      diag.rawProductsSample = rawNodes?.slice(0, 3)?.map((n: any) => ({ id: n.id, title: n.title, status: n.status })) || null;
+      const rawNodes = jsonRes?.data?.products?.nodes || jsonRes?.data?.products?.edges?.map((e: any) => e.node) || [];
 
       if (rawNodes.length > 0) {
-        const activeNodes = rawNodes.filter(
-          (p: any) => (p.status || "").toUpperCase() === "ACTIVE",
-        );
-        const nodesToUse = activeNodes.length > 0 ? activeNodes : rawNodes;
-        products = nodesToUse.map((p: any) => ({
+        products = rawNodes.map((p: any) => ({
           label: p.title,
           value: p.id,
           handle: p.handle || "",
           description: p.title || "",
           imageUrl: p.images?.nodes?.[0]?.url || null,
         }));
-        console.log(`[AI Generator] Products mapped: ${products.length} (active: ${activeNodes.length}) for ${shop}`);
       }
-    } catch (err: any) {
-      console.error("[AI Generator] Primary GraphQL query error:", err?.message || err);
-      diagError = err?.message || String(err);
-      diag.errorMessage = diagError;
+    } catch (err1: any) {
+      console.warn("[AI Generator] Primary GraphQL fetch notice:", err1?.message || err1);
+      diagError = err1?.message || String(err1);
 
-      const errStr = String(err?.message || err);
-      if (errStr.includes("ACCESS_DENIED") || errStr.includes("read_products") || errStr.includes("scope")) {
-        isScopeForbidden = true;
-      }
-      if (errStr.includes("Invalid API key") || errStr.includes("access token") || errStr.includes("Unauthorized")) {
-        try {
-          await db.session.deleteMany({ where: { shop } });
-        } catch (_) {}
-        return redirect(request.url);
-      }
-
-      // Secondary fallback: minimal GraphQL query with only id, title, handle
+      // Attempt 2: Minimal GraphQL identical to app.reviews.tsx
       try {
-        console.log(`[AI Generator] Attempting secondary minimal GraphQL query for ${shop}...`);
         const simpleRes = await admin.graphql(`
           #graphql
           query getSimpleProductsForAI {
@@ -189,7 +120,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
           }
         `);
         const simpleJson = (await simpleRes.json()) as any;
-        const simpleNodes = simpleJson.data?.products?.nodes || [];
+        const simpleNodes = simpleJson?.data?.products?.nodes || simpleJson?.data?.products?.edges?.map((e: any) => e.node) || [];
         if (simpleNodes.length > 0) {
           products = simpleNodes.map((p: any) => ({
             label: p.title,
@@ -198,62 +129,40 @@ export async function loader({ request }: LoaderFunctionArgs) {
             description: p.title || "",
             imageUrl: null,
           }));
-          console.log(`[AI Generator] Secondary GraphQL SUCCESS: mapped ${products.length} products for ${shop}`);
           diagError = null;
         }
       } catch (err2: any) {
-        console.error("[AI Generator] Secondary GraphQL also failed:", err2?.message || err2);
+        console.warn("[AI Generator] Secondary GraphQL fetch notice:", err2?.message || err2);
       }
     }
   }
 
-  // 2. Fallback: Fetch via Admin REST API (limit=50)
-  if (products.length === 0 && !isScopeForbidden) {
-    const token = adminToken || session.accessToken;
-    console.log(`[AI Generator] Trying REST fallback for ${shop}...`);
+  // Attempt 3: Admin REST API fallback if GraphQL returned 0
+  if (products.length === 0) {
+    const token = session?.accessToken || adminToken;
     if (token) {
       try {
-        const restRes = await fetch(`https://${session.shop}/admin/api/2025-01/products.json?limit=50`, {
+        const restRes = await fetch(`https://${shop}/admin/api/2025-01/products.json?limit=50`, {
           headers: {
             "X-Shopify-Access-Token": token,
             "Content-Type": "application/json",
           },
         });
-
-        diag.restStatus = restRes.status;
-        if (restRes.status === 401) {
-          console.warn(`[AI Generator] REST Token rejected for ${shop}. Purging dead session...`);
-          try {
-            await db.session.deleteMany({ where: { shop } });
-          } catch (_) {}
-          return redirect(request.url);
-        }
-
-        if (restRes.status === 403) {
-          isScopeForbidden = true;
-        }
-
         if (restRes.ok) {
           const restJson = await restRes.json();
-          diag.restCount = restJson.products?.length ?? 0;
           if (restJson.products && restJson.products.length > 0) {
-            const activeRest = restJson.products.filter(
-              (p: any) => (p.status || "").toLowerCase() === "active",
-            );
-            const restToUse = activeRest.length > 0 ? activeRest : restJson.products;
-            products = restToUse.map((p: any) => ({
+            products = restJson.products.map((p: any) => ({
               label: p.title,
               value: p.admin_graphql_api_id || `gid://shopify/Product/${p.id}`,
               handle: p.handle || "",
               description: p.body_html ? p.body_html.replace(/<[^>]*>?/gm, "") : p.title,
               imageUrl: p.image?.src || p.images?.[0]?.src || null,
             }));
-            console.log(`[AI Generator] REST fallback SUCCESS: mapped ${products.length} products for ${shop}`);
             diagError = null;
           }
         }
       } catch (restErr: any) {
-        console.error("[AI Generator] Admin REST product fetch error:", restErr?.message || restErr);
+        console.warn("[AI Generator] REST fallback notice:", restErr?.message || restErr);
       }
     }
   }
@@ -261,6 +170,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   // Only cache if we actually found real products
   if (products.length > 0) {
     aiProductsCache.set(shop, { products, expiresAt: now + AI_PRODUCTS_CACHE_TTL });
+    isScopeForbidden = false;
   }
 
   if (products.length > 0) {
@@ -3899,6 +3809,39 @@ export default function AiGeneratorPage() {
             </div>
           </div>
         )}
+      </div>
+    </Page>
+  );
+}
+
+export function ErrorBoundary() {
+  const error = useRouteError();
+  console.error("AI Generator Route Error:", error);
+  return (
+    <Page fullWidth>
+      <div style={{ padding: "32px", maxWidth: "800px", margin: "40px auto" }}>
+        <Banner title="Notice Loading AI Review Generator" tone="warning">
+          <p style={{ marginTop: "8px" }}>
+            The page encountered a temporary initialization issue:{" "}
+            <code>{(error as any)?.message || String(error)}</code>
+          </p>
+          <div style={{ marginTop: "16px" }}>
+            <Link
+              to="/app/ai-generator?refresh=1"
+              style={{
+                display: "inline-block",
+                padding: "8px 16px",
+                background: "#008060",
+                color: "#ffffff",
+                borderRadius: "6px",
+                textDecoration: "none",
+                fontWeight: 600,
+              }}
+            >
+              Refresh &amp; Load Catalog
+            </Link>
+          </div>
+        </Banner>
       </div>
     </Page>
   );
