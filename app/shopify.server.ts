@@ -9,11 +9,20 @@ import prisma from "./db.server";
 
 process.env.SCOPES = "read_themes,write_themes,read_products,read_orders";
 
-const appUrl =
+const rawAppUrl =
   process.env.SHOPIFY_APP_URL ||
   process.env.HOST ||
   process.env.RENDER_EXTERNAL_URL ||
   "https://productreview.zooq.app";
+
+// Ensure production appUrl is strictly https://productreview.zooq.app and never internal container IP
+const appUrl =
+  rawAppUrl.includes("172.") ||
+  rawAppUrl.includes("192.") ||
+  rawAppUrl.includes("localhost") ||
+  !rawAppUrl.startsWith("https://")
+    ? "https://productreview.zooq.app"
+    : rawAppUrl;
 
 const sharedConfig = {
   apiVersion: ApiVersion.January25,

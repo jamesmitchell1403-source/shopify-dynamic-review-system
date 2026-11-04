@@ -47,9 +47,10 @@ interface OrdersCacheEntry {
 };
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  await ensureTablesExist();
-  const { admin, session } = await authenticate.admin(request);
-  const shop = session.shop;
+  try {
+    await ensureTablesExist();
+    const { admin, session } = await authenticate.admin(request);
+    const shop = session.shop;
 
   const adminToken = session?.accessToken || process.env.SHOPIFY_ADMIN_ACCESS_TOKEN || "";
   let products: AiProductOption[] = [];
@@ -219,10 +220,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
             nodes {
               id
               name
-              customer {
-                firstName
-                lastName
-              }
               lineItems(first: 1) {
                 nodes {
                   product {
@@ -235,10 +232,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
         }
       `);
       const ordersJson = (await ordersRes.json()) as any;
-      const nodes = ordersJson.data?.orders?.nodes || [];
+      const nodes = ordersJson?.data?.orders?.nodes || [];
       recentOrders = nodes.map((o: any) => ({
         orderNumber: o.name,
-        customerName: [o.customer?.firstName, o.customer?.lastName].filter(Boolean).join(" ") || "Verified Customer",
+        customerName: "Verified Customer",
         productId: o.lineItems?.nodes?.[0]?.product?.id,
       }));
       ordersCache.set(shop, { orders: recentOrders, expiresAt: now + ORDERS_CACHE_TTL });
@@ -264,7 +261,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     `);
     if (collRes.status !== 403) {
       const collJson = (await collRes.json()) as any;
-      const rawNodes = collJson.data?.collections?.nodes || collJson.data?.collections?.edges?.map((e: any) => e.node) || [];
+      const rawNodes = collJson?.data?.collections?.nodes || collJson?.data?.collections?.edges?.map((e: any) => e.node) || [];
       collections = rawNodes.map((c: any) => ({
         id: c.id,
         title: c.title,
@@ -304,34 +301,65 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   diag.finalProductsCount = products.length;
 
-  return json({
-    products,
-    collections,
-    productStats: productStatsMap,
-    totalReviewsCount,
-    publishedReviewsCount,
-    recentOrders,
-    recentJobs,
-    isScopeForbidden,
-    diagError,
-    shop: session.shop,
-    aiConfig,
-  });
+    return json({
+      products,
+      collections,
+      productStats: productStatsMap,
+      totalReviewsCount,
+      publishedReviewsCount,
+      recentOrders,
+      recentJobs,
+      isScopeForbidden,
+      diagError,
+      shop: session.shop,
+      aiConfig,
+    });
+  } catch (fatalError: any) {
+    if (fatalError instanceof Response) {
+      throw fatalError;
+    }
+    console.error("[AI Generator Loader Error]", fatalError);
+    return json({
+      products: [],
+      collections: [],
+      productStats: {},
+      totalReviewsCount: 0,
+      publishedReviewsCount: 0,
+      recentOrders: [],
+      recentJobs: [],
+      isScopeForbidden: false,
+      diagError: fatalError?.message || String(fatalError),
+      shop: "",
+      aiConfig: {
+        defaultProvider: "gemini" as const,
+        hasClaudeKey: false,
+        hasGeminiKey: false,
+        hasOpenaiKey: false,
+        hasAnyKey: false,
+      },
+    });
+  }
 }
 
 export default function AiGeneratorPage() {
-  const {
-    products,
-    collections = [],
-    productStats,
-    totalReviewsCount,
-    recentOrders,
-    recentJobs = [],
-    isScopeForbidden,
-    diagError,
-    shop,
-    aiConfig,
-  } = useLoaderData<typeof loader>();
+  const loaderData = useLoaderData<typeof loader>();
+  const products = loaderData?.products || [];
+  const collections = loaderData?.collections || [];
+  const productStats = loaderData?.productStats || {};
+  const totalReviewsCount = loaderData?.totalReviewsCount || 0;
+  const publishedReviewsCount = loaderData?.publishedReviewsCount || 0;
+  const recentOrders = loaderData?.recentOrders || [];
+  const recentJobs = loaderData?.recentJobs || [];
+  const isScopeForbidden = loaderData?.isScopeForbidden || false;
+  const diagError = loaderData?.diagError || null;
+  const shop = loaderData?.shop || "";
+  const aiConfig = loaderData?.aiConfig || {
+    defaultProvider: "gemini",
+    hasClaudeKey: false,
+    hasGeminiKey: false,
+    hasOpenaiKey: false,
+    hasAnyKey: false,
+  };
 
   // Tabs: 0 = Bulk requests, 1 = Single product, 2 = Manual review
   const [selectedTab, setSelectedTab] = useState<number>(0);
@@ -3817,15 +3845,24 @@ export default function AiGeneratorPage() {
 export function ErrorBoundary() {
   const error = useRouteError();
   console.error("AI Generator Route Error:", error);
+  let errorMsg = "Unexpected error";
+  if (error instanceof Error) {
+    errorMsg = error.message;
+  } else if (typeof error === "object" && error !== null && "data" in error) {
+    errorMsg = String((error as any).data);
+  } else {
+    errorMsg = String(error);
+  }
+
   return (
     <Page fullWidth>
       <div style={{ padding: "32px", maxWidth: "800px", margin: "40px auto" }}>
         <Banner title="Notice Loading AI Review Generator" tone="warning">
           <p style={{ marginTop: "8px" }}>
-            The page encountered a temporary initialization issue:{" "}
-            <code>{(error as any)?.message || String(error)}</code>
+            The page encountered an initialization notice:{" "}
+            <code>{errorMsg}</code>
           </p>
-          <div style={{ marginTop: "16px" }}>
+          <div style={{ marginTop: "16px", display: "flex", gap: "12px" }}>
             <Link
               to="/app/ai-generator?refresh=1"
               style={{
@@ -3839,6 +3876,21 @@ export function ErrorBoundary() {
               }}
             >
               Refresh &amp; Load Catalog
+            </Link>
+            <Link
+              to="/app"
+              style={{
+                display: "inline-block",
+                padding: "8px 16px",
+                background: "#f3f4f6",
+                color: "#111827",
+                borderRadius: "6px",
+                textDecoration: "none",
+                fontWeight: 600,
+                border: "1px solid #d1d5db",
+              }}
+            >
+              Back to Dashboard
             </Link>
           </div>
         </Banner>
