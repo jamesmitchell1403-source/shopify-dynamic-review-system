@@ -34,7 +34,7 @@ const ORDERS_CACHE_TTL = 10 * 60 * 1000;
 
 export async function loader({ request }: LoaderFunctionArgs) {
   await ensureTablesExist();
-  const { admin, session } = await authenticate.admin(request);
+  const { admin, session, redirect } = await authenticate.admin(request);
   const shop = session.shop;
 
   try {
@@ -73,8 +73,25 @@ export async function loader({ request }: LoaderFunctionArgs) {
         }
       `);
 
+      if (res.status === 401) {
+        console.warn(`[AI Generator] Token expired or invalid for ${shop}. Purging dead session and triggering refresh...`);
+        try {
+          await db.session.deleteMany({ where: { shop } });
+        } catch (_) {}
+        return redirect(request.url);
+      }
+
       if (res.status !== 403) {
         const jsonRes = (await res.json()) as any;
+        const errMsg = JSON.stringify(jsonRes?.errors || "");
+        if (errMsg.includes("Invalid API key") || errMsg.includes("access token") || errMsg.includes("Unauthorized")) {
+          console.warn(`[AI Generator] GraphQL auth error for ${shop}. Purging dead session...`);
+          try {
+            await db.session.deleteMany({ where: { shop } });
+          } catch (_) {}
+          return redirect(request.url);
+        }
+
         let rawNodes = jsonRes.data?.products?.nodes;
         if (!rawNodes || rawNodes.length === 0) {
           rawNodes = jsonRes.data?.products?.edges?.map((e: any) => e.node) || [];
@@ -110,6 +127,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
             "Content-Type": "application/json",
           },
         });
+
+        if (restRes.status === 401) {
+          console.warn(`[AI Generator] REST Token rejected for ${shop}. Purging dead session...`);
+          try {
+            await db.session.deleteMany({ where: { shop } });
+          } catch (_) {}
+          return redirect(request.url);
+        }
 
         if (restRes.ok) {
           const restJson = await restRes.json();
