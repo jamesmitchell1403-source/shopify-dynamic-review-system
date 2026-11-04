@@ -59,8 +59,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   if (cached && cached.expiresAt > now && cached.products && cached.products.length > 0) {
     products = cached.products;
+    console.log(`[AI Generator] Cache HIT for ${shop}: ${products.length} products`);
   } else {
     try {
+      console.log(`[AI Generator] Fetching products via GraphQL for ${shop}, token: ${session.accessToken ? session.accessToken.substring(0, 10) + "..." : "MISSING"}, scope: ${session.scope}`);
       // Lean, high-speed query (first: 50) to strictly stay under Shopify's 1000 single query cost limit
       const res = await admin.graphql(`
         #graphql
@@ -79,6 +81,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
         }
       `);
 
+      console.log(`[AI Generator] GraphQL HTTP status: ${res.status} for ${shop}`);
+
       if (res.status === 401) {
         console.warn(`[AI Generator] Token expired or invalid for ${shop}. Purging dead session...`);
         try {
@@ -89,10 +93,12 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
       if (res.status === 403) {
         isScopeForbidden = true;
+        console.warn(`[AI Generator] 403 Forbidden for ${shop} - scope issue`);
       }
 
       const jsonRes = (await res.json()) as any;
       const errMsg = JSON.stringify(jsonRes?.errors || "");
+      console.log(`[AI Generator] GraphQL response preview for ${shop}: errors=${errMsg.substring(0, 200)}, nodeCount=${jsonRes.data?.products?.nodes?.length ?? "N/A"}`);
 
       if (errMsg.includes("ACCESS_DENIED") || errMsg.includes("read_products") || errMsg.includes("scope")) {
         console.warn(`[AI Generator] Access denied for products on ${shop}: ${errMsg}`);
@@ -112,6 +118,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
         rawNodes = jsonRes.data?.products?.edges?.map((e: any) => e.node) || [];
       }
 
+      console.log(`[AI Generator] rawNodes count: ${rawNodes?.length ?? 0} for ${shop}`);
+
       if (rawNodes.length > 0) {
         const activeNodes = rawNodes.filter(
           (p: any) => (p.status || "").toUpperCase() === "ACTIVE",
@@ -124,15 +132,19 @@ export async function loader({ request }: LoaderFunctionArgs) {
           description: p.title || "",
           imageUrl: p.featuredImage?.url || null,
         }));
+        console.log(`[AI Generator] Products mapped: ${products.length} (active: ${activeNodes.length}) for ${shop}`);
+      } else {
+        console.warn(`[AI Generator] GraphQL returned 0 products for ${shop}. Full response: ${JSON.stringify(jsonRes).substring(0, 500)}`);
       }
     } catch (err: any) {
-      console.error("GraphQL product fetch error:", err);
+      console.error("GraphQL product fetch error:", err?.message || err);
     }
   }
 
   // 2. Fallback: Fetch via Admin / Session REST API (limit=50)
   if (products.length === 0 && !isScopeForbidden) {
     const token = adminToken || session.accessToken;
+    console.log(`[AI Generator] GraphQL returned 0, trying REST fallback for ${shop}. Token: ${token ? token.substring(0, 10) + "..." : "MISSING"}`);
     if (token) {
       try {
         const restRes = await fetch(`https://${session.shop}/admin/api/2025-01/products.json?limit=50`, {
@@ -141,6 +153,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
             "Content-Type": "application/json",
           },
         });
+
+        console.log(`[AI Generator] REST fallback HTTP status: ${restRes.status} for ${shop}`);
 
         if (restRes.status === 401) {
           console.warn(`[AI Generator] REST Token rejected for ${shop}. Purging dead session...`);
@@ -152,10 +166,12 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
         if (restRes.status === 403) {
           isScopeForbidden = true;
+          console.warn(`[AI Generator] REST 403 Forbidden for ${shop}`);
         }
 
         if (restRes.ok) {
           const restJson = await restRes.json();
+          console.log(`[AI Generator] REST returned ${restJson.products?.length ?? 0} products for ${shop}`);
           if (restJson.products && restJson.products.length > 0) {
             const activeRest = restJson.products.filter(
               (p: any) => (p.status || "").toLowerCase() === "active",
@@ -169,10 +185,15 @@ export async function loader({ request }: LoaderFunctionArgs) {
               imageUrl: p.image?.src || p.images?.[0]?.src || null,
             }));
           }
+        } else {
+          const errText = await restRes.text().catch(() => "");
+          console.warn(`[AI Generator] REST not OK for ${shop}: ${restRes.status} - ${errText.substring(0, 200)}`);
         }
       } catch (restErr: any) {
-        console.error("Admin REST product fetch error:", restErr);
+        console.error("Admin REST product fetch error:", restErr?.message || restErr);
       }
+    } else {
+      console.warn(`[AI Generator] No access token available for ${shop}`);
     }
   }
 
