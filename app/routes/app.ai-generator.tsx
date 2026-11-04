@@ -61,15 +61,15 @@ export async function loader({ request }: LoaderFunctionArgs) {
     products = cached.products;
   } else {
     try {
+      // Lean, high-speed query (first: 50) to strictly stay under Shopify's 1000 single query cost limit
       const res = await admin.graphql(`
         #graphql
         query getProductsForAI {
-          products(first: 250) {
+          products(first: 50) {
             nodes {
               id
               title
               handle
-              description
               status
               featuredImage {
                 url
@@ -80,54 +80,62 @@ export async function loader({ request }: LoaderFunctionArgs) {
       `);
 
       if (res.status === 401) {
-        console.warn(`[AI Generator] Token expired or invalid for ${shop}. Purging dead session and triggering refresh...`);
+        console.warn(`[AI Generator] Token expired or invalid for ${shop}. Purging dead session...`);
         try {
           await db.session.deleteMany({ where: { shop } });
         } catch (_) {}
         return redirect(request.url);
       }
 
-      if (res.status !== 403) {
-        const jsonRes = (await res.json()) as any;
-        const errMsg = JSON.stringify(jsonRes?.errors || "");
-        if (errMsg.includes("Invalid API key") || errMsg.includes("access token") || errMsg.includes("Unauthorized")) {
-          console.warn(`[AI Generator] GraphQL auth error for ${shop}. Purging dead session...`);
-          try {
-            await db.session.deleteMany({ where: { shop } });
-          } catch (_) {}
-          return redirect(request.url);
-        }
+      if (res.status === 403) {
+        isScopeForbidden = true;
+      }
 
-        let rawNodes = jsonRes.data?.products?.nodes;
-        if (!rawNodes || rawNodes.length === 0) {
-          rawNodes = jsonRes.data?.products?.edges?.map((e: any) => e.node) || [];
-        }
+      const jsonRes = (await res.json()) as any;
+      const errMsg = JSON.stringify(jsonRes?.errors || "");
 
-        if (rawNodes.length > 0) {
-          const activeNodes = rawNodes.filter(
-            (p: any) => (p.status || "").toUpperCase() === "ACTIVE",
-          );
-          const nodesToUse = activeNodes.length > 0 ? activeNodes : rawNodes;
-          products = nodesToUse.map((p: any) => ({
-            label: p.title,
-            value: p.id,
-            handle: p.handle || "",
-            description: p.description || p.title || "",
-            imageUrl: p.featuredImage?.url || null,
-          }));
-        }
+      if (errMsg.includes("ACCESS_DENIED") || errMsg.includes("read_products") || errMsg.includes("scope")) {
+        console.warn(`[AI Generator] Access denied for products on ${shop}: ${errMsg}`);
+        isScopeForbidden = true;
+      }
+
+      if (errMsg.includes("Invalid API key") || errMsg.includes("access token") || errMsg.includes("Unauthorized")) {
+        console.warn(`[AI Generator] GraphQL auth error for ${shop}. Purging dead session...`);
+        try {
+          await db.session.deleteMany({ where: { shop } });
+        } catch (_) {}
+        return redirect(request.url);
+      }
+
+      let rawNodes = jsonRes.data?.products?.nodes;
+      if (!rawNodes || rawNodes.length === 0) {
+        rawNodes = jsonRes.data?.products?.edges?.map((e: any) => e.node) || [];
+      }
+
+      if (rawNodes.length > 0) {
+        const activeNodes = rawNodes.filter(
+          (p: any) => (p.status || "").toUpperCase() === "ACTIVE",
+        );
+        const nodesToUse = activeNodes.length > 0 ? activeNodes : rawNodes;
+        products = nodesToUse.map((p: any) => ({
+          label: p.title,
+          value: p.id,
+          handle: p.handle || "",
+          description: p.title || "",
+          imageUrl: p.featuredImage?.url || null,
+        }));
       }
     } catch (err: any) {
       console.error("GraphQL product fetch error:", err);
     }
   }
 
-  // 2. Fallback: Fetch via Admin / Session REST API
-  if (products.length === 0) {
+  // 2. Fallback: Fetch via Admin / Session REST API (limit=50)
+  if (products.length === 0 && !isScopeForbidden) {
     const token = adminToken || session.accessToken;
     if (token) {
       try {
-        const restRes = await fetch(`https://${session.shop}/admin/api/2025-01/products.json?limit=250`, {
+        const restRes = await fetch(`https://${session.shop}/admin/api/2025-01/products.json?limit=50`, {
           headers: {
             "X-Shopify-Access-Token": token,
             "Content-Type": "application/json",
@@ -140,6 +148,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
             await db.session.deleteMany({ where: { shop } });
           } catch (_) {}
           return redirect(request.url);
+        }
+
+        if (restRes.status === 403) {
+          isScopeForbidden = true;
         }
 
         if (restRes.ok) {
@@ -1822,7 +1834,29 @@ export default function AiGeneratorPage() {
               }}
             >
               <p>
-                Shopify returned <strong>403 Forbidden</strong> because your app needs updated product access permissions. Click above to re-authorize in 1 click.
+                Shopify requires product permissions for this store. Click the button above to authorize in 1 click so products can load immediately.
+              </p>
+            </Banner>
+          </div>
+        )}
+
+        {products.length === 0 && !isScopeForbidden && (
+          <div style={{ marginBottom: "16px" }}>
+            <Banner
+              title="Products Not Yet Synced"
+              tone="info"
+              action={{
+                content: "Force Refresh Catalog",
+                url: "/app/ai-generator?refresh=1",
+              }}
+              secondaryAction={{
+                content: "Re-Authorize Permissions (1-Click)",
+                url: `https://${shop}/admin/oauth/authorize?client_id=5fe66fb979009479c3678cbb052c4032&scope=read_themes,write_themes,read_products,read_orders&redirect_uri=${encodeURIComponent("https://productreview.zooq.app/auth/callback")}`,
+                target: "_top",
+              }}
+            >
+              <p>
+                If your products do not appear, click <strong>Force Refresh Catalog</strong> to bypass cache, or click <strong>Re-Authorize Permissions</strong> to ensure your store has granted the <code>read_products</code> scope.
               </p>
             </Banner>
           </div>
