@@ -1252,8 +1252,8 @@ export async function syncProductImportHistoryFromReviews(
       const normSource = r.source?.toUpperCase().includes("FLIPKART")
         ? "Flipkart"
         : r.source?.toUpperCase().includes("ALIBABA")
-        ? "Alibaba"
-        : "Amazon";
+          ? "Alibaba"
+          : "Amazon";
       const key = `${r.productId || "general"}_${normSource}`;
       if (!grouped.has(key)) {
         grouped.set(key, {

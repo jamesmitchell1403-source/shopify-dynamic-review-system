@@ -29,8 +29,22 @@ interface OrdersCacheEntry {
   orders: Array<{ orderNumber: string; customerName: string; productId?: string }>;
   expiresAt: number;
 }
-const ordersCache = new Map<string, OrdersCacheEntry>();
-const ORDERS_CACHE_TTL = 10 * 60 * 1000;
+// Global diagnostic store to inspect what Shopify GraphQL actually returns
+(globalThis as any).__AI_GEN_DIAG__ = (globalThis as any).__AI_GEN_DIAG__ || {
+  lastRunAt: null,
+  shop: null,
+  hasSession: false,
+  hasAccessToken: false,
+  tokenPrefix: null,
+  graphqlStatus: null,
+  graphqlErrors: null,
+  rawNodesCount: null,
+  rawProductsSample: null,
+  restStatus: null,
+  restCount: null,
+  finalProductsCount: null,
+  errorMessage: null,
+};
 
 export async function loader({ request }: LoaderFunctionArgs) {
   await ensureTablesExist();
@@ -46,6 +60,24 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const adminToken = session?.accessToken || process.env.SHOPIFY_ADMIN_ACCESS_TOKEN || "";
   let products: AiProductOption[] = [];
   let isScopeForbidden = false;
+
+  const diag: any = {
+    lastRunAt: new Date().toISOString(),
+    shop,
+    hasSession: Boolean(session),
+    hasAccessToken: Boolean(session?.accessToken),
+    tokenPrefix: session?.accessToken ? session.accessToken.substring(0, 10) + "..." : null,
+    scope: session?.scope || null,
+    graphqlStatus: null,
+    graphqlErrors: null,
+    rawNodesCount: null,
+    rawProductsSample: null,
+    restStatus: null,
+    restCount: null,
+    finalProductsCount: 0,
+    errorMessage: null,
+  };
+  (globalThis as any).__AI_GEN_DIAG__ = diag;
 
   const url = new URL(request.url);
   const forceRefresh = url.searchParams.get("refresh") === "1";
@@ -96,7 +128,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
         console.warn(`[AI Generator] 403 Forbidden for ${shop} - scope issue`);
       }
 
+      diag.graphqlStatus = res.status;
       const jsonRes = (await res.json()) as any;
+      diag.graphqlErrors = jsonRes?.errors || null;
       const errMsg = JSON.stringify(jsonRes?.errors || "");
       console.log(`[AI Generator] GraphQL response preview for ${shop}: errors=${errMsg.substring(0, 200)}, nodeCount=${jsonRes.data?.products?.nodes?.length ?? "N/A"}`);
 
@@ -118,6 +152,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
         rawNodes = jsonRes.data?.products?.edges?.map((e: any) => e.node) || [];
       }
 
+      diag.rawNodesCount = rawNodes?.length ?? 0;
+      diag.rawProductsSample = rawNodes?.slice(0, 3)?.map((n: any) => ({ id: n.id, title: n.title, status: n.status })) || null;
       console.log(`[AI Generator] rawNodes count: ${rawNodes?.length ?? 0} for ${shop}`);
 
       if (rawNodes.length > 0) {
@@ -156,6 +192,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
         console.log(`[AI Generator] REST fallback HTTP status: ${restRes.status} for ${shop}`);
 
+        diag.restStatus = restRes.status;
         if (restRes.status === 401) {
           console.warn(`[AI Generator] REST Token rejected for ${shop}. Purging dead session...`);
           try {
@@ -171,6 +208,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
         if (restRes.ok) {
           const restJson = await restRes.json();
+          diag.restCount = restJson.products?.length ?? 0;
           console.log(`[AI Generator] REST returned ${restJson.products?.length ?? 0} products for ${shop}`);
           if (restJson.products && restJson.products.length > 0) {
             const activeRest = restJson.products.filter(
@@ -351,6 +389,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
   }
 
   const aiConfig = await getShopAIConfig(session.shop, admin);
+
+  diag.finalProductsCount = products.length;
 
   return json({
     products,

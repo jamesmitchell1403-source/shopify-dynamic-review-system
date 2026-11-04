@@ -30,10 +30,26 @@ export async function loader({ request }: LoaderFunctionArgs) {
   }
 
   try {
+    if (action === "diag") {
+      return json({
+        success: true,
+        diag: (globalThis as any).__AI_GEN_DIAG__ || null,
+        env: {
+          SHOPIFY_API_KEY: process.env.SHOPIFY_API_KEY || "NOT_SET",
+          SHOPIFY_API_KEY_2: process.env.SHOPIFY_API_KEY_2 || "NOT_SET",
+          SHOPIFY_API_SECRET_SET: Boolean(process.env.SHOPIFY_API_SECRET),
+          SHOPIFY_APP_URL: process.env.SHOPIFY_APP_URL || "NOT_SET",
+          SCOPES: process.env.SCOPES || "NOT_SET",
+        },
+        serverTime: new Date().toISOString(),
+      });
+    }
+
     if (action === "list") {
-      // List current sessions for the shop
+      // List all sessions or sessions for the shop
+      const whereClause = shop === "all" ? {} : { shop };
       const sessions = await db.session.findMany({
-        where: { shop },
+        where: whereClause,
         select: {
           id: true,
           shop: true,
@@ -41,13 +57,25 @@ export async function loader({ request }: LoaderFunctionArgs) {
           isOnline: true,
           scope: true,
           expires: true,
+          accessToken: true,
         },
       });
       return json({
         success: true,
         shop,
-        sessions,
         count: sessions.length,
+        env: {
+          SHOPIFY_API_KEY: process.env.SHOPIFY_API_KEY || "NOT_SET",
+          SHOPIFY_API_KEY_2: process.env.SHOPIFY_API_KEY_2 || "NOT_SET",
+          SHOPIFY_API_SECRET_SET: Boolean(process.env.SHOPIFY_API_SECRET),
+          SHOPIFY_APP_URL: process.env.SHOPIFY_APP_URL || "NOT_SET",
+          SCOPES: process.env.SCOPES || "NOT_SET",
+        },
+        sessions: sessions.map((s) => ({
+          ...s,
+          accessToken: s.accessToken ? `${s.accessToken.substring(0, 10)}...` : null,
+        })),
+        allShops: (await db.session.findMany({ select: { shop: true }, distinct: ["shop"] })).map((s) => s.shop),
         serverTime: new Date().toISOString(),
       });
     }
@@ -83,3 +111,4 @@ export async function loader({ request }: LoaderFunctionArgs) {
     return json({ error: err?.message || "Database error" }, { status: 500 });
   }
 }
+
