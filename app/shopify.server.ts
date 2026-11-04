@@ -76,13 +76,13 @@ function getShopifyApp(request?: Request) {
       const dest = payload.dest || payload.aud || "";
       if (
         dest.includes("james-practice") ||
-        dest.includes("28fbf0094946ed287e3db764e52796e5")
+        dest.includes("5fe66fb979009479c3678cbb052c4032")
       ) {
         return shopifyInstance1;
       }
       if (
         dest.includes("develops-test-store") ||
-        dest.includes("d97376e1be723a9166b7ec705c55c610")
+        dest.includes("5fe66fb979009479c3678cbb052c4032")
       ) {
         return shopifyInstance2;
       }

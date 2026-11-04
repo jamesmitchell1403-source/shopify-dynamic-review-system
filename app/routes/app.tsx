@@ -21,14 +21,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const url = new URL(request.url);
   const shop = session?.shop || url.searchParams.get("shop") || request.headers.get("referer") || "";
 
-  let apiKey = process.env.SHOPIFY_API_KEY || "";
-  if (!apiKey) {
-    if (shop.includes("james-practice")) {
-      apiKey = "28fbf0094946ed287e3db764e52796e5";
-    } else {
-      apiKey = "d97376e1be723a9166b7ec705c55c610";
-    }
-  }
+  let apiKey = process.env.SHOPIFY_API_KEY || "5fe66fb979009479c3678cbb052c4032";
 
   return json({ apiKey });
 };
