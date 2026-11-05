@@ -20,7 +20,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const link = document.createElement('link');
   link.id = 'rw-widget-style';
   link.rel = 'stylesheet';
-  link.href = '/apps/reviews/widget.css?v=' + Date.now();
+  link.href = 'https://productreview.zooq.app/apps/reviews/widget.css?v=' + Date.now();
   document.head.appendChild(link);
 })();
 `;
