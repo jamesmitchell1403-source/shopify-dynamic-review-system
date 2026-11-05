@@ -51,12 +51,15 @@ export async function action({ request }: ActionFunctionArgs) {
     includeTitles,
   } = body;
 
-  // Helper: fetch an image URL and convert to base64
+  // Helper: fetch an image URL and convert to base64 with strict timeout
   async function fetchImageAsBase64(
     url: string,
   ): Promise<{ base64: string; mimeType: string } | null> {
     try {
-      const imgRes = await fetch(url);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2500); // 2.5s strict timeout
+      const imgRes = await fetch(url, { signal: controller.signal });
+      clearTimeout(timeoutId);
       if (!imgRes.ok) return null;
       const arrayBuffer = await imgRes.arrayBuffer();
       const buffer = Buffer.from(arrayBuffer);
@@ -306,86 +309,97 @@ export async function action({ request }: ActionFunctionArgs) {
       );
       const resultsSummary: Array<{ title: string; count: number }> = [];
 
-      for (const prod of productsList) {
-        const prodDescription =
-          prod.description ||
-          `${prod.title} - ${prod.productType || "store item"}`;
-        const prodNotes = `Product Title: ${prod.title}. Tags: ${prod.tags ? prod.tags.join(", ") : "general"}.`;
+      // Process products in parallel batches with concurrency of 4 for ~4x faster bulk generation
+      const CONCURRENCY = 4;
+      for (let i = 0; i < productsList.length; i += CONCURRENCY) {
+        const batch = productsList.slice(i, i + CONCURRENCY);
+        await Promise.all(
+          batch.map(async (prod: any) => {
+            try {
+              const prodDescription =
+                prod.description ||
+                `${prod.title} - ${prod.productType || "store item"}`;
+              const prodNotes = `Product Title: ${prod.title}. Tags: ${prod.tags ? prod.tags.join(", ") : "general"}.`;
 
-        // Fetch the product's Shopify image for image-aware AI generation
-        let prodImageBase64: string | undefined;
-        let prodImageMimeType: string | undefined;
-        if (prod.featuredImage?.url) {
-          const imgData = await fetchImageAsBase64(prod.featuredImage.url);
-          if (imgData) {
-            prodImageBase64 = imgData.base64;
-            prodImageMimeType = imgData.mimeType;
-          }
-        }
+              // Fetch the product's Shopify image for image-aware AI generation (with strict timeout)
+              let prodImageBase64: string | undefined;
+              let prodImageMimeType: string | undefined;
+              if (prod.featuredImage?.url && mediaOption !== "none") {
+                const imgData = await fetchImageAsBase64(prod.featuredImage.url);
+                if (imgData) {
+                  prodImageBase64 = imgData.base64;
+                  prodImageMimeType = imgData.mimeType;
+                }
+              }
 
-        const result = await generateReviewsForShop(
-          shop,
-          {
-            count: countPerProduct,
-            imageBase64: prodImageBase64,
-            imageMimeType: prodImageMimeType,
-            description: prodDescription,
-            notes: prodNotes,
-            language: language || "en",
-            mediaOption: mediaOption || "image",
-          },
-          provider,
-          admin,
+              const result = await generateReviewsForShop(
+                shop,
+                {
+                  count: countPerProduct,
+                  imageBase64: prodImageBase64,
+                  imageMimeType: prodImageMimeType,
+                  description: prodDescription,
+                  notes: prodNotes,
+                  language: language || "en",
+                  mediaOption: mediaOption || "image",
+                },
+                provider,
+                admin,
+              );
+
+              const reviewsToSave = result.reviews.slice(0, countPerProduct);
+
+              for (const rev of reviewsToSave) {
+                let finalBulkImg = rev.imageUrl || null;
+                if (
+                  typeof finalBulkImg === "string" &&
+                  finalBulkImg.startsWith("data:image/")
+                ) {
+                  finalBulkImg = await uploadReviewImageToShopify(
+                    admin,
+                    finalBulkImg,
+                    `review-${Date.now()}-${Math.floor(Math.random() * 10000)}.png`,
+                  );
+                }
+
+                let assignedRating = rev.rating || 5;
+                if (ratingRange === "5 stars only") {
+                  assignedRating = 5;
+                } else if (ratingRange === "4–5 stars") {
+                  assignedRating = Math.random() > 0.3 ? 5 : 4;
+                } else if (ratingRange === "3–5 stars") {
+                  const rand = Math.random();
+                  assignedRating = rand > 0.4 ? 5 : rand > 0.15 ? 4 : 3;
+                }
+
+                await db.review.create({
+                  data: {
+                    shop,
+                    productId: prod.id,
+                    productHandle: prod.handle || null,
+                    reviewerName: rev.reviewerName || "Verified Buyer",
+                    rating: assignedRating,
+                    bodyShort: includeTitles === false ? "" : (rev.bodyShort || "Highly recommended"),
+                    bodyFull: rev.bodyFull || "",
+                    imageUrl: finalBulkImg,
+                    videoUrl: rev.videoUrl || null,
+                    source: "AI_GENERATED",
+                    isAiGenerated: true,
+                    isPublished: true,
+                    isVerifiedPurchase: verifiedBuyer !== false,
+                    language: language || "en",
+                    tags: JSON.stringify(rev.tags || []),
+                  },
+                });
+                totalGeneratedCount++;
+              }
+
+              resultsSummary.push({ title: prod.title, count: reviewsToSave.length });
+            } catch (prodErr: any) {
+              console.warn(`[Bulk Generate] Notice for product ${prod.title}:`, prodErr?.message);
+            }
+          })
         );
-
-        const reviewsToSave = result.reviews.slice(0, countPerProduct);
-
-        for (const rev of reviewsToSave) {
-          let finalBulkImg = rev.imageUrl || null;
-          if (
-            typeof finalBulkImg === "string" &&
-            finalBulkImg.startsWith("data:image/")
-          ) {
-            finalBulkImg = await uploadReviewImageToShopify(
-              admin,
-              finalBulkImg,
-              `review-${Date.now()}-${totalGeneratedCount}.png`,
-            );
-          }
-
-          let assignedRating = rev.rating || 5;
-          if (ratingRange === "5 stars only") {
-            assignedRating = 5;
-          } else if (ratingRange === "4–5 stars") {
-            assignedRating = Math.random() > 0.3 ? 5 : 4;
-          } else if (ratingRange === "3–5 stars") {
-            const rand = Math.random();
-            assignedRating = rand > 0.4 ? 5 : rand > 0.15 ? 4 : 3;
-          }
-
-          await db.review.create({
-            data: {
-              shop,
-              productId: prod.id,
-              productHandle: prod.handle || null,
-              reviewerName: rev.reviewerName || "Verified Buyer",
-              rating: assignedRating,
-              bodyShort: includeTitles === false ? "" : (rev.bodyShort || "Highly recommended"),
-              bodyFull: rev.bodyFull || "",
-              imageUrl: finalBulkImg,
-              videoUrl: rev.videoUrl || null,
-              source: "AI_GENERATED",
-              isAiGenerated: true,
-              isPublished: true,
-              isVerifiedPurchase: verifiedBuyer !== false,
-              language: language || "en",
-              tags: JSON.stringify(rev.tags || []),
-            },
-          });
-          totalGeneratedCount++;
-        }
-
-        resultsSummary.push({ title: prod.title, count: reviewsToSave.length });
       }
 
       // Log AI job execution

@@ -4,7 +4,32 @@ import { getReviewerAvatarPhotoUrl } from "../services/ai/reviewGenerator";
 import { getShopWhereClause } from "../services/shopDomain.server";
 import { ensureReviewsAndSettingsRestored } from "../services/reviewPersistence.server";
 
+export async function action({ request }: { request: Request }) {
+  if (request.method === "OPTIONS") {
+    return new Response(null, {
+      status: 204,
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, OPTIONS, HEAD",
+        "Access-Control-Allow-Headers": "Content-Type, Accept, Authorization",
+      },
+    });
+  }
+  return json({ ok: true }, { headers: { "Access-Control-Allow-Origin": "*" } });
+}
+
 export async function loader({ request }: LoaderFunctionArgs) {
+  if (request.method === "OPTIONS") {
+    return new Response(null, {
+      status: 204,
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, OPTIONS, HEAD",
+        "Access-Control-Allow-Headers": "Content-Type, Accept, Authorization",
+      },
+    });
+  }
+
   await ensureTablesExist();
 
   const url = new URL(request.url);

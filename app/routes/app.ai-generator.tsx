@@ -557,6 +557,7 @@ export default function AiGeneratorPage() {
   const [bulkProvider, setBulkProvider] = useState<string>(getInitialActiveProvider());
   const [bulkLoading, setBulkLoading] = useState<boolean>(false);
   const [bulkProgress, setBulkProgress] = useState<number>(0);
+  const [bulkStatusText, setBulkStatusText] = useState<string>("");
   const [bulkSuccessResult, setBulkSuccessResult] = useState<any>(null);
   const [bulkErrorMessage, setBulkErrorMessage] = useState<string | null>(null);
 
@@ -717,47 +718,83 @@ export default function AiGeneratorPage() {
       return;
     }
 
+    const targetProducts = [...filteredProducts];
+    if (targetProducts.length === 0) {
+      setBulkErrorMessage("No products found for the selected scope. Please ensure active products are available.");
+      return;
+    }
+
     setBulkLoading(true);
     setBulkErrorMessage(null);
     setBulkSuccessResult(null);
-    setBulkProgress(15);
+    setBulkProgress(5);
+    setBulkStatusText(`Starting review generation for ${targetProducts.length} products...`);
 
-    const interval = setInterval(() => {
-      setBulkProgress((prev) => {
-        if (prev >= 90) return prev;
-        return prev + 15;
-      });
-    }, 500);
+    const BATCH_SIZE = 10;
+    const totalBatches = Math.ceil(targetProducts.length / BATCH_SIZE);
+    let totalProcessed = 0;
+    let totalGenerated = 0;
+    const allSummaries: Array<{ title: string; count: number }> = [];
 
     try {
-      const res = await fetch("/api/ai/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          actionType: "bulk_generate_all",
-          provider: bulkProvider,
-          language: bulkLanguage,
-          reviewsPerProduct: reviewsPerProduct,
-          mediaOption: "image",
-          tone: bulkTone,
-          ratingRange: ratingRange,
-          includeTitles: includeTitles,
-          verifiedBuyer: useVerifiedBuyerTag,
-          customProductIds: customSelectedIds.length > 0 ? customSelectedIds : undefined,
-        }),
-      });
+      for (let b = 0; b < totalBatches; b++) {
+        const start = b * BATCH_SIZE;
+        const end = Math.min(start + BATCH_SIZE, targetProducts.length);
+        const chunk = targetProducts.slice(start, end);
+        const chunkIds = chunk.map((p) => p.value);
 
-      const data = await res.json();
-      clearInterval(interval);
-      setBulkProgress(100);
+        const currentPct = Math.min(95, Math.round((b / totalBatches) * 90) + 5);
+        setBulkProgress(currentPct);
+        setBulkStatusText(`Generating batch ${b + 1} of ${totalBatches} (${totalProcessed} / ${targetProducts.length} products)...`);
 
-      if (!data.success) {
-        setBulkErrorMessage(data.error || "Bulk generation failed");
-      } else {
-        setBulkSuccessResult(data);
+        const res = await fetch("/api/ai/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            actionType: "bulk_generate_all",
+            provider: bulkProvider,
+            language: bulkLanguage,
+            reviewsPerProduct: reviewsPerProduct,
+            mediaOption: "image",
+            tone: bulkTone,
+            ratingRange: ratingRange,
+            includeTitles: includeTitles,
+            verifiedBuyer: useVerifiedBuyerTag,
+            customProductIds: chunkIds,
+          }),
+        });
+
+        const rawText = await res.text();
+        let data: any;
+        try {
+          data = JSON.parse(rawText);
+        } catch {
+          if (!res.ok) {
+            throw new Error(`Server returned error status ${res.status}`);
+          }
+          throw new Error(`Server returned unexpected response: ${rawText.slice(0, 120)}`);
+        }
+
+        if (!data.success) {
+          throw new Error(data.error || `Bulk generation failed on batch ${b + 1}`);
+        }
+
+        totalProcessed += data.productsProcessed || chunk.length;
+        totalGenerated += data.totalGenerated || (chunk.length * reviewsPerProduct);
+        if (Array.isArray(data.summary)) {
+          allSummaries.push(...data.summary);
+        }
       }
+
+      setBulkProgress(100);
+      setBulkStatusText("Generation completed successfully!");
+      setBulkSuccessResult({
+        success: true,
+        productsProcessed: totalProcessed,
+        totalGenerated: totalGenerated,
+        summary: allSummaries,
+      });
     } catch (e: any) {
-      clearInterval(interval);
       setBulkErrorMessage(e.message || "Network error during bulk generation.");
     } finally {
       setBulkLoading(false);
@@ -819,7 +856,16 @@ export default function AiGeneratorPage() {
         }),
       });
 
-      const data = await res.json();
+      const rawText = await res.text();
+      let data: any;
+      try {
+        data = JSON.parse(rawText);
+      } catch {
+        if (!res.ok) {
+          throw new Error(`Server error (${res.status}): ${rawText.slice(0, 120)}`);
+        }
+        throw new Error(`Server returned unexpected response: ${rawText.slice(0, 120)}`);
+      }
       clearInterval(interval);
       setSingleProgress(100);
 
@@ -855,7 +901,13 @@ export default function AiGeneratorPage() {
           saveReview: review,
         }),
       });
-      const data = await res.json();
+      const rawText = await res.text();
+      let data: any;
+      try {
+        data = JSON.parse(rawText);
+      } catch {
+        throw new Error(`Server error (${res.status}): ${rawText.slice(0, 100)}`);
+      }
       if (data.success) {
         setSavedStatus((prev) => ({ ...prev, [index]: true }));
       } else {
@@ -925,7 +977,16 @@ export default function AiGeneratorPage() {
         }),
       });
 
-      const data = await res.json();
+      const rawText = await res.text();
+      let data: any;
+      try {
+        data = JSON.parse(rawText);
+      } catch {
+        if (!res.ok) {
+          throw new Error(`Server error (${res.status}): ${rawText.slice(0, 120)}`);
+        }
+        throw new Error(`Server returned unexpected response: ${rawText.slice(0, 120)}`);
+      }
       if (!data.success) {
         setManualErrorMsg(data.error || "Failed to add manual review.");
       } else {
@@ -2534,7 +2595,7 @@ export default function AiGeneratorPage() {
                   {bulkLoading && (
                     <div style={{ marginBottom: "14px" }}>
                       <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12.5px", color: "#374151", marginBottom: "4px" }}>
-                        <span>Generating reviews...</span>
+                        <span>{bulkStatusText || "Generating reviews..."}</span>
                         <strong>{bulkProgress}%</strong>
                       </div>
                       <ProgressBar progress={bulkProgress} animated />

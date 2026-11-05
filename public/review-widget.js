@@ -49,8 +49,18 @@
     productId = "all";
   }
 
-  if (!shop && window.Shopify && window.Shopify.shop) {
-    shop = window.Shopify.shop;
+  if (!shop) {
+    if (window.Shopify && window.Shopify.shop) {
+      shop = window.Shopify.shop;
+    } else if (window.ShopifyAnalytics && window.ShopifyAnalytics.meta && window.ShopifyAnalytics.meta.page && window.ShopifyAnalytics.meta.page.shop) {
+      shop = window.ShopifyAnalytics.meta.page.shop;
+    } else if (window.meta && window.meta.shop) {
+      shop = window.meta.shop;
+    } else if (document.querySelector('[data-shop]')) {
+      shop = document.querySelector('[data-shop]').getAttribute('data-shop');
+    } else if (window.location && window.location.hostname) {
+      shop = window.location.hostname;
+    }
   }
 
   // Retrieve customer tags from localStorage if available (Personalization support)
@@ -70,36 +80,142 @@
   }
 
   function updateReviewBadges(avgRating, totalCount) {
-    const badgeElements = document.querySelectorAll('.dynamic-review-badge-wrapper');
-    if (!badgeElements || badgeElements.length === 0) return;
-
     const countInt = Number(totalCount) || 0;
-    const countText = countInt === 1 ? '1 review' : `${countInt} reviews`;
+    const countText = countInt === 1 ? '1 review' : (countInt + ' reviews');
+    const countInParens = '(' + countText + ')';
     const numRating = Number(avgRating) || 5.0;
     const roundedStars = Math.min(Math.max(Math.round(numRating), 1), 5);
     const starString = '★'.repeat(roundedStars) + '☆'.repeat(5 - roundedStars);
 
-    badgeElements.forEach((badge) => {
-      const ratingEl = badge.querySelector('.dynamic-review-badge-rating');
-      const countEl = badge.querySelector('.dynamic-review-badge-count');
-      const starsEl = badge.querySelector('.dynamic-review-badge-stars');
+    // 1. Update Revio App Block elements (.dynamic-review-badge-wrapper)
+    const revioBadges = document.querySelectorAll('.dynamic-review-badge-wrapper');
+    if (revioBadges && revioBadges.length > 0) {
+      revioBadges.forEach((badge) => {
+        const ratingEl = badge.querySelector('.dynamic-review-badge-rating');
+        const countEl = badge.querySelector('.dynamic-review-badge-count');
+        const starsEl = badge.querySelector('.dynamic-review-badge-stars');
 
-      if (ratingEl) ratingEl.style.display = "none";
-      if (countEl) countEl.textContent = countText;
-      if (starsEl) starsEl.textContent = starString;
+        if (ratingEl) ratingEl.style.display = 'none';
+        if (countEl) countEl.textContent = countText;
+        if (starsEl) starsEl.textContent = starString;
+        badge.style.display = '';
+        badge.style.visibility = 'visible';
+      });
+    }
+
+    // 2. Update theme rating elements (Dawn, Refresh, Sense, Craft, etc.)
+    const themeRatingSelectors = [
+      '.rating-count',
+      '.product__rating-count',
+      '[class*="rating-count"]',
+      '.caption-large',
+      '.spr-badge-caption',
+      '.jdgm-prev-badge__text',
+      '.stamped-badge-caption',
+      '[data-rating-count]',
+    ];
+
+    let foundThemeBadge = false;
+    themeRatingSelectors.forEach((selector) => {
+      try {
+        const elements = document.querySelectorAll(selector);
+        elements.forEach((el) => {
+          if (el.closest('.rw-notification-card') || el.closest('.dynamic-review-badge-wrapper')) return;
+          const txt = (el.textContent || '').trim();
+          // Matches "(0 reviews)", "(0)", "0 reviews", or empty/placeholder ratings
+          if (/\(\s*0(\s*reviews?)?\s*\)/i.test(txt) || /\b0\s+reviews?\b/i.test(txt) || txt === '(0)' || txt === '0') {
+            foundThemeBadge = true;
+            if (countInt > 0) {
+              el.textContent = countInParens;
+              // Also find sibling/parent star rating element
+              const parent = el.parentElement || el;
+              const starEl = parent.querySelector('.rating-star, [class*="rating-star"], .spr-badge-starrating');
+              if (starEl) {
+                starEl.textContent = starString;
+              }
+              const ariaStar = parent.querySelector('[aria-label*="stars"], [role="img"]');
+              if (ariaStar) {
+                ariaStar.setAttribute('aria-label', avgRating + ' out of 5.0 stars');
+              }
+            }
+          }
+        });
+      } catch (e) {}
     });
+
+    // 3. Fallback: if no Revio block and no theme badge found, check for any element containing "(0 reviews)" or "0 reviews"
+    if (!foundThemeBadge && (!revioBadges || revioBadges.length === 0)) {
+      try {
+        const allSpans = document.querySelectorAll('.product p, .product span, .product div, form[action*="/cart/add"] p, form[action*="/cart/add"] span');
+        allSpans.forEach((el) => {
+          if (el.closest('.rw-notification-card') || el.children.length > 2) return;
+          const txt = (el.textContent || '').trim();
+          if (/^\(\s*0\s*(reviews?|)\s*\)$/i.test(txt)) {
+            if (countInt > 0) {
+              el.textContent = countInParens;
+              foundThemeBadge = true;
+            }
+          }
+        });
+      } catch (e) {}
+    }
   }
 
   function fetchReviews(pid) {
-    const endpoint = `/apps/reviews/widget?productId=${encodeURIComponent(pid)}&productHandle=${encodeURIComponent(productHandle || '')}&shop=${encodeURIComponent(shop || '')}&customerTags=${encodeURIComponent(JSON.stringify(customerTags))}&_t=${Date.now()}`;
-    return fetch(endpoint, { cache: "no-store" }).then((res) => res.json());
+    const qs = 'productId=' + encodeURIComponent(pid) +
+      '&productHandle=' + encodeURIComponent(productHandle || '') +
+      '&shop=' + encodeURIComponent(shop || '') +
+      '&customerTags=' + encodeURIComponent(JSON.stringify(customerTags)) +
+      '&_t=' + Date.now();
+    const proxyUrl = '/apps/reviews/widget?' + qs;
+    const directUrl = 'https://productreview.zooq.app/apps/reviews/widget?' + qs;
+
+    function tryDirect() {
+      return fetch(directUrl, { cache: 'no-store' })
+        .then((res) => {
+          if (!res.ok) throw new Error('Direct error: ' + res.status);
+          const ct = res.headers.get('content-type') || '';
+          if (!ct.includes('application/json')) throw new Error('Non-JSON direct response');
+          return res.json();
+        });
+    }
+
+    // Try relative app proxy first; if redirected (e.g. 302 to password page) or fails, use direct zooq.app URL
+    return fetch(proxyUrl, { cache: 'no-store' })
+      .then((res) => {
+        if (!res.ok) throw new Error('Proxy error: ' + res.status);
+        const ct = res.headers.get('content-type') || '';
+        if (!ct.includes('application/json')) throw new Error('Non-JSON proxy response');
+        return res.json();
+      })
+      .then((data) => {
+        if (data && Array.isArray(data.reviews)) {
+          return data;
+        }
+        return tryDirect();
+      })
+      .catch(() => {
+        return tryDirect();
+      });
   }
+
+  let lastAvg = '5.0';
+  let lastCount = 0;
 
   fetchReviews(productId)
     .then((data) => {
-      const avg = data && data.averageRating ? data.averageRating : "0.0";
+      const avg = data && data.averageRating ? data.averageRating : '5.0';
       const count = data && data.totalCount !== undefined ? data.totalCount : (data && data.reviews ? data.reviews.length : 0);
+      lastAvg = avg;
+      lastCount = count;
+
+      // Update badges immediately
       updateReviewBadges(avg, count);
+
+      // Re-apply badge updates at intervals to handle late-loaded Shopify sections & themes
+      [300, 800, 1800, 3200].forEach((ms) => {
+        setTimeout(() => updateReviewBadges(lastAvg, lastCount), ms);
+      });
 
       if (data && data.reviews && data.reviews.length > 0) {
         initWidget(data.reviews, data.settings || {});
@@ -108,7 +224,8 @@
         cards.forEach((card) => card.remove());
       }
     })
-    .catch(() => {
+    .catch((err) => {
+      console.warn('[Revio] Widget fetch failed:', err);
       const cards = document.querySelectorAll('.rw-notification-card');
       cards.forEach((card) => card.remove());
     });
