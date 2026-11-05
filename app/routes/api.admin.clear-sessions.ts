@@ -62,6 +62,101 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   try {
 
+    if (action === "test_products") {
+      const session = await db.session.findFirst({
+        where: { shop },
+        orderBy: { isOnline: "asc" }, // Prefer offline session
+      });
+      if (!session) {
+        return json({ error: `No session found for shop: ${shop}` }, { status: 404 });
+      }
+
+      // Test 1: Direct GraphQL query WITHOUT variables (no cursor)
+      let test1: any = null;
+      try {
+        const res1 = await fetch(`https://${shop}/admin/api/2025-01/graphql.json`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Shopify-Access-Token": session.accessToken,
+          },
+          body: JSON.stringify({
+            query: `{ products(first: 50) { nodes { id title handle status } } }`,
+          }),
+        });
+        test1 = { status: res1.status, data: await res1.json() };
+      } catch (e: any) {
+        test1 = { error: e?.message || String(e) };
+      }
+
+      // Test 2: GraphQL query with variables { cursor: null }
+      let test2: any = null;
+      try {
+        const res2 = await fetch(`https://${shop}/admin/api/2025-01/graphql.json`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Shopify-Access-Token": session.accessToken,
+          },
+          body: JSON.stringify({
+            query: `query getProducts($cursor: String) { products(first: 50, after: $cursor) { pageInfo { hasNextPage endCursor } nodes { id title handle status } } }`,
+            variables: { cursor: null },
+          }),
+        });
+        test2 = { status: res2.status, data: await res2.json() };
+      } catch (e: any) {
+        test2 = { error: e?.message || String(e) };
+      }
+
+      // Test 3: GraphQL with images(first: 1)
+      let test3: any = null;
+      try {
+        const res3 = await fetch(`https://${shop}/admin/api/2025-01/graphql.json`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Shopify-Access-Token": session.accessToken,
+          },
+          body: JSON.stringify({
+            query: `{ products(first: 10) { nodes { id title images(first: 1) { nodes { url } } } } }`,
+          }),
+        });
+        test3 = { status: res3.status, data: await res3.json() };
+      } catch (e: any) {
+        test3 = { error: e?.message || String(e) };
+      }
+
+      // Test 4: REST API
+      let test4: any = null;
+      try {
+        const res4 = await fetch(`https://${shop}/admin/api/2025-01/products.json?limit=10`, {
+          headers: {
+            "Content-Type": "application/json",
+            "X-Shopify-Access-Token": session.accessToken,
+          },
+        });
+        const restJson = await res4.json();
+        test4 = {
+          status: res4.status,
+          count: restJson?.products?.length ?? 0,
+          sample: restJson?.products?.slice(0, 2)?.map((p: any) => ({ id: p.id, title: p.title })) ?? null,
+          errors: restJson?.errors ?? null,
+        };
+      } catch (e: any) {
+        test4 = { error: e?.message || String(e) };
+      }
+
+      return json({
+        shop,
+        sessionScope: session.scope,
+        tokenPrefix: session.accessToken ? `${session.accessToken.substring(0, 10)}...` : null,
+        test1_no_vars: test1,
+        test2_with_null_cursor: test2,
+        test3_with_images: test3,
+        test4_rest: test4,
+      });
+    }
+
     if (action === "list") {
       // List all sessions or sessions for the shop
       const whereClause = shop === "all" ? {} : { shop };
