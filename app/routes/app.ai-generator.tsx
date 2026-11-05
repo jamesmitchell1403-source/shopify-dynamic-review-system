@@ -17,6 +17,7 @@ interface AiProductOption {
   description: string;
   imageUrl: string | null;
   handle?: string;
+  status?: string;
 }
 interface AiProductsCacheEntry {
   products: AiProductOption[];
@@ -52,22 +53,79 @@ const ORDERS_CACHE_TTL = 10 * 60 * 1000;
 async function fetchAllCatalogProducts(
   admin: any,
   shop: string,
-  adminToken: string,
+  session: any,
 ): Promise<AiProductOption[]> {
   const allProducts: AiProductOption[] = [];
+  const seenIds = new Set<string>();
 
-  // Strategy 1: Paginated GraphQL query with images (first: 100 per page, up to 10 pages = 1,000 products)
+  const addNode = (p: any) => {
+    if (!p || !p.id) return;
+    const gid = p.admin_graphql_api_id || (typeof p.id === "string" && p.id.startsWith("gid://") ? p.id : `gid://shopify/Product/${p.id}`);
+    if (seenIds.has(gid)) return;
+    seenIds.add(gid);
+
+    const imgUrl =
+      p.featuredImage?.url ||
+      p.featuredMedia?.preview?.image?.url ||
+      p.image?.src ||
+      p.images?.[0]?.src ||
+      p.images?.nodes?.[0]?.url ||
+      null;
+    allProducts.push({
+      label: p.title || "Untitled Product",
+      value: gid,
+      handle: p.handle || "",
+      description: p.body_html ? p.body_html.replace(/<[^>]*>?/gm, "") : (p.title || ""),
+      imageUrl: imgUrl,
+      status: p.status || "ACTIVE",
+    });
+  };
+
+  // -------------------------------------------------------------
+  // STRATEGY 1: Clean GraphQL Query (Page 1 without variables, up to 250 products)
+  // -------------------------------------------------------------
   try {
-    let hasNextPage = true;
-    let cursor: string | null = null;
-    let pagesFetched = 0;
+    const page1Res = await admin.graphql(
+      `#graphql
+      query getCatalogProductsPage1 {
+        products(first: 250) {
+          pageInfo {
+            hasNextPage
+            endCursor
+          }
+          nodes {
+            id
+            title
+            handle
+            status
+            featuredImage {
+              url
+            }
+          }
+        }
+      }`
+    );
 
-    while (hasNextPage && pagesFetched < 10) {
-      pagesFetched++;
-      const res = await admin.graphql(
+    const page1Json = (await page1Res.json()) as any;
+    if (page1Json?.errors) {
+      console.warn("[AI Generator] Strategy 1 GraphQL notice:", page1Json.errors);
+    }
+    const page1Nodes = page1Json?.data?.products?.nodes || page1Json?.data?.products?.edges?.map((e: any) => e.node) || [];
+    for (const p of page1Nodes) {
+      addNode(p);
+    }
+
+    // If there are more than 250 products, fetch subsequent pages with cursor
+    let hasNextPage = Boolean(page1Json?.data?.products?.pageInfo?.hasNextPage);
+    let cursor: string | null = page1Json?.data?.products?.pageInfo?.endCursor || null;
+    let pageCount = 1;
+
+    while (hasNextPage && cursor && pageCount < 10) {
+      pageCount++;
+      const nextRes = await admin.graphql(
         `#graphql
-        query getProductsForAI($cursor: String) {
-          products(first: 100, after: $cursor) {
+        query getCatalogProductsNextPage($cursor: String!) {
+          products(first: 250, after: $cursor) {
             pageInfo {
               hasNextPage
               endCursor
@@ -77,138 +135,126 @@ async function fetchAllCatalogProducts(
               title
               handle
               status
-              images(first: 1) {
-                nodes {
-                  url
-                }
+              featuredImage {
+                url
               }
             }
           }
         }`,
-        { variables: { cursor } },
+        { variables: { cursor } }
       );
 
-      const jsonRes = (await res.json()) as any;
-      const productConnection = jsonRes?.data?.products;
-      const rawNodes = productConnection?.nodes || [];
-
-      if (rawNodes.length > 0) {
-        for (const p of rawNodes) {
-          allProducts.push({
-            label: p.title || "Untitled Product",
-            value: p.id,
-            handle: p.handle || "",
-            description: p.title || "",
-            imageUrl: p.images?.nodes?.[0]?.url || null,
-          });
-        }
+      const nextJson = (await nextRes.json()) as any;
+      const nextNodes = nextJson?.data?.products?.nodes || [];
+      for (const p of nextNodes) {
+        addNode(p);
       }
 
-      hasNextPage = Boolean(productConnection?.pageInfo?.hasNextPage);
-      cursor = productConnection?.pageInfo?.endCursor || null;
+      hasNextPage = Boolean(nextJson?.data?.products?.pageInfo?.hasNextPage);
+      cursor = nextJson?.data?.products?.pageInfo?.endCursor || null;
       if (!cursor) break;
     }
   } catch (err1: any) {
-    console.warn("[AI Generator] Primary paginated GraphQL notice:", err1?.message || err1);
+    console.warn("[AI Generator] Strategy 1 GraphQL error:", err1?.message || err1);
   }
 
-  // Strategy 2: Lightweight GraphQL without nested images (identical to app.reviews.tsx, up to 1,000 products)
+  // -------------------------------------------------------------
+  // STRATEGY 2: Minimal GraphQL (identical to app.import-reviews.tsx)
+  // -------------------------------------------------------------
   if (allProducts.length === 0) {
     try {
-      let hasNextPage = true;
-      let cursor: string | null = null;
-      let pagesFetched = 0;
-
-      while (hasNextPage && pagesFetched < 10) {
-        pagesFetched++;
-        const simpleRes = await admin.graphql(
-          `#graphql
-          query getSimpleProductsForAI($cursor: String) {
-            products(first: 250, after: $cursor) {
-              pageInfo {
-                hasNextPage
-                endCursor
-              }
-              nodes {
-                id
-                title
-                handle
-                status
-              }
+      const simpleRes = await admin.graphql(
+        `#graphql
+        query getSimpleCatalogProducts {
+          products(first: 250) {
+            nodes {
+              id
+              title
+              handle
+              status
             }
-          }`,
-          { variables: { cursor } },
-        );
-
-        const simpleJson = (await simpleRes.json()) as any;
-        const productConnection = simpleJson?.data?.products;
-        const simpleNodes = productConnection?.nodes || [];
-
-        if (simpleNodes.length > 0) {
-          for (const p of simpleNodes) {
-            allProducts.push({
-              label: p.title || "Untitled Product",
-              value: p.id,
-              handle: p.handle || "",
-              description: p.title || "",
-              imageUrl: null,
-            });
           }
-        }
-
-        hasNextPage = Boolean(productConnection?.pageInfo?.hasNextPage);
-        cursor = productConnection?.pageInfo?.endCursor || null;
-        if (!cursor) break;
+        }`
+      );
+      const simpleJson = (await simpleRes.json()) as any;
+      const simpleNodes = simpleJson?.data?.products?.nodes || [];
+      for (const p of simpleNodes) {
+        addNode(p);
       }
     } catch (err2: any) {
-      console.warn("[AI Generator] Secondary GraphQL notice:", err2?.message || err2);
+      console.warn("[AI Generator] Strategy 2 Simple GraphQL error:", err2?.message || err2);
     }
   }
 
-  // Strategy 3: Admin REST API fallback if GraphQL returned 0
-  if (allProducts.length === 0 && adminToken) {
+  // -------------------------------------------------------------
+  // STRATEGY 3: Direct API using Database Verified Offline Access Token
+  // -------------------------------------------------------------
+  if (allProducts.length === 0) {
     try {
-      let nextPageUrl: string | null = `https://${shop}/admin/api/2025-01/products.json?limit=250`;
-      let pagesFetched = 0;
+      const cleanShop = shop.replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+      const dbSession = await db.session.findFirst({
+        where: { shop: { in: [shop, cleanShop] } },
+        orderBy: { isOnline: "asc" }, // Prefer offline session
+      });
+      const token = dbSession?.accessToken || session?.accessToken || process.env.SHOPIFY_ADMIN_ACCESS_TOKEN;
 
-      while (nextPageUrl && pagesFetched < 5) {
-        pagesFetched++;
-        const restRes: Response = await fetch(nextPageUrl, {
+      if (token) {
+        const directRes = await fetch(`https://${cleanShop}/admin/api/2025-01/graphql.json`, {
+          method: "POST",
           headers: {
-            "X-Shopify-Access-Token": adminToken,
             "Content-Type": "application/json",
+            "X-Shopify-Access-Token": token,
           },
+          body: JSON.stringify({
+            query: `{ products(first: 250) { nodes { id title handle status featuredImage { url } } } }`,
+          }),
         });
 
-        if (restRes.ok) {
-          const restJson = (await restRes.json()) as any;
-          const items = restJson?.products || [];
-          if (items.length > 0) {
-            for (const p of items) {
-              allProducts.push({
-                label: p.title || "Untitled Product",
-                value: p.admin_graphql_api_id || `gid://shopify/Product/${p.id}`,
-                handle: p.handle || "",
-                description: p.body_html ? p.body_html.replace(/<[^>]*>?/gm, "") : p.title,
-                imageUrl: p.image?.src || p.images?.[0]?.src || null,
-              });
-            }
+        if (directRes.ok) {
+          const directJson = (await directRes.json()) as any;
+          const directNodes = directJson?.data?.products?.nodes || [];
+          for (const p of directNodes) {
+            addNode(p);
           }
+        }
 
-          const linkHeader = restRes.headers.get("Link");
-          nextPageUrl = null;
-          if (linkHeader) {
-            const match = linkHeader.match(/<([^>]+)>;\s*rel="next"/);
-            if (match && match[1]) {
-              nextPageUrl = match[1];
+        // Direct REST API fallback if still 0
+        if (allProducts.length === 0) {
+          let nextPageUrl: string | null = `https://${cleanShop}/admin/api/2025-01/products.json?limit=250`;
+          let pageCount = 0;
+
+          while (nextPageUrl && pageCount < 5) {
+            pageCount++;
+            const restRes = await fetch(nextPageUrl, {
+              headers: {
+                "Content-Type": "application/json",
+                "X-Shopify-Access-Token": token,
+              },
+            });
+
+            if (restRes.ok) {
+              const restJson = (await restRes.json()) as any;
+              const items = restJson?.products || [];
+              for (const p of items) {
+                addNode(p);
+              }
+
+              const linkHeader = restRes.headers.get("Link");
+              nextPageUrl = null;
+              if (linkHeader) {
+                const match = linkHeader.match(/<([^>]+)>;\s*rel="next"/);
+                if (match && match[1]) {
+                  nextPageUrl = match[1];
+                }
+              }
+            } else {
+              break;
             }
           }
-        } else {
-          break;
         }
       }
-    } catch (restErr: any) {
-      console.warn("[AI Generator] REST fallback notice:", restErr?.message || restErr);
+    } catch (err3: any) {
+      console.warn("[AI Generator] Strategy 3 Direct token error:", err3?.message || err3);
     }
   }
 
@@ -221,25 +267,24 @@ export async function loader({ request }: LoaderFunctionArgs) {
     const { admin, session } = await authenticate.admin(request);
     const shop = session.shop;
 
-    const adminToken = session?.accessToken || process.env.SHOPIFY_ADMIN_ACCESS_TOKEN || "";
     let products: AiProductOption[] = [];
     let isScopeForbidden = false;
     let diagError: string | null = null;
 
     const url = new URL(request.url);
-    const forceRefresh = url.searchParams.get("refresh") === "1";
+    const forceRefresh = url.searchParams.get("refresh") === "1" || url.searchParams.get("forceRefresh") === "1";
     if (forceRefresh) {
       aiProductsCache.delete(shop);
     }
 
-    // 1. Try fetching via in-memory cache or paginated fetchers
+    // 1. Try fetching via in-memory cache or multi-tier fetchers
     const now = Date.now();
     const cached = forceRefresh ? null : aiProductsCache.get(shop);
 
     if (cached && cached.expiresAt > now && cached.products && cached.products.length > 0) {
       products = cached.products;
     } else {
-      products = await fetchAllCatalogProducts(admin, shop, adminToken);
+      products = await fetchAllCatalogProducts(admin, shop, session);
       if (products.length > 0) {
         aiProductsCache.set(shop, { products, expiresAt: now + AI_PRODUCTS_CACHE_TTL });
       }
@@ -498,7 +543,10 @@ export default function AiGeneratorPage() {
   // Filter products based on selected scope
   const filteredProducts = useMemo(() => {
     let list = products;
-    if (targetScope === "no_reviews") {
+    if (targetScope === "all_active") {
+      const activeList = list.filter((p) => !p.status || p.status.toUpperCase() === "ACTIVE");
+      list = activeList.length > 0 ? activeList : list;
+    } else if (targetScope === "no_reviews") {
       list = list.filter((p) => !productStats[p.value] || productStats[p.value].count === 0);
     } else if (targetScope === "custom" && customSelectedIds.length > 0) {
       list = list.filter((p) => customSelectedIds.includes(p.value));
@@ -528,8 +576,14 @@ export default function AiGeneratorPage() {
   // TAB 1 (Product assistant - Single Product) STATE - 4-STEP WORKFLOW
   // ==============================================================
   const [selectedProductId, setSelectedProductId] = useState<string>(
-    products[0]?.value || "gid://shopify/Product/sample-1",
+    products[0]?.value || "",
   );
+
+  useEffect(() => {
+    if (products.length > 0 && (!selectedProductId || !products.some((p) => p.value === selectedProductId))) {
+      setSelectedProductId(products[0].value);
+    }
+  }, [products]);
   const [singleTone, setSingleTone] = useState<string>("Friendly & Relatable");
   const [singleCount, setSingleCount] = useState<number>(5);
   const [singleNotes, setSingleNotes] = useState<string>("");
@@ -569,20 +623,22 @@ export default function AiGeneratorPage() {
 
   // Current selected product object & stats
   const currentProduct = useMemo(() => {
-    return products.find((p) => p.value === selectedProductId) || products[0] || {
-      label: "Luminous Kit",
-      value: "sample-luminous",
-      description: "Bright glow kit with durable battery and radiant illumination.",
+    if (products.length > 0) {
+      return products.find((p) => p.value === selectedProductId) || products[0];
+    }
+    return {
+      label: "No products available in catalog",
+      value: "",
+      description: "",
       imageUrl: null,
     };
   }, [products, selectedProductId]);
 
   const currentProductStats = useMemo(() => {
-    const stats = productStats[selectedProductId];
-    if (stats && stats.count > 0) {
-      return stats;
+    if (selectedProductId && productStats[selectedProductId]) {
+      return productStats[selectedProductId];
     }
-    return { count: 5, avgRating: 4.6 };
+    return { count: 0, avgRating: 5.0 };
   }, [productStats, selectedProductId]);
 
   const filteredSingleProducts = useMemo(() => {
@@ -595,6 +651,12 @@ export default function AiGeneratorPage() {
   // TAB 2 (Add real review - Manual) STATE
   // ==============================================================
   const [manualProdId, setManualProdId] = useState<string>(products[0]?.value || "");
+
+  useEffect(() => {
+    if (products.length > 0 && (!manualProdId || !products.some((p) => p.value === manualProdId))) {
+      setManualProdId(products[0].value);
+    }
+  }, [products]);
   const [manualOrderNumber, setManualOrderNumber] = useState<string>("#1042");
   const [manualRating, setManualRating] = useState<number>(5);
   const [manualCustomerName, setManualCustomerName] = useState<string>("Rachel V.");
@@ -2859,9 +2921,15 @@ export default function AiGeneratorPage() {
                           {currentProduct.label}
                         </div>
                         <div style={{ fontSize: "12px", color: "#64748b", display: "flex", alignItems: "center", gap: "6px", marginTop: "2px" }}>
-                          <span>{`${currentProductStats.count} real reviews`}</span>
-                          <span>•</span>
-                          <span style={{ color: "#d97706", fontWeight: 600 }}>{`Avg. ${currentProductStats.avgRating} ★`}</span>
+                          {currentProductStats.count > 0 ? (
+                            <>
+                              <span>{`${currentProductStats.count} real reviews`}</span>
+                              <span>•</span>
+                              <span style={{ color: "#d97706", fontWeight: 600 }}>{`Avg. ${currentProductStats.avgRating} ★`}</span>
+                            </>
+                          ) : (
+                            <span style={{ color: "#94a3b8" }}>No reviews yet</span>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -2886,7 +2954,7 @@ export default function AiGeneratorPage() {
                       zIndex: 20,
                     }}>
                       {(filteredSingleProducts.length > 0 ? filteredSingleProducts : products).map((p) => {
-                        const stats = productStats[p.value] || { count: 5, avgRating: 4.6 };
+                        const stats = productStats[p.value] || { count: 0, avgRating: 5.0 };
                         const isSelected = p.value === selectedProductId;
                         return (
                           <div
@@ -2918,7 +2986,7 @@ export default function AiGeneratorPage() {
                                   {p.label}
                                 </div>
                                 <div style={{ fontSize: "11.5px", color: "#64748b" }}>
-                                  {`${stats.count} reviews • Avg. ${stats.avgRating} ★`}
+                                  {stats.count > 0 ? `${stats.count} reviews • Avg. ${stats.avgRating} ★` : "No reviews yet"}
                                 </div>
                               </div>
                             </div>
@@ -3650,7 +3718,9 @@ export default function AiGeneratorPage() {
                             </option>
                           ))
                         ) : (
-                          <option value="sample">Luminous Kit</option>
+                          <option value="" disabled>
+                            No products available
+                          </option>
                         )}
                       </select>
                       <div style={{ position: "absolute", right: "12px", top: "50%", transform: "translateY(-50%)", pointerEvents: "none", color: "#64748b", display: "flex" }}>
