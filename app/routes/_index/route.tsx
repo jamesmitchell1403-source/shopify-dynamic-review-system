@@ -259,26 +259,27 @@ export default function App() {
         .logo-wrap {
           display: flex;
           align-items: center;
-          gap: 12px;
           text-decoration: none;
-          transition: opacity 0.2s ease;
+          transition: transform 0.2s ease, opacity 0.2s ease;
         }
         .logo-wrap:hover {
-          opacity: 0.9;
+          opacity: 0.92;
+          transform: scale(1.02);
         }
         .logo-img {
-          width: 40px;
-          height: 40px;
-          border-radius: 10px;
+          width: 46px;
+          height: 46px;
+          border-radius: 12px;
           object-fit: cover;
           display: block;
           flex-shrink: 0;
-          box-shadow: 0 2px 8px rgba(6, 78, 59, 0.15);
+          box-shadow: 0 4px 14px rgba(6, 78, 59, 0.16);
         }
         .logo-img.footer-logo-img {
-          width: 34px;
-          height: 34px;
-          border-radius: 8px;
+          width: 38px;
+          height: 38px;
+          border-radius: 10px;
+          box-shadow: 0 3px 10px rgba(6, 78, 59, 0.14);
         }
         .logo-icon-box {
           width: 38px;
@@ -1246,8 +1247,7 @@ export default function App() {
           .nav-menu { display: none; }
           .mobile-menu-btn { display: flex; align-items: center; justify-content: center; }
           .btn-install-header { padding: 8px 16px; font-size: 13px; }
-          .logo-img { width: 36px; height: 36px; }
-          .logo-text { font-size: 16px; }
+          .logo-img { width: 40px; height: 40px; border-radius: 11px; }
           .hero-grid { grid-template-columns: 1fr; gap: 40px; }
           .features-grid-3x2 { grid-template-columns: 1fr; }
           .popups-grid-2x2 { grid-template-columns: 1fr; }
@@ -1261,10 +1261,7 @@ export default function App() {
         }
 
         @media (max-width: 480px) {
-          .logo-wrap { gap: 8px; }
-          .logo-img { width: 32px; height: 32px; border-radius: 8px; }
-          .logo-text { font-size: 14.5px; }
-          .site-header .logo-text span { display: none; }
+          .logo-img { width: 36px; height: 36px; border-radius: 9px; }
         }
       `}</style>
 
@@ -1275,17 +1272,14 @@ export default function App() {
       {/* 1. Header (Navbar) */}
       <header className="site-header">
         <div className="container nav-wrapper">
-          <a href="/" onClick={scrollToTop} className="logo-wrap">
+          <a href="/" onClick={scrollToTop} className="logo-wrap" aria-label="Revio: AI Product Reviews">
             <img
               src="/app-logo.png"
-              alt="Revio: AI Product Reviews Logo"
+              alt="Revio: AI Product Reviews"
               className="logo-img"
-              width="40"
-              height="40"
+              width="46"
+              height="46"
             />
-            <div className="logo-text">
-              Revio: <span>AI Product Reviews</span>
-            </div>
           </a>
 
           <nav className="nav-menu">
@@ -2125,17 +2119,14 @@ export default function App() {
       <footer className="site-footer">
         <div className="container">
           <div className="footer-row">
-            <a href="/" onClick={scrollToTop} className="logo-wrap" style={{ textDecoration: "none" }}>
+            <a href="/" onClick={scrollToTop} className="logo-wrap" style={{ textDecoration: "none" }} aria-label="Revio: AI Product Reviews">
               <img
                 src="/app-logo.png"
-                alt="Revio: AI Product Reviews Logo"
+                alt="Revio: AI Product Reviews"
                 className="logo-img footer-logo-img"
-                width="34"
-                height="34"
+                width="38"
+                height="38"
               />
-              <div className="logo-text" style={{ fontSize: "15px" }}>
-                Revio: <span>AI Product Reviews</span>
-              </div>
             </a>
 
             <div className="footer-links">
