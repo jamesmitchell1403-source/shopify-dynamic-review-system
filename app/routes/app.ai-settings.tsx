@@ -101,12 +101,32 @@ export async function loader({ request }: LoaderFunctionArgs) {
     // Read persistent API keys stored in Shopify's cloud (Shop Metafields)
     const shopifyCloudKeys = await getShopAIKeysFromShopify(admin);
 
+    const anthropicKeyVal = (shopifyCloudKeys?.anthropicApiKey || settings?.anthropicApiKey || "").trim();
+    const geminiKeyVal = (shopifyCloudKeys?.geminiApiKey || settings?.geminiApiKey || "").trim();
+    const openaiKeyVal = (shopifyCloudKeys?.openaiApiKey || (settings as any)?.openaiApiKey || "").trim();
+
+    let defaultProv = shopifyCloudKeys?.defaultAiProvider || settings?.defaultAiProvider || "openai";
+    const hasClaude = Boolean(anthropicKeyVal);
+    const hasGemini = Boolean(geminiKeyVal);
+    const hasOpenai = Boolean(openaiKeyVal);
+
+    if (defaultProv === "openai" && !hasOpenai) {
+      if (hasGemini) defaultProv = "gemini";
+      else if (hasClaude) defaultProv = "claude";
+    } else if (defaultProv === "gemini" && !hasGemini) {
+      if (hasOpenai) defaultProv = "openai";
+      else if (hasClaude) defaultProv = "claude";
+    } else if (defaultProv === "claude" && !hasClaude) {
+      if (hasOpenai) defaultProv = "openai";
+      else if (hasGemini) defaultProv = "gemini";
+    }
+
     const mergedSettings = {
       ...settings,
-      anthropicApiKey: shopifyCloudKeys?.anthropicApiKey || settings?.anthropicApiKey || process.env.ANTHROPIC_API_KEY || "",
-      geminiApiKey: shopifyCloudKeys?.geminiApiKey || settings?.geminiApiKey || process.env.GEMINI_API_KEY || "",
-      openaiApiKey: shopifyCloudKeys?.openaiApiKey || (settings as any)?.openaiApiKey || process.env.OPENAI_API_KEY || "",
-      defaultAiProvider: shopifyCloudKeys?.defaultAiProvider || settings?.defaultAiProvider || "openai",
+      anthropicApiKey: anthropicKeyVal,
+      geminiApiKey: geminiKeyVal,
+      openaiApiKey: openaiKeyVal,
+      defaultAiProvider: defaultProv,
       fallbackAiProvider: shopifyCloudKeys?.fallbackAiProvider || (settings as any)?.fallbackAiProvider || "auto",
     };
 
@@ -114,12 +134,25 @@ export async function loader({ request }: LoaderFunctionArgs) {
   } catch (err) {
     console.error("AI settings DB loader error:", err);
     const shopifyCloudKeys = await getShopAIKeysFromShopify(admin);
+    const anthropicKeyVal = (shopifyCloudKeys?.anthropicApiKey || "").trim();
+    const geminiKeyVal = (shopifyCloudKeys?.geminiApiKey || "").trim();
+    const openaiKeyVal = (shopifyCloudKeys?.openaiApiKey || "").trim();
+
+    let defaultProv = shopifyCloudKeys?.defaultAiProvider || "openai";
+    if (defaultProv === "openai" && !openaiKeyVal) {
+      if (geminiKeyVal) defaultProv = "gemini";
+      else if (anthropicKeyVal) defaultProv = "claude";
+    } else if (defaultProv === "gemini" && !geminiKeyVal) {
+      if (openaiKeyVal) defaultProv = "openai";
+      else if (anthropicKeyVal) defaultProv = "claude";
+    }
+
     const fallbackSettings = {
       shop,
-      anthropicApiKey: shopifyCloudKeys?.anthropicApiKey || process.env.ANTHROPIC_API_KEY || "",
-      geminiApiKey: shopifyCloudKeys?.geminiApiKey || process.env.GEMINI_API_KEY || "",
-      openaiApiKey: shopifyCloudKeys?.openaiApiKey || process.env.OPENAI_API_KEY || "",
-      defaultAiProvider: shopifyCloudKeys?.defaultAiProvider || "openai",
+      anthropicApiKey: anthropicKeyVal,
+      geminiApiKey: geminiKeyVal,
+      openaiApiKey: openaiKeyVal,
+      defaultAiProvider: defaultProv,
       fallbackAiProvider: shopifyCloudKeys?.fallbackAiProvider || "auto",
     };
     return json({ settings: fallbackSettings, aiJobs: [] });
@@ -1044,7 +1077,7 @@ export default function AiSettingsPage() {
                     ) : (
                       <span className="badge-pill not-connected">
                         <span className="pill-dot red" />
-                        Not connected
+                        API Key Not Connected
                       </span>
                     )}
                     {defaultProvider === "claude" && (
@@ -1123,7 +1156,7 @@ export default function AiSettingsPage() {
                   </div>
 
                   <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                    {geminiKey.trim() || true ? (
+                    {geminiKey.trim() ? (
                       <span className="badge-pill connected">
                         <span className="pill-dot green" />
                         Connected
@@ -1131,7 +1164,7 @@ export default function AiSettingsPage() {
                     ) : (
                       <span className="badge-pill not-connected">
                         <span className="pill-dot red" />
-                        Not connected
+                        API Key Not Connected
                       </span>
                     )}
                     {defaultProvider === "gemini" && (
@@ -1210,7 +1243,7 @@ export default function AiSettingsPage() {
                   </div>
 
                   <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                    {openaiKey.trim() || true ? (
+                    {openaiKey.trim() ? (
                       <span className="badge-pill connected">
                         <span className="pill-dot green" />
                         Connected
@@ -1218,7 +1251,7 @@ export default function AiSettingsPage() {
                     ) : (
                       <span className="badge-pill not-connected">
                         <span className="pill-dot red" />
-                        Not connected
+                        API Key Not Connected
                       </span>
                     )}
                     {defaultProvider === "openai" && (

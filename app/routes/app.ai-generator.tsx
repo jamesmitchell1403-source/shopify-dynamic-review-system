@@ -1,6 +1,6 @@
 import { json, LoaderFunctionArgs } from "@remix-run/node";
 import { useLoaderData, Link, useRouteError } from "@remix-run/react";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   Page,
   Banner,
@@ -29,6 +29,9 @@ interface OrdersCacheEntry {
   orders: Array<{ orderNumber: string; customerName: string; productId?: string }>;
   expiresAt: number;
 }
+const ordersCache = new Map<string, OrdersCacheEntry>();
+const ORDERS_CACHE_TTL = 10 * 60 * 1000;
+
 // Global diagnostic store to inspect what Shopify GraphQL actually returns
 (globalThis as any).__AI_GEN_DIAG__ = (globalThis as any).__AI_GEN_DIAG__ || {
   lastRunAt: null,
@@ -46,40 +49,34 @@ interface OrdersCacheEntry {
   errorMessage: null,
 };
 
-export async function loader({ request }: LoaderFunctionArgs) {
+async function fetchAllCatalogProducts(
+  admin: any,
+  shop: string,
+  adminToken: string,
+): Promise<AiProductOption[]> {
+  const allProducts: AiProductOption[] = [];
+
+  // Strategy 1: Paginated GraphQL query with images (first: 100 per page, up to 10 pages = 1,000 products)
   try {
-    await ensureTablesExist();
-    const { admin, session } = await authenticate.admin(request);
-    const shop = session.shop;
+    let hasNextPage = true;
+    let cursor: string | null = null;
+    let pagesFetched = 0;
 
-  const adminToken = session?.accessToken || process.env.SHOPIFY_ADMIN_ACCESS_TOKEN || "";
-  let products: AiProductOption[] = [];
-  let isScopeForbidden = false;
-  let diagError: string | null = null;
-
-  const url = new URL(request.url);
-  const forceRefresh = url.searchParams.get("refresh") === "1";
-  if (forceRefresh) {
-    aiProductsCache.delete(shop);
-  }
-
-  // 1. Try fetching via in-memory cache or GraphQL
-  const now = Date.now();
-  const cached = forceRefresh ? null : aiProductsCache.get(shop);
-
-  if (cached && cached.expiresAt > now && cached.products && cached.products.length > 0) {
-    products = cached.products;
-  } else {
-    // Attempt 1: Fetch with images
-    try {
-      const res = await admin.graphql(`
-        #graphql
-        query getProductsForAI {
-          products(first: 50) {
+    while (hasNextPage && pagesFetched < 10) {
+      pagesFetched++;
+      const res = await admin.graphql(
+        `#graphql
+        query getProductsForAI($cursor: String) {
+          products(first: 100, after: $cursor) {
+            pageInfo {
+              hasNextPage
+              endCursor
+            }
             nodes {
               id
               title
               handle
+              status
               images(first: 1) {
                 nodes {
                   url
@@ -87,96 +84,166 @@ export async function loader({ request }: LoaderFunctionArgs) {
               }
             }
           }
-        }
-      `);
+        }`,
+        { variables: { cursor } },
+      );
 
       const jsonRes = (await res.json()) as any;
-      const rawNodes = jsonRes?.data?.products?.nodes || jsonRes?.data?.products?.edges?.map((e: any) => e.node) || [];
+      const productConnection = jsonRes?.data?.products;
+      const rawNodes = productConnection?.nodes || [];
 
       if (rawNodes.length > 0) {
-        products = rawNodes.map((p: any) => ({
-          label: p.title,
-          value: p.id,
-          handle: p.handle || "",
-          description: p.title || "",
-          imageUrl: p.images?.nodes?.[0]?.url || null,
-        }));
+        for (const p of rawNodes) {
+          allProducts.push({
+            label: p.title || "Untitled Product",
+            value: p.id,
+            handle: p.handle || "",
+            description: p.title || "",
+            imageUrl: p.images?.nodes?.[0]?.url || null,
+          });
+        }
       }
-    } catch (err1: any) {
-      console.warn("[AI Generator] Primary GraphQL fetch notice:", err1?.message || err1);
-      diagError = err1?.message || String(err1);
 
-      // Attempt 2: Minimal GraphQL identical to app.reviews.tsx
-      try {
-        const simpleRes = await admin.graphql(`
-          #graphql
-          query getSimpleProductsForAI {
-            products(first: 50) {
+      hasNextPage = Boolean(productConnection?.pageInfo?.hasNextPage);
+      cursor = productConnection?.pageInfo?.endCursor || null;
+      if (!cursor) break;
+    }
+  } catch (err1: any) {
+    console.warn("[AI Generator] Primary paginated GraphQL notice:", err1?.message || err1);
+  }
+
+  // Strategy 2: Lightweight GraphQL without nested images (identical to app.reviews.tsx, up to 1,000 products)
+  if (allProducts.length === 0) {
+    try {
+      let hasNextPage = true;
+      let cursor: string | null = null;
+      let pagesFetched = 0;
+
+      while (hasNextPage && pagesFetched < 10) {
+        pagesFetched++;
+        const simpleRes = await admin.graphql(
+          `#graphql
+          query getSimpleProductsForAI($cursor: String) {
+            products(first: 250, after: $cursor) {
+              pageInfo {
+                hasNextPage
+                endCursor
+              }
               nodes {
                 id
                 title
                 handle
+                status
               }
             }
-          }
-        `);
+          }`,
+          { variables: { cursor } },
+        );
+
         const simpleJson = (await simpleRes.json()) as any;
-        const simpleNodes = simpleJson?.data?.products?.nodes || simpleJson?.data?.products?.edges?.map((e: any) => e.node) || [];
+        const productConnection = simpleJson?.data?.products;
+        const simpleNodes = productConnection?.nodes || [];
+
         if (simpleNodes.length > 0) {
-          products = simpleNodes.map((p: any) => ({
-            label: p.title,
-            value: p.id,
-            handle: p.handle || "",
-            description: p.title || "",
-            imageUrl: null,
-          }));
-          diagError = null;
+          for (const p of simpleNodes) {
+            allProducts.push({
+              label: p.title || "Untitled Product",
+              value: p.id,
+              handle: p.handle || "",
+              description: p.title || "",
+              imageUrl: null,
+            });
+          }
         }
-      } catch (err2: any) {
-        console.warn("[AI Generator] Secondary GraphQL fetch notice:", err2?.message || err2);
+
+        hasNextPage = Boolean(productConnection?.pageInfo?.hasNextPage);
+        cursor = productConnection?.pageInfo?.endCursor || null;
+        if (!cursor) break;
       }
+    } catch (err2: any) {
+      console.warn("[AI Generator] Secondary GraphQL notice:", err2?.message || err2);
     }
   }
 
-  // Attempt 3: Admin REST API fallback if GraphQL returned 0
-  if (products.length === 0) {
-    const token = session?.accessToken || adminToken;
-    if (token) {
-      try {
-        const restRes = await fetch(`https://${shop}/admin/api/2025-01/products.json?limit=50`, {
+  // Strategy 3: Admin REST API fallback if GraphQL returned 0
+  if (allProducts.length === 0 && adminToken) {
+    try {
+      let nextPageUrl: string | null = `https://${shop}/admin/api/2025-01/products.json?limit=250`;
+      let pagesFetched = 0;
+
+      while (nextPageUrl && pagesFetched < 5) {
+        pagesFetched++;
+        const restRes: Response = await fetch(nextPageUrl, {
           headers: {
-            "X-Shopify-Access-Token": token,
+            "X-Shopify-Access-Token": adminToken,
             "Content-Type": "application/json",
           },
         });
+
         if (restRes.ok) {
-          const restJson = await restRes.json();
-          if (restJson.products && restJson.products.length > 0) {
-            products = restJson.products.map((p: any) => ({
-              label: p.title,
-              value: p.admin_graphql_api_id || `gid://shopify/Product/${p.id}`,
-              handle: p.handle || "",
-              description: p.body_html ? p.body_html.replace(/<[^>]*>?/gm, "") : p.title,
-              imageUrl: p.image?.src || p.images?.[0]?.src || null,
-            }));
-            diagError = null;
+          const restJson = (await restRes.json()) as any;
+          const items = restJson?.products || [];
+          if (items.length > 0) {
+            for (const p of items) {
+              allProducts.push({
+                label: p.title || "Untitled Product",
+                value: p.admin_graphql_api_id || `gid://shopify/Product/${p.id}`,
+                handle: p.handle || "",
+                description: p.body_html ? p.body_html.replace(/<[^>]*>?/gm, "") : p.title,
+                imageUrl: p.image?.src || p.images?.[0]?.src || null,
+              });
+            }
           }
+
+          const linkHeader = restRes.headers.get("Link");
+          nextPageUrl = null;
+          if (linkHeader) {
+            const match = linkHeader.match(/<([^>]+)>;\s*rel="next"/);
+            if (match && match[1]) {
+              nextPageUrl = match[1];
+            }
+          }
+        } else {
+          break;
         }
-      } catch (restErr: any) {
-        console.warn("[AI Generator] REST fallback notice:", restErr?.message || restErr);
       }
+    } catch (restErr: any) {
+      console.warn("[AI Generator] REST fallback notice:", restErr?.message || restErr);
     }
   }
 
-  // Only cache if we actually found real products
-  if (products.length > 0) {
-    aiProductsCache.set(shop, { products, expiresAt: now + AI_PRODUCTS_CACHE_TTL });
-    isScopeForbidden = false;
-  }
+  return allProducts;
+}
 
-  if (products.length > 0) {
-    isScopeForbidden = false;
-  }
+export async function loader({ request }: LoaderFunctionArgs) {
+  try {
+    await ensureTablesExist();
+    const { admin, session } = await authenticate.admin(request);
+    const shop = session.shop;
+
+    const adminToken = session?.accessToken || process.env.SHOPIFY_ADMIN_ACCESS_TOKEN || "";
+    let products: AiProductOption[] = [];
+    let isScopeForbidden = false;
+    let diagError: string | null = null;
+
+    const url = new URL(request.url);
+    const forceRefresh = url.searchParams.get("refresh") === "1";
+    if (forceRefresh) {
+      aiProductsCache.delete(shop);
+    }
+
+    // 1. Try fetching via in-memory cache or paginated fetchers
+    const now = Date.now();
+    const cached = forceRefresh ? null : aiProductsCache.get(shop);
+
+    if (cached && cached.expiresAt > now && cached.products && cached.products.length > 0) {
+      products = cached.products;
+    } else {
+      products = await fetchAllCatalogProducts(admin, shop, adminToken);
+      if (products.length > 0) {
+        aiProductsCache.set(shop, { products, expiresAt: now + AI_PRODUCTS_CACHE_TTL });
+      }
+    }
 
   // Fetch real review statistics
   let productStatsMap: Record<string, { count: number; avgRating: number }> = {};
@@ -299,7 +366,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   const aiConfig = await getShopAIConfig(session.shop, admin);
 
-  diag.finalProductsCount = products.length;
+  const diag = (globalThis as any).__AI_GEN_DIAG__;
+  if (diag) {
+    diag.finalProductsCount = products.length;
+  }
 
     return json({
       products,
@@ -331,7 +401,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       diagError: fatalError?.message || String(fatalError),
       shop: "",
       aiConfig: {
-        defaultProvider: "gemini" as const,
+        defaultProvider: "openai" as const,
         hasClaudeKey: false,
         hasGeminiKey: false,
         hasOpenaiKey: false,
@@ -367,35 +437,39 @@ export default function AiGeneratorPage() {
   // Available AI engines with valid saved key check
   const availableEngines = useMemo(() => [
     {
-      id: "gemini",
-      name: "Google Gemini",
-      model: "gemini-1.5-flash",
-      hasKey: aiConfig.hasGeminiKey,
-      description: "Fast, multimodal vision analysis & high-speed review generation.",
-    },
-    {
       id: "openai",
       name: "ChatGPT (OpenAI)",
       model: "gpt-4o-mini",
-      hasKey: aiConfig.hasOpenaiKey,
-      description: "Reliable, well-structured product ratings and review headlines.",
+      hasKey: Boolean(aiConfig.hasOpenaiKey),
+      description: "Structured product ratings and authentic customer headlines.",
+    },
+    {
+      id: "gemini",
+      name: "Google Gemini",
+      model: "gemini-1.5-flash",
+      hasKey: Boolean(aiConfig.hasGeminiKey),
+      description: "Advanced AI for natural, high-quality reviews.",
     },
     {
       id: "claude",
       name: "Anthropic Claude",
       model: "claude-3-5-sonnet",
-      hasKey: aiConfig.hasClaudeKey,
-      description: "Nuanced, high-fidelity customer feedback with authentic human phrasing.",
+      hasKey: Boolean(aiConfig.hasClaudeKey),
+      description: "Nuanced feedback with high-fidelity, human phrasing.",
     },
   ], [aiConfig]);
 
-  // Determine initial selected engine
+  // Determine initial selected engine: prefer an engine that has a connected API key
   const getInitialActiveProvider = () => {
-    if (aiConfig?.defaultProvider) return aiConfig.defaultProvider;
-    if (aiConfig?.hasGeminiKey) return "gemini";
+    if (aiConfig?.defaultProvider === "openai" && aiConfig?.hasOpenaiKey) return "openai";
+    if (aiConfig?.defaultProvider === "gemini" && aiConfig?.hasGeminiKey) return "gemini";
+    if (aiConfig?.defaultProvider === "claude" && aiConfig?.hasClaudeKey) return "claude";
+
     if (aiConfig?.hasOpenaiKey) return "openai";
+    if (aiConfig?.hasGeminiKey) return "gemini";
     if (aiConfig?.hasClaudeKey) return "claude";
-    return "gemini";
+
+    return "openai";
   };
 
   // ==============================================================
@@ -461,6 +535,19 @@ export default function AiGeneratorPage() {
   const [singleNotes, setSingleNotes] = useState<string>("");
   const [singleLanguage, setSingleLanguage] = useState<string>("en");
   const [singleProvider, setSingleProvider] = useState<string>(getInitialActiveProvider());
+
+  // Auto-sync active provider based on connected API keys
+  useEffect(() => {
+    const active = getInitialActiveProvider();
+    setBulkProvider((prev) => {
+      const current = availableEngines.find((e) => e.id === prev);
+      return current?.hasKey ? prev : active;
+    });
+    setSingleProvider((prev) => {
+      const current = availableEngines.find((e) => e.id === prev);
+      return current?.hasKey ? prev : active;
+    });
+  }, [aiConfig, availableEngines]);
   const [singleLoading, setSingleLoading] = useState<boolean>(false);
   const [singleProgress, setSingleProgress] = useState<number>(0);
   const [generatedReviews, setGeneratedReviews] = useState<Array<any>>([]);
@@ -2273,9 +2360,19 @@ export default function AiGeneratorPage() {
                         borderColor: selectedBulkEngine?.hasKey ? "#cbd5e1" : "#f59e0b",
                       }}
                     >
-                      <option value="gemini">Google Gemini</option>
-                      <option value="openai">ChatGPT (OpenAI)</option>
-                      <option value="claude">Anthropic Claude</option>
+                      {availableEngines.map((engine) => (
+                        <option
+                          key={engine.id}
+                          value={engine.id}
+                          disabled={!engine.hasKey}
+                          style={{
+                            color: engine.hasKey ? "#0f172a" : "#94a3b8",
+                            fontWeight: engine.hasKey ? 600 : 400,
+                          }}
+                        >
+                          {engine.name} {engine.hasKey ? "✓ Connected" : "(Disabled — API Key Required)"}
+                        </option>
+                      ))}
                     </select>
 
                     {/* Active Provider Info Badge */}
@@ -2366,7 +2463,7 @@ export default function AiGeneratorPage() {
                   <button
                     type="button"
                     className="rg-btn-primary-blue"
-                    disabled={bulkLoading || filteredProducts.length === 0}
+                    disabled={bulkLoading || filteredProducts.length === 0 || !selectedBulkEngine?.hasKey}
                     onClick={handleBulkGenerateAll}
                   >
                     <span>✦</span>
@@ -2376,6 +2473,15 @@ export default function AiGeneratorPage() {
                         : `Generate ${totalReviewsToGenerate} Reviews`}
                     </span>
                   </button>
+
+                  {!selectedBulkEngine?.hasKey && (
+                    <div style={{ marginTop: "10px", fontSize: "12.5px", color: "#dc2626", textAlign: "center" }}>
+                      ⚠️ Selected provider requires an active API key configured in{" "}
+                      <Link to="/app/ai-settings" style={{ color: "#2563eb", textDecoration: "underline" }}>
+                        AI Settings
+                      </Link>.
+                    </div>
+                  )}
 
                   {/* Secondary Action Button */}
                   <button
@@ -3314,11 +3420,37 @@ export default function AiGeneratorPage() {
                           <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
                         </svg>
                       </div>
-                      <div style={{ overflow: "hidden" }}>
+                      <div style={{ overflow: "hidden", width: "100%" }}>
                         <div style={{ fontSize: "11px", color: "#64748b", fontWeight: 500 }}>AI Engine</div>
-                        <div style={{ fontSize: "13.5px", fontWeight: 600, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          {selectedSingleEngine?.name || "Google Gemini"}
-                        </div>
+                        <select
+                          value={singleProvider}
+                          onChange={(e) => setSingleProvider(e.target.value)}
+                          style={{
+                            fontSize: "13.5px",
+                            fontWeight: 600,
+                            color: "#0f172a",
+                            border: "none",
+                            background: "transparent",
+                            outline: "none",
+                            cursor: "pointer",
+                            padding: 0,
+                            width: "100%",
+                          }}
+                        >
+                          {availableEngines.map((engine) => (
+                            <option
+                              key={engine.id}
+                              value={engine.id}
+                              disabled={!engine.hasKey}
+                              style={{
+                                color: engine.hasKey ? "#0f172a" : "#94a3b8",
+                                fontWeight: engine.hasKey ? 600 : 400,
+                              }}
+                            >
+                              {engine.name} {engine.hasKey ? "✓ Connected" : "(Disabled — Key Required)"}
+                            </option>
+                          ))}
+                        </select>
                       </div>
                     </div>
                   </div>
