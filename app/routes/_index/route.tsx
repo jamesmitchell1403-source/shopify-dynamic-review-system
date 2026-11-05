@@ -267,18 +267,18 @@ export default function App() {
           transform: scale(1.02);
         }
         .logo-img {
-          width: 46px;
-          height: 46px;
-          border-radius: 12px;
+          width: 100px;
+          height: auto;
+          border-radius: 14px;
           object-fit: cover;
           display: block;
           flex-shrink: 0;
           box-shadow: 0 4px 14px rgba(6, 78, 59, 0.16);
         }
         .logo-img.footer-logo-img {
-          width: 38px;
-          height: 38px;
-          border-radius: 10px;
+          width: 100px;
+          height: auto;
+          border-radius: 14px;
           box-shadow: 0 3px 10px rgba(6, 78, 59, 0.14);
         }
         .logo-icon-box {
@@ -1195,6 +1195,14 @@ export default function App() {
           border-color: #059669;
           box-shadow: 0 0 0 3px rgba(5, 150, 105, 0.15);
         }
+        .modal-logo-img {
+          width: 36px;
+          height: 36px;
+          border-radius: 9px;
+          object-fit: cover;
+          display: block;
+          flex-shrink: 0;
+        }
         .btn-modal-submit {
           width: 100%;
           background: #064e3b;
@@ -1247,7 +1255,7 @@ export default function App() {
           .nav-menu { display: none; }
           .mobile-menu-btn { display: flex; align-items: center; justify-content: center; }
           .btn-install-header { padding: 8px 16px; font-size: 13px; }
-          .logo-img { width: 40px; height: 40px; border-radius: 11px; }
+          .logo-img { width: 90px; height: auto; }
           .hero-grid { grid-template-columns: 1fr; gap: 40px; }
           .features-grid-3x2 { grid-template-columns: 1fr; }
           .popups-grid-2x2 { grid-template-columns: 1fr; }
@@ -1261,7 +1269,7 @@ export default function App() {
         }
 
         @media (max-width: 480px) {
-          .logo-img { width: 36px; height: 36px; border-radius: 9px; }
+          .logo-img { width: 80px; height: auto; }
         }
       `}</style>
 
@@ -1277,8 +1285,8 @@ export default function App() {
               src="/app-logo.png"
               alt="Revio: AI Product Reviews"
               className="logo-img"
-              width="46"
-              height="46"
+              width="100"
+              height="100"
             />
           </a>
 
@@ -2124,8 +2132,8 @@ export default function App() {
                 src="/app-logo.png"
                 alt="Revio: AI Product Reviews"
                 className="logo-img footer-logo-img"
-                width="38"
-                height="38"
+                width="100"
+                height="100"
               />
             </a>
 
@@ -2166,9 +2174,9 @@ export default function App() {
               <img
                 src="/app-logo.png"
                 alt="Revio: AI Product Reviews Logo"
-                className="logo-img footer-logo-img"
-                width="34"
-                height="34"
+                className="modal-logo-img"
+                width="36"
+                height="36"
               />
               <h3 className="modal-title" style={{ margin: 0 }}>Install on Shopify</h3>
             </div>
