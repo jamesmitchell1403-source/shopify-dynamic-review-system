@@ -33,11 +33,29 @@ const sharedConfig = {
   sessionStorage: new PrismaSessionStorage(prisma) as any,
   future: {
     unstable_newEmbeddedAuthStrategy: true,
+    expiringOfflineAccessTokens: true,
   },
   ...(process.env.SHOP_CUSTOM_DOMAIN
     ? { customShopDomains: [process.env.SHOP_CUSTOM_DOMAIN] }
     : {}),
 };
+
+// Purge any legacy non-expiring offline sessions (where expires is null) so Shopify issues modern expiring tokens
+prisma.session
+  .deleteMany({
+    where: {
+      isOnline: false,
+      expires: null,
+    },
+  })
+  .then((res) => {
+    if (res.count > 0) {
+      console.log(`[AUTH] Purged ${res.count} legacy non-expiring offline session(s) to enforce modern expiring tokens.`);
+    }
+  })
+  .catch((err) => {
+    console.warn("[AUTH] Notice checking legacy sessions:", err?.message || err);
+  });
 
 const apiKey1 = process.env.SHOPIFY_API_KEY || "";
 const apiSecret1 = process.env.SHOPIFY_API_SECRET || "";

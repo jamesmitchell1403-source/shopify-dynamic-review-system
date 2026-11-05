@@ -7,7 +7,7 @@ import polarisStyles from "@shopify/polaris/build/esm/styles.css?url";
 import customStyles from "../app.css?url";
 
 import { authenticate } from "../shopify.server";
-import { ensureTablesExist } from "../db.server";
+import db, { ensureTablesExist } from "../db.server";
 
 export const links = () => [
   { rel: "stylesheet", href: polarisStyles },
@@ -17,6 +17,12 @@ export const links = () => [
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   await ensureTablesExist();
   const { session } = await authenticate.admin(request);
+
+  if (session && !session.expires) {
+    db.session
+      .deleteMany({ where: { shop: session.shop, expires: null } })
+      .catch(() => {});
+  }
 
   const url = new URL(request.url);
   const shop = session?.shop || url.searchParams.get("shop") || request.headers.get("referer") || "";

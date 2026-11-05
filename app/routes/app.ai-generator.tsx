@@ -193,10 +193,13 @@ async function fetchAllCatalogProducts(
     try {
       const cleanShop = shop.replace(/^https?:\/\//, "").replace(/\/.*$/, "");
       const dbSession = await db.session.findFirst({
-        where: { shop: { in: [shop, cleanShop] } },
-        orderBy: { isOnline: "asc" }, // Prefer offline session
+        where: {
+          shop: { in: [shop, cleanShop] },
+          expires: { not: null },
+        },
+        orderBy: { isOnline: "asc" }, // Prefer modern expiring offline session
       });
-      const token = dbSession?.accessToken || session?.accessToken || process.env.SHOPIFY_ADMIN_ACCESS_TOKEN;
+      const token = dbSession?.accessToken || (session?.expires ? session?.accessToken : null) || process.env.SHOPIFY_ADMIN_ACCESS_TOKEN;
 
       if (token) {
         const directRes = await fetch(`https://${cleanShop}/admin/api/2025-01/graphql.json`, {
@@ -216,6 +219,14 @@ async function fetchAllCatalogProducts(
           for (const p of directNodes) {
             addNode(p);
           }
+        } else if (directRes.status === 403) {
+          try {
+            const errJson = (await directRes.json()) as any;
+            if (typeof errJson?.errors === "string" && errJson.errors.includes("Non-expiring access tokens")) {
+              console.warn("[AI Generator] Purging legacy non-expiring token for shop:", cleanShop);
+              await db.session.deleteMany({ where: { shop: { in: [shop, cleanShop] }, expires: null } });
+            }
+          } catch (_) {}
         }
 
         // Direct REST API fallback if still 0
@@ -266,6 +277,15 @@ export async function loader({ request }: LoaderFunctionArgs) {
     await ensureTablesExist();
     const { admin, session } = await authenticate.admin(request);
     const shop = session.shop;
+
+    // Invalidate legacy non-expiring session to enforce modern expiring token exchange
+    if (session && !session.expires) {
+      db.session
+        .deleteMany({
+          where: { shop: session.shop, expires: null },
+        })
+        .catch(() => {});
+    }
 
     let products: AiProductOption[] = [];
     let isScopeForbidden = false;
