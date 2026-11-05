@@ -259,8 +259,26 @@ export default function App() {
         .logo-wrap {
           display: flex;
           align-items: center;
-          gap: 10px;
+          gap: 12px;
           text-decoration: none;
+          transition: opacity 0.2s ease;
+        }
+        .logo-wrap:hover {
+          opacity: 0.9;
+        }
+        .logo-img {
+          width: 40px;
+          height: 40px;
+          border-radius: 10px;
+          object-fit: cover;
+          display: block;
+          flex-shrink: 0;
+          box-shadow: 0 2px 8px rgba(6, 78, 59, 0.15);
+        }
+        .logo-img.footer-logo-img {
+          width: 34px;
+          height: 34px;
+          border-radius: 8px;
         }
         .logo-icon-box {
           width: 38px;
@@ -278,6 +296,7 @@ export default function App() {
           font-weight: 800;
           color: #064e3b;
           letter-spacing: -0.3px;
+          line-height: 1.2;
         }
         .logo-text span {
           color: #092f24;
@@ -1227,6 +1246,8 @@ export default function App() {
           .nav-menu { display: none; }
           .mobile-menu-btn { display: flex; align-items: center; justify-content: center; }
           .btn-install-header { padding: 8px 16px; font-size: 13px; }
+          .logo-img { width: 36px; height: 36px; }
+          .logo-text { font-size: 16px; }
           .hero-grid { grid-template-columns: 1fr; gap: 40px; }
           .features-grid-3x2 { grid-template-columns: 1fr; }
           .popups-grid-2x2 { grid-template-columns: 1fr; }
@@ -1238,6 +1259,13 @@ export default function App() {
           .cta-left-content { flex-direction: column; text-align: center; }
           .hero-title { font-size: 36px; }
         }
+
+        @media (max-width: 480px) {
+          .logo-wrap { gap: 8px; }
+          .logo-img { width: 32px; height: 32px; border-radius: 8px; }
+          .logo-text { font-size: 14.5px; }
+          .site-header .logo-text span { display: none; }
+        }
       `}</style>
 
       {/* Decorative background glow elements */}
@@ -1248,11 +1276,13 @@ export default function App() {
       <header className="site-header">
         <div className="container nav-wrapper">
           <a href="/" onClick={scrollToTop} className="logo-wrap">
-            <div className="logo-icon-box">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-              </svg>
-            </div>
+            <img
+              src="/app-logo.png"
+              alt="Revio: AI Product Reviews Logo"
+              className="logo-img"
+              width="40"
+              height="40"
+            />
             <div className="logo-text">
               Revio: <span>AI Product Reviews</span>
             </div>
@@ -2096,11 +2126,13 @@ export default function App() {
         <div className="container">
           <div className="footer-row">
             <a href="/" onClick={scrollToTop} className="logo-wrap" style={{ textDecoration: "none" }}>
-              <div className="logo-icon-box" style={{ width: "32px", height: "32px" }}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-                </svg>
-              </div>
+              <img
+                src="/app-logo.png"
+                alt="Revio: AI Product Reviews Logo"
+                className="logo-img footer-logo-img"
+                width="34"
+                height="34"
+              />
               <div className="logo-text" style={{ fontSize: "15px" }}>
                 Revio: <span>AI Product Reviews</span>
               </div>
@@ -2140,11 +2172,13 @@ export default function App() {
               ✕
             </button>
             <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "12px" }}>
-              <div className="logo-icon-box" style={{ width: "32px", height: "32px" }}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-                </svg>
-              </div>
+              <img
+                src="/app-logo.png"
+                alt="Revio: AI Product Reviews Logo"
+                className="logo-img footer-logo-img"
+                width="34"
+                height="34"
+              />
               <h3 className="modal-title" style={{ margin: 0 }}>Install on Shopify</h3>
             </div>
             <p className="modal-sub">
