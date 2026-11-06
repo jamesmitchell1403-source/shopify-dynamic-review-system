@@ -2,9 +2,6 @@
   Revio: Review Widget - App Embed for Storefront
 {% endcomment %}
 
-{% if template.name == 'product' or template contains 'product' %}
-<link rel="stylesheet" href="{{ 'review-widget.css' | asset_url }}" id="rw-widget-style">
-
 <div
   id="dynamic-review-widget-root"
   data-product-id="{{ product.id }}"
@@ -12,9 +9,9 @@
   data-shop="{{ shop.permanent_domain }}"
 ></div>
 
+<link rel="stylesheet" href="{{ 'review-widget.css' | asset_url }}" id="rw-widget-style">
 <script src="https://productreview.zooq.app/apps/reviews/widget.js?v={{ "now" | date: "%s" }}" defer="defer"></script>
 <script src="{{ 'review-widget.js' | asset_url }}" defer="defer"></script>
-{% endif %}
 
 {% schema %}
 {

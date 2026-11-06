@@ -46,12 +46,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
     }
   }
 
-  if (!productId && !productHandle) {
-    return json({ reviews: [], settings: null, error: "Missing productId or productHandle" }, {
-      headers: { "Access-Control-Allow-Origin": "*" },
-    });
-  }
-
   // Fetch shop settings with domain fallback
   let settings: any = null;
   if (shopParam) {
@@ -88,6 +82,23 @@ export async function loader({ request }: LoaderFunctionArgs) {
     maxPerSession: settings?.widgetMaxPerSession ?? 20,
     enabled: settings?.widgetEnabled ?? true,
   };
+
+  if (!productId && !productHandle) {
+    return json(
+      {
+        reviews: [],
+        settings: widgetConfig,
+        totalCount: 0,
+        averageRating: "0.0",
+      },
+      {
+        headers: {
+          "Access-Control-Allow-Origin": "*",
+          "Cache-Control": "no-cache, no-store, must-revalidate, max-age=0",
+        },
+      }
+    );
+  }
 
   // Build shop domain filter clause
   const shopWhereClause = getShopWhereClause(shopParam || "");
@@ -175,39 +186,39 @@ export async function loader({ request }: LoaderFunctionArgs) {
     totalCount = safeProductReviews.length;
     const sumRating = safeProductReviews.reduce((sum, r) => sum + (r.rating || 5), 0);
     averageRating = (sumRating / totalCount).toFixed(1);
-  } else {
-    // Fallback to published store reviews for the popup widget so social proof notifications always pop up
-    const fallbackReviews = await db.review.findMany({
+  } else if (isAllProductsRequest) {
+    const allStoreReviews = await db.review.findMany({
       where: baseWhere,
       orderBy: { createdAt: "desc" },
       take: 50,
     }).catch(() => []);
-
-    const safeFallback = fallbackReviews.filter((r) => r.isPublished);
-    if (safeFallback.length > 0) {
-      reviewsToReturn = safeFallback;
-      totalCount = safeFallback.length;
-      const sumRating = safeFallback.reduce((sum, r) => sum + (r.rating || 5), 0);
+    const safeAll = allStoreReviews.filter((r) => r.isPublished);
+    if (safeAll.length > 0) {
+      reviewsToReturn = safeAll;
+      totalCount = safeAll.length;
+      const sumRating = safeAll.reduce((sum, r) => sum + (r.rating || 5), 0);
       averageRating = (sumRating / totalCount).toFixed(1);
-    } else {
-      // If shop genuinely has 0 published reviews -> return empty array
-      return json(
-        {
-          reviews: [],
-          settings: widgetConfig,
-          averageRating: "0.0",
-          totalCount: 0,
-        },
-        {
-          headers: {
-            "Access-Control-Allow-Origin": "*",
-            "Cache-Control": "no-cache, no-store, must-revalidate, max-age=0",
-            "Pragma": "no-cache",
-            "Expires": "0",
-          },
-        }
-      );
     }
+  }
+
+  if (reviewsToReturn.length === 0) {
+    // Current product has zero published reviews - return clean empty state without fake reviews
+    return json(
+      {
+        reviews: [],
+        settings: widgetConfig,
+        averageRating: "0.0",
+        totalCount: 0,
+      },
+      {
+        headers: {
+          "Access-Control-Allow-Origin": "*",
+          "Cache-Control": "no-cache, no-store, must-revalidate, max-age=0",
+          "Pragma": "no-cache",
+          "Expires": "0",
+        },
+      }
+    );
   }
 
   // Parsing customer tags if available

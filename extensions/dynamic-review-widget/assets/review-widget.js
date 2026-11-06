@@ -1,29 +1,34 @@
 (function () {
   'use strict';
 
-  if (window.__rw_widget_initialized && document.querySelector('.rw-notification-card')) {
+  if (window.__rw_widget_initialized) {
     return; // Strictly prevent duplicate script execution / multiple popup loops
   }
   window.__rw_widget_initialized = true;
 
   // Strictly restrict popup widget to Product pages (/products/*)
+  const rootEl = document.getElementById('dynamic-review-widget-root') || document.getElementById('dynamic_review_widget_root') || document.querySelector('[data-product-id]');
+  const rootProductId = rootEl ? (rootEl.getAttribute('data-product-id') || '').trim() : '';
+  const rootProductHandle = rootEl ? (rootEl.getAttribute('data-product-handle') || '').trim() : '';
+
   const isProductPage = window.location.pathname.includes('/products/') ||
                         (window.ShopifyAnalytics && window.ShopifyAnalytics.meta && window.ShopifyAnalytics.meta.page && window.ShopifyAnalytics.meta.page.pageType === 'product') ||
                         (window.meta && window.meta.page && window.meta.page.pageType === 'product') ||
-                        document.getElementById('dynamic-review-widget-root');
+                        Boolean(rootProductId.length > 0 || rootProductHandle.length > 0);
 
   if (!isProductPage) {
-    return; // Exit completely on non-product pages (homepage, collections, cart, etc.)
+    // Revio Review Widget is strictly active on product pages by design.
+    // Clean, silent no-op on non-product pages (Home, Collection, Cart) with zero console errors or network requests.
+    return;
   }
 
-  let rootEl = document.getElementById('dynamic-review-widget-root') || document.getElementById('dynamic_review_widget_root') || document.querySelector('[data-product-id]');
   if (rootEl) {
     rootEl.style.minHeight = "1px";
     rootEl.style.display = "block";
   }
 
-  let productId = rootEl ? rootEl.getAttribute('data-product-id') : null;
-  let productHandle = rootEl ? rootEl.getAttribute('data-product-handle') : null;
+  let productId = rootProductId || null;
+  let productHandle = rootProductHandle || null;
   let shop = rootEl ? rootEl.getAttribute('data-shop') : null;
 
   // Fallbacks if element not in DOM or data-product-id missing
@@ -46,7 +51,7 @@
     productId = productHandle;
   }
   if (!productId && !productHandle) {
-    productId = "all";
+    return; // Exit cleanly if product context is missing
   }
 
   if (!shop) {
@@ -83,9 +88,9 @@
     const countInt = Number(totalCount) || 0;
     const countText = countInt === 1 ? '1 review' : (countInt + ' reviews');
     const countInParens = '(' + countText + ')';
-    const numRating = Number(avgRating) || 5.0;
-    const roundedStars = Math.min(Math.max(Math.round(numRating), 1), 5);
-    const starString = '★'.repeat(roundedStars) + '☆'.repeat(5 - roundedStars);
+    const numRating = countInt > 0 ? (Number(avgRating) || 5.0) : 0;
+    const roundedStars = countInt > 0 ? Math.min(Math.max(Math.round(numRating), 1), 5) : 0;
+    const starString = countInt > 0 ? ('★'.repeat(roundedStars) + '☆'.repeat(5 - roundedStars)) : '☆☆☆☆☆';
 
     // 1. Update Revio App Block elements (.dynamic-review-badge-wrapper)
     const revioBadges = document.querySelectorAll('.dynamic-review-badge-wrapper');
@@ -199,13 +204,13 @@
       });
   }
 
-  let lastAvg = '5.0';
+  let lastAvg = '0.0';
   let lastCount = 0;
 
   fetchReviews(productId)
     .then((data) => {
-      const avg = data && data.averageRating ? data.averageRating : '5.0';
       const count = data && data.totalCount !== undefined ? data.totalCount : (data && data.reviews ? data.reviews.length : 0);
+      const avg = count > 0 && data && data.averageRating ? data.averageRating : '0.0';
       lastAvg = avg;
       lastCount = count;
 
@@ -224,8 +229,7 @@
         cards.forEach((card) => card.remove());
       }
     })
-    .catch((err) => {
-      console.warn('[Revio] Widget fetch failed:', err);
+    .catch(() => {
       const cards = document.querySelectorAll('.rw-notification-card');
       cards.forEach((card) => card.remove());
     });
@@ -252,28 +256,13 @@
   }
 
   function initWidget(reviews, settings) {
-    if (window.__rw_widget_running && document.querySelector('.rw-notification-card')) return;
+    if (window.__rw_widget_running) return;
     window.__rw_widget_running = true;
 
     let position = settings.position || 'bottom-left';
-    const styleMap = {
-      'classic': 'layout-1',
-      'photo': 'layout-2',
-      'social': 'layout-3',
-      'pill': 'layout-4',
-      'product': 'layout-5',
-      '1': 'layout-1',
-      '2': 'layout-2',
-      '3': 'layout-3',
-      '4': 'layout-4',
-      '5': 'layout-5',
-    };
-    const rawStyle = (settings.layoutStyle || 'layout-1').toLowerCase().trim();
-    const cleanNum = rawStyle.replace(/^layout-/, '');
-    const resolvedStyle = styleMap[cleanNum] || styleMap[rawStyle] || (rawStyle.startsWith('layout-') ? rawStyle : 'layout-' + rawStyle);
-    const layoutStyle = resolvedStyle.startsWith('layout-') ? resolvedStyle : 'layout-' + resolvedStyle;
-    const numStyle = layoutStyle.replace(/^layout-/, '');
-    const layoutClass = `rw-layout-${layoutStyle} rw-${layoutStyle} rw-layout-${numStyle} rw-layout-layout-${numStyle}`;
+    const rawStyle = settings.layoutStyle || 'layout-1';
+    const layoutStyle = rawStyle.startsWith('layout-') ? rawStyle : `layout-${rawStyle}`;
+    const layoutClass = `rw-layout-${layoutStyle}`;
 
     const delayMs = (settings.delaySeconds !== undefined ? settings.delaySeconds : 1) * 1000;
     const durationMs = (settings.displayDuration || 10) * 1000;
@@ -773,10 +762,7 @@
           resolve();
         };
 
-        const timer = setTimeout(finish, 1200);
-
         img.onload = function() {
-          clearTimeout(timer);
           if (typeof img.decode === 'function') {
             img.decode().then(finish).catch(finish);
           } else {
@@ -784,14 +770,10 @@
           }
         };
 
-        img.onerror = function() {
-          clearTimeout(timer);
-          finish();
-        };
+        img.onerror = finish;
         img.src = url;
 
         if (img.complete && img.naturalWidth > 0) {
-          clearTimeout(timer);
           if (typeof img.decode === 'function') {
             img.decode().then(finish).catch(finish);
           } else {
