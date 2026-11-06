@@ -367,12 +367,133 @@ function AlibabaBrandIcon({ size = 20 }: { size?: number }) {
   );
 }
 
+// Automatic marketplace detection based on filename, column headers, URLs, and row content
+function detectMarketplaceFromData(
+  file: File,
+  headers: string[],
+  rows: Array<Record<string, string>>
+): MarketplaceKey | null {
+  let amazonScore = 0;
+  let flipkartScore = 0;
+  let alibabaScore = 0;
+
+  // 1. Inspect File Name (Strongest initial signal)
+  const fileName = (file?.name || "").toLowerCase();
+  if (fileName.includes("amazon") || fileName.includes("amzn")) {
+    amazonScore += 25;
+  }
+  if (fileName.includes("flipkart") || fileName.includes("fkp")) {
+    flipkartScore += 25;
+  }
+  if (
+    fileName.includes("alibaba") ||
+    fileName.includes("aliexpress") ||
+    fileName.includes("ali_express") ||
+    fileName.includes("ali-express")
+  ) {
+    alibabaScore += 25;
+  }
+
+  // 2. Inspect Header names
+  for (const h of headers) {
+    const rawH = h.trim();
+    const hClean = rawH.toLowerCase().replace(/[\s_\-\/]/g, "");
+
+    // Amazon headers
+    if (hClean === "asin" || hClean === "amazonasin") {
+      amazonScore += 12;
+    } else if (hClean.includes("amazon")) {
+      amazonScore += 15;
+    }
+
+    // Flipkart headers
+    if (hClean === "fsn" || hClean === "flipkartsku" || hClean === "flipkartproductid") {
+      flipkartScore += 12;
+    } else if (hClean.includes("flipkart")) {
+      flipkartScore += 15;
+    }
+
+    // Alibaba headers
+    if (hClean.includes("alibaba") || hClean.includes("aliexpress")) {
+      alibabaScore += 15;
+    }
+  }
+
+  // 3. Inspect Row contents (URLs, SKU formats, explicit source/channel/platform columns)
+  const sampleRows = rows.slice(0, 40);
+  for (const row of sampleRows) {
+    for (const [key, val] of Object.entries(row)) {
+      if (!val || typeof val !== "string") continue;
+      const vTrim = val.trim();
+      const vLower = vTrim.toLowerCase();
+      const kLower = key.toLowerCase();
+
+      // Check URL domains (High confidence)
+      if (
+        vLower.includes("amazon.com") ||
+        vLower.includes("amazon.in") ||
+        vLower.includes("amazon.co.uk") ||
+        vLower.includes("amzn.to") ||
+        vLower.includes("a.co")
+      ) {
+        amazonScore += 15;
+      }
+      if (vLower.includes("flipkart.com") || vLower.includes("dl.flipkart.com")) {
+        flipkartScore += 15;
+      }
+      if (vLower.includes("alibaba.com") || vLower.includes("aliexpress.com")) {
+        alibabaScore += 15;
+      }
+
+      // Check explicit marketplace/source/channel columns
+      if (
+        kLower.includes("marketplace") ||
+        kLower.includes("source") ||
+        kLower.includes("platform") ||
+        kLower.includes("channel")
+      ) {
+        if (vLower.includes("amazon")) amazonScore += 10;
+        if (vLower.includes("flipkart")) flipkartScore += 10;
+        if (vLower.includes("alibaba") || vLower.includes("aliexpress")) alibabaScore += 10;
+      }
+
+      // Check SKU / ASIN / ID patterns
+      if (kLower.includes("asin") || kLower.includes("sku") || kLower.includes("id")) {
+        if (/^b0[a-z0-9]{8}/i.test(vTrim) || vLower.startsWith("asin_") || vLower.startsWith("asin ")) {
+          amazonScore += 5;
+        }
+        if (
+          vLower.startsWith("fkp-") ||
+          vLower.startsWith("fkp_") ||
+          vLower.startsWith("fsn-") ||
+          vLower.startsWith("fsn_")
+        ) {
+          flipkartScore += 5;
+        }
+      }
+    }
+  }
+
+  if (amazonScore > flipkartScore && amazonScore > alibabaScore && amazonScore > 0) {
+    return "IMPORTED_AMAZON";
+  }
+  if (flipkartScore > amazonScore && flipkartScore > alibabaScore && flipkartScore > 0) {
+    return "IMPORTED_FLIPKART";
+  }
+  if (alibabaScore > amazonScore && alibabaScore > flipkartScore && alibabaScore > 0) {
+    return "IMPORTED_ALIBABA";
+  }
+
+  return null;
+}
+
 export default function ImportReviewsPage() {
   const { products, historyList, liveMarketplaceReviews, marketplaceCounts } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
 
-  // Active marketplace selector
+  // Active marketplace selector (auto-detected when CSV file is selected)
   const [sourceType, setSourceType] = useState<MarketplaceKey>("IMPORTED_ALIBABA");
+  const [autoDetectedMarketplace, setAutoDetectedMarketplace] = useState<MarketplaceKey | null>(null);
 
   // Settings
   const [overrideProductId, setOverrideProductId] = useState<string>("");
@@ -506,11 +627,32 @@ export default function ImportReviewsPage() {
     });
   };
 
-  // Client-side CSV file parser
+  // Client-side CSV file parser with automatic marketplace auto-detection
   const handleFileChosen = (selectedFile: File) => {
     setFile(selectedFile);
     setErrorMessage(null);
     setSuccessBanner(null);
+
+    // Immediate filename heuristic so the chip highlights instantly upon file selection
+    const fileName = (selectedFile.name || "").toLowerCase();
+    let preDetected: MarketplaceKey | null = null;
+    if (fileName.includes("amazon") || fileName.includes("amzn")) {
+      preDetected = "IMPORTED_AMAZON";
+    } else if (fileName.includes("flipkart") || fileName.includes("fkp")) {
+      preDetected = "IMPORTED_FLIPKART";
+    } else if (
+      fileName.includes("alibaba") ||
+      fileName.includes("aliexpress") ||
+      fileName.includes("ali_express") ||
+      fileName.includes("ali-express")
+    ) {
+      preDetected = "IMPORTED_ALIBABA";
+    }
+
+    if (preDetected) {
+      setSourceType(preDetected);
+      setAutoDetectedMarketplace(preDetected);
+    }
 
     Papa.parse(selectedFile, {
       header: true,
@@ -529,6 +671,14 @@ export default function ImportReviewsPage() {
         setCsvHeaders(headers);
         setRawParsedRows(rows);
 
+        // Run deep content auto-detection
+        const detected = detectMarketplaceFromData(selectedFile, headers, rows);
+        const finalMarketplace = detected || preDetected;
+        if (finalMarketplace) {
+          setSourceType(finalMarketplace);
+          setAutoDetectedMarketplace(finalMarketplace);
+        }
+
         // Auto-detect best matching column for each field
         const findHeader = (candidates: string[]) => {
           for (const c of candidates) {
@@ -545,7 +695,7 @@ export default function ImportReviewsPage() {
         const detectedReviewer = findHeader(["ReviewerName", "reviewer_name", "Reviewer", "Name", "Author", "Customer"]) || headers[0] || "";
         const detectedRating = findHeader(["Rating", "rating", "Stars", "Score"]) || headers[1] || "";
         const detectedText = findHeader(["ReviewText", "review_text", "Review", "Comment", "Body", "Feedback"]) || headers[2] || "";
-        const detectedSku = findHeader(["SKU/ASIN", "SKU", "ASIN", "sku", "asin", "Product SKU", "Item SKU"]) || "";
+        const detectedSku = findHeader(["SKU/ASIN", "SKU", "ASIN", "sku", "asin", "Product SKU", "Item SKU", "FSN"]) || "";
         const detectedUrl = findHeader(["ExternalUrl", "external_url", "URL", "url", "Link", "ProductUrl"]) || "";
 
         const mapping = {
@@ -601,6 +751,7 @@ export default function ImportReviewsPage() {
 
   const handleCancel = () => {
     setFile(null);
+    setAutoDetectedMarketplace(null);
     setRawParsedRows([]);
     setCsvHeaders([]);
     setParsedData(null);
@@ -643,6 +794,7 @@ export default function ImportReviewsPage() {
         );
         setImportResult(data);
         setFile(null);
+        setAutoDetectedMarketplace(null);
         setRawParsedRows([]);
         setCsvHeaders([]);
         setParsedData(null);
@@ -1208,6 +1360,11 @@ export default function ImportReviewsPage() {
                   <h3 className="upload-main-title">{file.name}</h3>
                   <p className="upload-subtitle-text">
                     {(file.size / 1024).toFixed(1)} KB • {parsedData?.totalRows || 0} reviews detected
+                    {autoDetectedMarketplace && (
+                      <span style={{ color: "#166534", fontWeight: 600, marginLeft: "8px" }}>
+                        • Marketplace: {currentMarketplace.name} (Auto-detected)
+                      </span>
+                    )}
                   </p>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "12px", marginTop: "18px" }}>
                     <button
@@ -1286,21 +1443,64 @@ export default function ImportReviewsPage() {
               </div>
 
               <div style={{ marginTop: "28px", paddingTop: "20px", borderTop: "1px solid #f1f5f9" }}>
-                <div className="supported-marketplaces-header">
-                  Supported marketplaces
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "8px" }}>
+                  <div className="supported-marketplaces-header" style={{ margin: 0 }}>
+                    Supported marketplaces
+                  </div>
+                  {autoDetectedMarketplace && (
+                    <span
+                      style={{
+                        fontSize: "11px",
+                        fontWeight: 700,
+                        color: "#166534",
+                        background: "#dcfce7",
+                        padding: "2px 8px",
+                        borderRadius: "12px",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "4px",
+                      }}
+                    >
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                      Auto-detected
+                    </span>
+                  )}
                 </div>
                 <div className="marketplaces-pill-list">
                   {marketplaces.map((m) => {
                     const isSelected = sourceType === m.key;
+                    const isAutoDetected = autoDetectedMarketplace === m.key;
                     return (
                       <div
                         key={m.key}
                         className={`marketplace-chip ${isSelected ? "active" : ""}`}
-                        onClick={() => setSourceType(m.key)}
-                        title={`${m.name}: ${m.count} imported`}
+                        onClick={() => {
+                          setSourceType(m.key);
+                          if (autoDetectedMarketplace) setAutoDetectedMarketplace(null);
+                        }}
+                        title={`${m.name}: ${m.count} imported${isAutoDetected ? " (Auto-detected from file)" : ""}`}
                       >
                         {m.icon}
                         <span>{m.name}</span>
+                        {isAutoDetected && (
+                          <span
+                            style={{
+                              fontSize: "10px",
+                              fontWeight: 700,
+                              background: "#2563eb",
+                              color: "#ffffff",
+                              borderRadius: "4px",
+                              padding: "1px 5px",
+                              marginLeft: "2px",
+                              lineHeight: "1.2",
+                              letterSpacing: "0.2px",
+                            }}
+                          >
+                            Auto
+                          </span>
+                        )}
                       </div>
                     );
                   })}
@@ -1328,8 +1528,28 @@ export default function ImportReviewsPage() {
                 <h3 style={{ fontSize: "17px", fontWeight: 700, color: "#0f172a", margin: "0 0 4px 0" }}>
                   Preview & Import Settings
                 </h3>
-                <p style={{ fontSize: "13px", color: "#64748b", margin: 0 }}>
-                  Review rows from <span style={{ fontWeight: 600, color: "#0f172a" }}>{file.name}</span> before importing.
+                <p style={{ fontSize: "13px", color: "#64748b", margin: 0, display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                  <span>Review rows from <span style={{ fontWeight: 600, color: "#0f172a" }}>{file.name}</span> before importing.</span>
+                  {autoDetectedMarketplace && (
+                    <span
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "4px",
+                        padding: "2px 8px",
+                        borderRadius: "12px",
+                        background: "#dcfce7",
+                        color: "#166534",
+                        fontSize: "12px",
+                        fontWeight: 600,
+                      }}
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                      Auto-detected: {currentMarketplace.name}
+                    </span>
+                  )}
                 </p>
               </div>
 

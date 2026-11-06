@@ -20,7 +20,14 @@ export async function action({ request }: ActionFunctionArgs) {
 
   const formData = await request.formData();
   const file = formData.get("csvFile") as File;
-  const sourceType = (formData.get("sourceType") as string) || "IMPORTED_AMAZON"; // IMPORTED_AMAZON | IMPORTED_FLIPKART | IMPORTED_ALIBABA
+  let sourceType = (formData.get("sourceType") as string) || "";
+  if (!sourceType && file?.name) {
+    const fLower = file.name.toLowerCase();
+    if (fLower.includes("amazon") || fLower.includes("amzn")) sourceType = "IMPORTED_AMAZON";
+    else if (fLower.includes("flipkart") || fLower.includes("fkp")) sourceType = "IMPORTED_FLIPKART";
+    else if (fLower.includes("alibaba") || fLower.includes("aliexpress")) sourceType = "IMPORTED_ALIBABA";
+  }
+  if (!sourceType) sourceType = "IMPORTED_AMAZON";
   const manualMappingsJson = formData.get("manualMappings") as string;
 
   const adminToken = session?.accessToken || process.env.SHOPIFY_ADMIN_ACCESS_TOKEN || "";
