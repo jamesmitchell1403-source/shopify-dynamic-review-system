@@ -17,15 +17,17 @@ export async function getShopAIConfig(shopDomain: string, admin?: any): Promise<
   let anthropicApiKey = "";
   let geminiApiKey = "";
   let openaiApiKey = "";
+  let cloudKeysFound = false;
 
-  // 1. Read persistent keys from Shopify Metafields
+  // 1. Read persistent keys from Shopify Metafields (Cloud is source of truth when present)
   if (admin) {
     try {
-      const cloudKeys = await getShopAIKeysFromShopify(admin);
+      const cloudKeys = await getShopAIKeysFromShopify(admin, shopDomain);
       if (cloudKeys) {
-        if (cloudKeys.anthropicApiKey) anthropicApiKey = cloudKeys.anthropicApiKey.trim();
-        if (cloudKeys.geminiApiKey) geminiApiKey = cloudKeys.geminiApiKey.trim();
-        if (cloudKeys.openaiApiKey) openaiApiKey = cloudKeys.openaiApiKey.trim();
+        cloudKeysFound = true;
+        anthropicApiKey = (cloudKeys.anthropicApiKey || "").trim();
+        geminiApiKey = (cloudKeys.geminiApiKey || "").trim();
+        openaiApiKey = (cloudKeys.openaiApiKey || "").trim();
         if (cloudKeys.defaultAiProvider) {
           defaultProvider = cloudKeys.defaultAiProvider as "claude" | "gemini" | "openai";
         }
@@ -33,22 +35,24 @@ export async function getShopAIConfig(shopDomain: string, admin?: any): Promise<
     } catch (_) {}
   }
 
-  // 2. Read from Database settings (DB overrides if present)
-  try {
-    const settings = await db.shopSettings.findUnique({
-      where: { shop: shopDomain },
-    });
+  // 2. Read from Database settings only if cloud keys were not retrieved
+  if (!cloudKeysFound) {
+    try {
+      const settings = await db.shopSettings.findUnique({
+        where: { shop: shopDomain },
+      });
 
-    if (settings) {
-      if (settings.defaultAiProvider) {
-        defaultProvider = settings.defaultAiProvider as "claude" | "gemini" | "openai";
+      if (settings) {
+        if (settings.defaultAiProvider) {
+          defaultProvider = settings.defaultAiProvider as "claude" | "gemini" | "openai";
+        }
+        anthropicApiKey = (settings.anthropicApiKey || "").trim();
+        geminiApiKey = (settings.geminiApiKey || "").trim();
+        openaiApiKey = ((settings as any).openaiApiKey || "").trim();
       }
-      if (settings.anthropicApiKey && !anthropicApiKey) anthropicApiKey = settings.anthropicApiKey.trim();
-      if (settings.geminiApiKey && !geminiApiKey) geminiApiKey = settings.geminiApiKey.trim();
-      if ((settings as any).openaiApiKey && !openaiApiKey) openaiApiKey = (settings as any).openaiApiKey.trim();
+    } catch (error) {
+      console.warn("Error fetching ShopSettings in getShopAIConfig:", error);
     }
-  } catch (error) {
-    console.warn("Error fetching ShopSettings in getShopAIConfig:", error);
   }
 
   const hasClaudeKey = Boolean(anthropicApiKey && anthropicApiKey.length > 0);

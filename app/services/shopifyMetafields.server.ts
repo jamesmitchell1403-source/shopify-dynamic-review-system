@@ -15,6 +15,10 @@ const aiKeysMemoryCache = new Map<string, CachedAIKeys>();
 const AI_KEYS_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 let cachedShopGid: string | null = null;
 
+export function clearAIKeysCache(): void {
+  aiKeysMemoryCache.clear();
+}
+
 export async function getShopAIKeysFromShopify(admin: any, cacheKey: string = "default"): Promise<SavedAIKeys | null> {
   const now = Date.now();
   const cached = aiKeysMemoryCache.get(cacheKey);
@@ -85,9 +89,9 @@ export async function saveShopAIKeysToShopify(
     const existing = await getShopAIKeysFromShopify(admin, cacheKey);
 
     const mergedKeys = {
-      anthropicApiKey: keys.anthropicApiKey !== undefined ? keys.anthropicApiKey : (existing?.anthropicApiKey || ""),
-      geminiApiKey: keys.geminiApiKey !== undefined ? keys.geminiApiKey : (existing?.geminiApiKey || ""),
-      openaiApiKey: keys.openaiApiKey !== undefined ? keys.openaiApiKey : (existing?.openaiApiKey || ""),
+      anthropicApiKey: keys.anthropicApiKey !== undefined ? (keys.anthropicApiKey || "") : (existing?.anthropicApiKey || ""),
+      geminiApiKey: keys.geminiApiKey !== undefined ? (keys.geminiApiKey || "") : (existing?.geminiApiKey || ""),
+      openaiApiKey: keys.openaiApiKey !== undefined ? (keys.openaiApiKey || "") : (existing?.openaiApiKey || ""),
       defaultAiProvider: keys.defaultAiProvider !== undefined ? keys.defaultAiProvider : (existing?.defaultAiProvider || "gemini"),
       fallbackAiProvider: keys.fallbackAiProvider !== undefined ? keys.fallbackAiProvider : (existing?.fallbackAiProvider || "auto"),
     };
@@ -128,7 +132,11 @@ export async function saveShopAIKeysToShopify(
       console.error("Shopify Metafields set userErrors:", errors);
       return false;
     }
-    aiKeysMemoryCache.set(cacheKey, { keys: mergedKeys, expiresAt: Date.now() + AI_KEYS_CACHE_TTL });
+    aiKeysMemoryCache.clear();
+    aiKeysMemoryCache.set("default", { keys: mergedKeys, expiresAt: Date.now() + AI_KEYS_CACHE_TTL });
+    if (cacheKey && cacheKey !== "default") {
+      aiKeysMemoryCache.set(cacheKey, { keys: mergedKeys, expiresAt: Date.now() + AI_KEYS_CACHE_TTL });
+    }
     return true;
   } catch (err) {
     console.error("Failed to save Shopify Shop Metafields:", err);

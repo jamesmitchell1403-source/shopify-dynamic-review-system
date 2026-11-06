@@ -45,18 +45,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   // 2. Fetch settings and cloud keys
   const settings = await db.shopSettings.findUnique({ where: { shop } });
-  const hasLocalAiKey = Boolean(
-    settings?.anthropicApiKey ||
-    settings?.geminiApiKey ||
-    (settings as any)?.openaiApiKey
-  );
-
   let cloudKeys: any = null;
-  if (!hasLocalAiKey) {
-    try {
-      cloudKeys = await getShopAIKeysFromShopify(admin);
-    } catch (_) {}
-  }
+  try {
+    cloudKeys = await getShopAIKeysFromShopify(admin, shop);
+  } catch (_) {}
 
   // 3. QR code scans
   const qrScansResult = await db.qrCodeRecord.aggregate({
@@ -288,14 +280,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
   }
 
   // 11. Checklist status
-  const hasAiKey = Boolean(
-    settings?.anthropicApiKey ||
-    settings?.geminiApiKey ||
-    (settings as any)?.openaiApiKey ||
-    cloudKeys?.anthropicApiKey ||
-    cloudKeys?.geminiApiKey ||
-    cloudKeys?.openaiApiKey
-  );
+  const effectiveClaudeKey = cloudKeys ? (cloudKeys.anthropicApiKey || "").trim() : (settings?.anthropicApiKey || "").trim();
+  const effectiveGeminiKey = cloudKeys ? (cloudKeys.geminiApiKey || "").trim() : (settings?.geminiApiKey || "").trim();
+  const effectiveOpenaiKey = cloudKeys ? (cloudKeys.openaiApiKey || "").trim() : ((settings as any)?.openaiApiKey || "").trim();
+  const hasAiKey = Boolean(effectiveClaudeKey || effectiveGeminiKey || effectiveOpenaiKey);
   const isWidgetEnabled = Boolean(settings?.widgetEnabled ?? true);
   const hasMarketplaceReviews = importedCount > 0;
   const isWidgetConfigured = Boolean(settings?.widgetLayoutStyle);

@@ -4,7 +4,7 @@ import { useState, useMemo, useEffect } from "react";
 import { Page, Banner, Modal, Text } from "@shopify/polaris";
 import { authenticate } from "../shopify.server";
 import db, { ensureTablesExist } from "../db.server";
-import { getShopAIKeysFromShopify, saveShopAIKeysToShopify } from "../services/shopifyMetafields.server";
+import { getShopAIKeysFromShopify, saveShopAIKeysToShopify, clearAIKeysCache } from "../services/shopifyMetafields.server";
 import { ensureAiJobsRestored, syncAiJobsToShopify, fetchShopMetafieldValue } from "../services/reviewPersistence.server";
 import { canonicalizeShopDomain } from "../services/shopDomain.server";
 
@@ -99,11 +99,21 @@ export async function loader({ request }: LoaderFunctionArgs) {
     }
 
     // Read persistent API keys stored in Shopify's cloud (Shop Metafields)
-    const shopifyCloudKeys = await getShopAIKeysFromShopify(admin);
+    const shopifyCloudKeys = await getShopAIKeysFromShopify(admin, shop);
 
-    const anthropicKeyVal = (shopifyCloudKeys?.anthropicApiKey || settings?.anthropicApiKey || "").trim();
-    const geminiKeyVal = (shopifyCloudKeys?.geminiApiKey || settings?.geminiApiKey || "").trim();
-    const openaiKeyVal = (shopifyCloudKeys?.openaiApiKey || (settings as any)?.openaiApiKey || "").trim();
+    let anthropicKeyVal = "";
+    let geminiKeyVal = "";
+    let openaiKeyVal = "";
+
+    if (shopifyCloudKeys) {
+      anthropicKeyVal = (shopifyCloudKeys.anthropicApiKey || "").trim();
+      geminiKeyVal = (shopifyCloudKeys.geminiApiKey || "").trim();
+      openaiKeyVal = (shopifyCloudKeys.openaiApiKey || "").trim();
+    } else if (settings) {
+      anthropicKeyVal = (settings.anthropicApiKey || "").trim();
+      geminiKeyVal = (settings.geminiApiKey || "").trim();
+      openaiKeyVal = ((settings as any)?.openaiApiKey || "").trim();
+    }
 
     let defaultProv = shopifyCloudKeys?.defaultAiProvider || settings?.defaultAiProvider || "openai";
     const hasClaude = Boolean(anthropicKeyVal);
@@ -133,7 +143,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     return json({ settings: mergedSettings, aiJobs });
   } catch (err) {
     console.error("AI settings DB loader error:", err);
-    const shopifyCloudKeys = await getShopAIKeysFromShopify(admin);
+    const shopifyCloudKeys = await getShopAIKeysFromShopify(admin, shop);
     const anthropicKeyVal = (shopifyCloudKeys?.anthropicApiKey || "").trim();
     const geminiKeyVal = (shopifyCloudKeys?.geminiApiKey || "").trim();
     const openaiKeyVal = (shopifyCloudKeys?.openaiApiKey || "").trim();
@@ -287,45 +297,70 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
   // 4. Save API Keys & Preferences
-  const anthropicApiKeyRaw = formData.get("anthropicApiKey") as string;
-  const geminiApiKeyRaw = formData.get("geminiApiKey") as string;
-  const openaiApiKeyRaw = formData.get("openaiApiKey") as string;
-  const defaultAiProviderRaw = formData.get("defaultAiProvider") as string;
-  const fallbackAiProviderRaw = formData.get("fallbackAiProvider") as string;
+  const anthropicApiKeyRaw = formData.get("anthropicApiKey");
+  const geminiApiKeyRaw = formData.get("geminiApiKey");
+  const openaiApiKeyRaw = formData.get("openaiApiKey");
+  const defaultAiProviderRaw = formData.get("defaultAiProvider");
+  const fallbackAiProviderRaw = formData.get("fallbackAiProvider");
 
-  const anthropicApiKey = anthropicApiKeyRaw !== null && anthropicApiKeyRaw !== undefined ? anthropicApiKeyRaw.trim() : null;
-  const geminiApiKey = geminiApiKeyRaw !== null && geminiApiKeyRaw !== undefined ? geminiApiKeyRaw.trim() : null;
-  const openaiApiKey = openaiApiKeyRaw !== null && openaiApiKeyRaw !== undefined ? openaiApiKeyRaw.trim() : null;
-  const defaultAiProvider = defaultAiProviderRaw ? defaultAiProviderRaw.trim() : "openai";
-  const fallbackAiProvider = fallbackAiProviderRaw ? fallbackAiProviderRaw.trim() : "auto";
+  const anthropicApiKey = anthropicApiKeyRaw !== null ? String(anthropicApiKeyRaw).trim() : null;
+  const geminiApiKey = geminiApiKeyRaw !== null ? String(geminiApiKeyRaw).trim() : null;
+  const openaiApiKey = openaiApiKeyRaw !== null ? String(openaiApiKeyRaw).trim() : null;
+  const defaultAiProvider = defaultAiProviderRaw ? String(defaultAiProviderRaw).trim() : "openai";
+  const fallbackAiProvider = fallbackAiProviderRaw ? String(fallbackAiProviderRaw).trim() : "auto";
 
-  // 1. Save permanently to Shopify Cloud (Shop Metafields)
-  saveShopAIKeysToShopify(admin, {
-    anthropicApiKey,
-    geminiApiKey,
-    openaiApiKey,
-    defaultAiProvider,
-    fallbackAiProvider,
-  }, shop).catch((e) => console.warn(e));
+  // If a key is empty string, store as null in DB so it is permanently deleted
+  const dbAnthropicKey = anthropicApiKey && anthropicApiKey.length > 0 ? anthropicApiKey : null;
+  const dbGeminiKey = geminiApiKey && geminiApiKey.length > 0 ? geminiApiKey : null;
+  const dbOpenaiKey = openaiApiKey && openaiApiKey.length > 0 ? openaiApiKey : null;
+
+  // Clear in-memory cache immediately before saving
+  clearAIKeysCache();
+
+  // 1. Save permanently to Shopify Cloud (Shop Metafields) - AWAIT so it finishes before loader revalidates!
+  try {
+    await saveShopAIKeysToShopify(admin, {
+      anthropicApiKey: dbAnthropicKey || "",
+      geminiApiKey: dbGeminiKey || "",
+      openaiApiKey: dbOpenaiKey || "",
+      defaultAiProvider,
+      fallbackAiProvider,
+    }, shop);
+  } catch (cloudErr) {
+    console.warn("saveShopAIKeysToShopify warning:", cloudErr);
+  }
+
+  // Clear in-memory cache again after write to ensure fresh state
+  clearAIKeysCache();
 
   // 2. Also update local DB
   try {
     await db.shopSettings.upsert({
       where: { shop },
       update: {
-        anthropicApiKey,
-        geminiApiKey,
-        openaiApiKey,
+        anthropicApiKey: dbAnthropicKey,
+        geminiApiKey: dbGeminiKey,
+        openaiApiKey: dbOpenaiKey,
         defaultAiProvider,
       },
       create: {
         shop,
-        anthropicApiKey,
-        geminiApiKey,
-        openaiApiKey,
+        anthropicApiKey: dbAnthropicKey,
+        geminiApiKey: dbGeminiKey,
+        openaiApiKey: dbOpenaiKey,
         defaultAiProvider,
       },
     });
+
+    await db.shopSettings.updateMany({
+      where: { shop: { in: [shop, shop.toLowerCase()] } },
+      data: {
+        anthropicApiKey: dbAnthropicKey,
+        geminiApiKey: dbGeminiKey,
+        openaiApiKey: dbOpenaiKey,
+        defaultAiProvider,
+      },
+    }).catch(() => {});
   } catch (err) {
     console.warn("Prisma upsert warning, executing raw SQL fallback:", err);
     try {
@@ -333,9 +368,9 @@ export async function action({ request }: ActionFunctionArgs) {
       if (existing && existing.length > 0) {
         await db.$executeRawUnsafe(
           `UPDATE ShopSettings SET anthropicApiKey = ?, geminiApiKey = ?, openaiApiKey = ?, defaultAiProvider = ? WHERE shop = ?`,
-          anthropicApiKey,
-          geminiApiKey,
-          openaiApiKey,
+          dbAnthropicKey,
+          dbGeminiKey,
+          dbOpenaiKey,
           defaultAiProvider,
           shop
         );
@@ -344,9 +379,9 @@ export async function action({ request }: ActionFunctionArgs) {
           `INSERT INTO ShopSettings (id, shop, anthropicApiKey, geminiApiKey, openaiApiKey, defaultAiProvider) VALUES (?, ?, ?, ?, ?, ?)`,
           `set_${Date.now()}`,
           shop,
-          anthropicApiKey,
-          geminiApiKey,
-          openaiApiKey,
+          dbAnthropicKey,
+          dbGeminiKey,
+          dbOpenaiKey,
           defaultAiProvider
         );
       }
