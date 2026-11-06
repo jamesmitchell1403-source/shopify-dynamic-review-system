@@ -1144,6 +1144,118 @@ export function writeLocalImportHistoryBackup(history: any[], shop: string): voi
   }
 }
 
+const deletedImportHistoryIdsCache = new Map<string, Set<string>>();
+const clearedImportHistoryShops = new Set<string>();
+
+export async function checkIfImportHistoryCleared(admin: any, shop: string): Promise<boolean> {
+  if (!shop) return false;
+  const shopCanonical = canonicalizeShopDomain(shop);
+  if (clearedImportHistoryShops.has(shopCanonical)) return true;
+  try {
+    const backupMetafields = await fetchAllBackupMetafields(admin, shop);
+    if (backupMetafields["import_history_cleared"] === "true") {
+      clearedImportHistoryShops.add(shopCanonical);
+      return true;
+    }
+  } catch (e) {
+    console.warn("checkIfImportHistoryCleared error:", e);
+  }
+  return false;
+}
+
+export async function fetchDeletedImportHistoryIds(admin: any, shop: string): Promise<Set<string>> {
+  if (!shop) return new Set();
+  const shopCanonical = canonicalizeShopDomain(shop);
+  if (deletedImportHistoryIdsCache.has(shopCanonical)) {
+    return new Set(deletedImportHistoryIdsCache.get(shopCanonical)!);
+  }
+  const deletedSet = new Set<string>();
+  try {
+    const backupMetafields = await fetchAllBackupMetafields(admin, shop);
+    if (backupMetafields["deleted_import_history_ids"]) {
+      const parsed = JSON.parse(backupMetafields["deleted_import_history_ids"]);
+      if (Array.isArray(parsed)) {
+        parsed.forEach((id: string) => deletedSet.add(id));
+      }
+    }
+  } catch (e) {
+    console.warn("fetchDeletedImportHistoryIds error:", e);
+  }
+  deletedImportHistoryIdsCache.set(shopCanonical, deletedSet);
+  return deletedSet;
+}
+
+export async function recordDeletedImportHistoryIds(
+  admin: any,
+  shop: string,
+  deletedIds: string[],
+  isAll: boolean = false,
+): Promise<void> {
+  if (!shop) return;
+  const shopCanonical = canonicalizeShopDomain(shop);
+  try {
+    const currentSet = await fetchDeletedImportHistoryIds(admin, shop);
+    for (const id of deletedIds) {
+      if (id) currentSet.add(id);
+    }
+    deletedImportHistoryIdsCache.set(shopCanonical, currentSet);
+
+    if (isAll) {
+      clearedImportHistoryShops.add(shopCanonical);
+    }
+
+    if (admin) {
+      const shopRes = await admin.graphql(`#graphql query getShopId { shop { id } }`);
+      const shopJson = await shopRes.json();
+      const shopId = shopJson.data?.shop?.id;
+      if (shopId) {
+        const metafields: any[] = [
+          {
+            namespace: "ai_review_system",
+            key: "deleted_import_history_ids",
+            type: "json",
+            value: JSON.stringify(Array.from(currentSet)),
+            ownerId: shopId,
+          },
+        ];
+        if (isAll) {
+          metafields.push({
+            namespace: "ai_review_system",
+            key: "import_history_cleared",
+            type: "single_line_text_field",
+            value: "true",
+            ownerId: shopId,
+          });
+          metafields.push({
+            namespace: "ai_review_system",
+            key: "product_import_history_backup",
+            type: "json",
+            value: JSON.stringify([]),
+            ownerId: shopId,
+          });
+        }
+        await admin.graphql(
+          `#graphql
+          mutation saveDeletedImportHistoryMetafields($metafields: [MetafieldsSetInput!]!) {
+            metafieldsSet(metafields: $metafields) {
+              userErrors { field message }
+            }
+          }`,
+          { variables: { metafields } }
+        );
+      }
+    }
+  } catch (e) {
+    console.warn("recordDeletedImportHistoryIds error:", e);
+  }
+}
+
+export function resetImportHistoryCleared(shop: string): void {
+  if (!shop) return;
+  const shopCanonical = canonicalizeShopDomain(shop);
+  clearedImportHistoryShops.delete(shopCanonical);
+}
+
 export async function ensureImportHistoryRestored(admin: any, shop: string, force: boolean = false): Promise<void> {
   if (!shop) return;
   const shopCanonical = canonicalizeShopDomain(shop);
@@ -1153,6 +1265,12 @@ export async function ensureImportHistoryRestored(admin: any, shop: string, forc
   }
 
   try {
+    const isCleared = await checkIfImportHistoryCleared(admin, shop);
+    if (isCleared && !force) {
+      restoredImportHistoryShops.add(shopCanonical);
+      return;
+    }
+
     const shopWhere = getShopWhereClause(shop);
     const currentCount = await db.productImportHistory.count({ where: shopWhere }).catch(() => 0);
 
@@ -1160,6 +1278,8 @@ export async function ensureImportHistoryRestored(admin: any, shop: string, forc
       restoredImportHistoryShops.add(shopCanonical);
       return;
     }
+
+    const deletedSet = await fetchDeletedImportHistoryIds(admin, shop);
 
     const backupMetafieldsMap = await fetchAllBackupMetafields(admin, shop);
     let itemsToRestore: any[] = [];
@@ -1178,9 +1298,9 @@ export async function ensureImportHistoryRestored(admin: any, shop: string, forc
       itemsToRestore = local.filter((item: any) => canonicalizeShopDomain(item.shop || "") === shopCanonical);
     }
 
-    if (itemsToRestore.length > 0 && currentCount < itemsToRestore.length) {
+    if (itemsToRestore.length > 0) {
       for (const item of itemsToRestore) {
-        if (!item || !item.id) continue;
+        if (!item || !item.id || deletedSet.has(item.id)) continue;
         await db.productImportHistory.upsert({
           where: { id: item.id },
           update: {
@@ -1226,6 +1346,10 @@ export async function syncProductImportHistoryFromReviews(
   catalogProductMap?: Map<string, string>,
 ): Promise<void> {
   try {
+    const isCleared = await checkIfImportHistoryCleared(null, shop);
+    if (isCleared) return;
+    const deletedSet = await fetchDeletedImportHistoryIds(null, shop);
+
     const shopWhere = getShopWhereClause(shop);
     const importedReviews = await db.review.findMany({
       where: {
@@ -1279,6 +1403,8 @@ export async function syncProductImportHistoryFromReviews(
         resolvedTitle = catalogProductMap.get(item.productHandle)!;
       }
       const historyId = `hist-${shop.replace(/[^a-zA-Z0-9]/g, "-")}-${(item.productId || "p").replace(/[^a-zA-Z0-9]/g, "-")}-${item.source.toLowerCase()}`;
+      if (deletedSet.has(historyId)) continue;
+
       await db.productImportHistory.upsert({
         where: { id: historyId },
         update: {

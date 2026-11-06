@@ -1,7 +1,7 @@
-import { json, LoaderFunctionArgs } from "@remix-run/node";
-import { useLoaderData, useNavigate, Link } from "@remix-run/react";
+import { json, LoaderFunctionArgs, ActionFunctionArgs } from "@remix-run/node";
+import { useLoaderData, useNavigate, Link, useFetcher } from "@remix-run/react";
 import { useState, useRef, useMemo, useEffect } from "react";
-import { Page, Banner } from "@shopify/polaris";
+import { Page, Banner, Modal, Text } from "@shopify/polaris";
 import Papa from "papaparse";
 import { authenticate } from "../shopify.server";
 import db, { ensureTablesExist } from "../db.server";
@@ -9,6 +9,10 @@ import {
   ensureReviewsAndSettingsRestored,
   ensureImportHistoryRestored,
   syncProductImportHistoryFromReviews,
+  syncImportHistoryToShopify,
+  recordDeletedImportHistoryIds,
+  checkIfImportHistoryCleared,
+  fetchDeletedImportHistoryIds,
 } from "../services/reviewPersistence.server";
 import { canonicalizeShopDomain, getShopWhereClause } from "../services/shopDomain.server";
 
@@ -171,12 +175,17 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const flipkartDynamicCount = flipkartReviews.length;
   const alibabaDynamicCount = alibabaReviews.length;
 
-  // 4. Synchronize real product import history from active reviews
-  try {
-    await syncProductImportHistoryFromReviews(shop, catalogProductMap);
-  } catch (e) {
-    console.warn("Sync product import history warning:", e);
+  // 4. Synchronize real product import history from active reviews (only if not cleared)
+  const isHistoryCleared = await checkIfImportHistoryCleared(admin, shop);
+  if (!isHistoryCleared) {
+    try {
+      await syncProductImportHistoryFromReviews(shop, catalogProductMap);
+    } catch (e) {
+      console.warn("Sync product import history warning:", e);
+    }
   }
+
+  const deletedHistorySet = await fetchDeletedImportHistoryIds(admin, shop);
 
   // 5. Query persistent product import history
   const historyList = await db.productImportHistory.findMany({
@@ -189,6 +198,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
     orderBy: { createdAt: "desc" },
   });
 
+  const filteredHistoryList = isHistoryCleared
+    ? []
+    : historyList.filter((h) => !deletedHistorySet.has(h.id));
+
   // 6. Resolve product title for all reviews helper
   const resolveTitle = (productId: string, handle?: string) => {
     if (productId && catalogProductMap.has(productId)) return catalogProductMap.get(productId)!;
@@ -198,7 +211,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     return "6 Piece Cotton Towel Set - Beige";
   };
 
-  const formattedHistoryList = historyList.map((h) => ({
+  const formattedHistoryList = filteredHistoryList.map((h) => ({
     ...h,
     productTitle: resolveTitle(h.productId) || h.productTitle || "6 Piece Cotton Towel Set - Beige",
   }));
@@ -219,6 +232,49 @@ export async function loader({ request }: LoaderFunctionArgs) {
       alibaba: alibabaDynamicCount,
     },
   });
+}
+
+export async function action({ request }: ActionFunctionArgs) {
+  await ensureTablesExist();
+  const { admin, session } = await authenticate.admin(request);
+  const shop = canonicalizeShopDomain(session.shop);
+  const shopWhere = getShopWhereClause(shop);
+
+  const formData = await request.formData();
+  const intent = formData.get("intent") as string;
+
+  if (intent === "deleteImport") {
+    const importId = formData.get("importId") as string;
+    if (importId) {
+      await db.productImportHistory.deleteMany({
+        where: {
+          AND: [shopWhere, { id: importId }],
+        },
+      });
+      await recordDeletedImportHistoryIds(admin, shop, [importId], false);
+      await syncImportHistoryToShopify(admin, shop);
+    }
+    return json({ success: true, deletedId: importId });
+  }
+
+  if (intent === "deleteAllImports") {
+    const allHistory = await db.productImportHistory.findMany({
+      where: shopWhere,
+      select: { id: true },
+    });
+    const allIds = allHistory.map((h) => h.id);
+
+    await db.productImportHistory.deleteMany({
+      where: shopWhere,
+    });
+
+    await recordDeletedImportHistoryIds(admin, shop, allIds, true);
+    await syncImportHistoryToShopify(admin, shop);
+
+    return json({ success: true, deletedAll: true, count: allIds.length });
+  }
+
+  return json({ success: false, error: "Invalid intent" }, { status: 400 });
 }
 
 type MarketplaceKey = "IMPORTED_AMAZON" | "IMPORTED_FLIPKART" | "IMPORTED_ALIBABA";
@@ -357,6 +413,16 @@ export default function ImportReviewsPage() {
   // Manual Mapping State (if unmatched rows occur)
   const [importResult, setImportResult] = useState<any>(null);
   const [manualMappings, setManualMappings] = useState<Record<number, string>>({});
+
+  // Deletion state
+  const deleteFetcher = useFetcher<any>();
+  const [deletedImportIds, setDeletedImportIds] = useState<Set<string>>(new Set());
+  const [allImportsDeleted, setAllImportsDeleted] = useState<boolean>(false);
+  const [deleteConfirmModal, setDeleteConfirmModal] = useState<{
+    open: boolean;
+    type: "single" | "all";
+    item?: any;
+  }>({ open: false, type: "single" });
 
   // Filter for Recent imports table
   const [marketplaceFilter, setMarketplaceFilter] = useState<string>("ALL");
@@ -639,9 +705,63 @@ export default function ImportReviewsPage() {
     return () => window.removeEventListener("click", handleClickOutside);
   }, []);
 
+  // Listen for delete completion
+  useEffect(() => {
+    if (deleteFetcher.data?.success) {
+      if (deleteFetcher.data.deletedAll) {
+        setSuccessBanner("All import records have been deleted.");
+        setAllImportsDeleted(true);
+      } else if (deleteFetcher.data.deletedId) {
+        setSuccessBanner("Import record deleted successfully.");
+      }
+    } else if (deleteFetcher.data?.error) {
+      setErrorMessage(deleteFetcher.data.error);
+    }
+  }, [deleteFetcher.data]);
+
+  // Sync optimistic deletion when loader provides fresh historyList
+  useEffect(() => {
+    if (historyList.length === 0) {
+      setAllImportsDeleted(false);
+      setDeletedImportIds(new Set());
+    } else {
+      setDeletedImportIds((prev) => {
+        const existing = new Set(historyList.map((h) => h.id));
+        const next = new Set<string>();
+        for (const id of prev) {
+          if (existing.has(id)) next.add(id);
+        }
+        return next;
+      });
+    }
+  }, [historyList]);
+
+  const executeDelete = () => {
+    const { type, item } = deleteConfirmModal;
+    setDeleteConfirmModal({ open: false, type: "single" });
+
+    if (type === "single" && item) {
+      setDeletedImportIds((prev) => new Set(prev).add(item.id));
+      const fd = new FormData();
+      fd.append("intent", "deleteImport");
+      fd.append("importId", item.id);
+      deleteFetcher.submit(fd, { method: "post" });
+    } else if (type === "all") {
+      setAllImportsDeleted(true);
+      const fd = new FormData();
+      fd.append("intent", "deleteAllImports");
+      deleteFetcher.submit(fd, { method: "post" });
+    }
+  };
+
+  const activeHistoryList = useMemo(() => {
+    if (allImportsDeleted) return [];
+    return historyList.filter((h) => !deletedImportIds.has(h.id));
+  }, [historyList, deletedImportIds, allImportsDeleted]);
+
   // Filter history records for Recent Imports table
   const recentImports = useMemo(() => {
-    let list = historyList;
+    let list = activeHistoryList;
     if (marketplaceFilter !== "ALL") {
       list = list.filter((h) => h.sourceType.toUpperCase().includes(marketplaceFilter));
     }
@@ -649,20 +769,20 @@ export default function ImportReviewsPage() {
       list = list.filter((h) => h.productId === selectedProductHistoryFilter);
     }
     return list;
-  }, [historyList, marketplaceFilter, selectedProductHistoryFilter]);
+  }, [activeHistoryList, marketplaceFilter, selectedProductHistoryFilter]);
 
   // Product Spotlight summary for store owners
   const productSpotlight = useMemo(() => {
-    if (historyList.length === 0) return null;
+    if (activeHistoryList.length === 0) return null;
     const targetList = selectedProductHistoryFilter === "ALL"
-      ? historyList
-      : historyList.filter((h) => h.productId === selectedProductHistoryFilter);
+      ? activeHistoryList
+      : activeHistoryList.filter((h) => h.productId === selectedProductHistoryFilter);
     if (targetList.length === 0) return null;
 
     const firstItem = targetList[0];
     const targetProdId = firstItem.productId;
     const prodHistory = selectedProductHistoryFilter === "ALL"
-      ? historyList.filter((h) => h.productId === targetProdId)
+      ? activeHistoryList.filter((h) => h.productId === targetProdId)
       : targetList;
 
     return {
@@ -674,17 +794,17 @@ export default function ImportReviewsPage() {
       alibabaCount: prodHistory.filter((h) => h.sourceType.toLowerCase().includes("alibaba")).reduce((s, h) => s + (h.reviewCount || 0), 0),
       lastImportDate: firstItem.createdAt || new Date().toISOString(),
     };
-  }, [historyList, selectedProductHistoryFilter]);
+  }, [activeHistoryList, selectedProductHistoryFilter]);
 
   const historyProducts = useMemo(() => {
     const map = new Map<string, string>();
-    for (const h of historyList) {
+    for (const h of activeHistoryList) {
       if (h.productId && !map.has(h.productId)) {
         map.set(h.productId, h.productTitle || "6 Piece Cotton Towel Set - Beige");
       }
     }
     return Array.from(map.entries()).map(([id, title]) => ({ id, title }));
-  }, [historyList]);
+  }, [activeHistoryList]);
 
   return (
     <Page fullWidth>
@@ -1646,6 +1766,41 @@ export default function ImportReviewsPage() {
                 <option value="FLIPKART">Flipkart</option>
                 <option value="ALIBABA">Alibaba</option>
               </select>
+
+              {/* Delete All button */}
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmModal({ open: true, type: "all" })}
+                disabled={recentImports.length === 0}
+                style={{
+                  background: "#ffffff",
+                  border: "1px solid #fca5a5",
+                  borderRadius: "8px",
+                  padding: "7px 13px",
+                  fontSize: "12.5px",
+                  fontWeight: 600,
+                  color: recentImports.length === 0 ? "#94a3b8" : "#dc2626",
+                  cursor: recentImports.length === 0 ? "not-allowed" : "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  opacity: recentImports.length === 0 ? 0.6 : 1,
+                  transition: "all 0.15s ease",
+                }}
+                onMouseEnter={(e) => {
+                  if (recentImports.length > 0) e.currentTarget.style.background = "#fef2f2";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "#ffffff";
+                }}
+                title={recentImports.length === 0 ? "No import records to delete" : "Delete all import records"}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <polyline points="3 6 5 6 21 6" />
+                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                </svg>
+                Delete All
+              </button>
             </div>
           </div>
 
@@ -1907,6 +2062,40 @@ export default function ImportReviewsPage() {
                               >
                                 Download Template
                               </button>
+                              <div style={{ height: "1px", background: "#f1f5f9", margin: "4px 0" }} />
+                              <button
+                                type="button"
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: "8px",
+                                  width: "100%",
+                                  textAlign: "left",
+                                  padding: "8px 14px",
+                                  fontSize: "13px",
+                                  color: "#dc2626",
+                                  background: "none",
+                                  border: "none",
+                                  cursor: "pointer",
+                                  fontWeight: 500,
+                                }}
+                                onMouseEnter={(e) => (e.currentTarget.style.background = "#fef2f2")}
+                                onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                                onClick={() => {
+                                  setActiveMenuId(null);
+                                  setDeleteConfirmModal({
+                                    open: true,
+                                    type: "single",
+                                    item,
+                                  });
+                                }}
+                              >
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                  <polyline points="3 6 5 6 21 6" />
+                                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                                </svg>
+                                Delete
+                              </button>
                             </div>
                           )}
                         </td>
@@ -1956,6 +2145,36 @@ export default function ImportReviewsPage() {
             </Link>
           </div>
         )}
+
+        {/* CONFIRMATION POPUP MODAL FOR DELETIONS */}
+        <Modal
+          open={deleteConfirmModal.open}
+          onClose={() => setDeleteConfirmModal({ open: false, type: "single" })}
+          title={
+            deleteConfirmModal.type === "all"
+              ? "Delete all import records?"
+              : "Delete import record?"
+          }
+          primaryAction={{
+            content: deleteConfirmModal.type === "all" ? "Delete all" : "Delete",
+            destructive: true,
+            onAction: executeDelete,
+          }}
+          secondaryActions={[
+            {
+              content: "Cancel",
+              onAction: () => setDeleteConfirmModal({ open: false, type: "single" }),
+            },
+          ]}
+        >
+          <Modal.Section>
+            <p style={{ fontSize: "14px", color: "#334155", margin: 0, lineHeight: 1.5 }}>
+              {deleteConfirmModal.type === "all"
+                ? `Are you sure you want to delete all ${recentImports.length} import records? This will clear your entire recent imports list. This action cannot be undone.`
+                : `Are you sure you want to delete the import record for "${deleteConfirmModal.item?.fileName || "reviews.csv"}" (${deleteConfirmModal.item?.reviewCount || 0} reviews)? This action cannot be undone.`}
+            </p>
+          </Modal.Section>
+        </Modal>
       </div>
     </Page>
   );

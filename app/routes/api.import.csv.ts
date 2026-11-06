@@ -2,7 +2,7 @@ import { json, ActionFunctionArgs } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
 import Papa from "papaparse";
 import db from "../db.server";
-import { syncReviewsToShopify, syncImportHistoryToShopify } from "../services/reviewPersistence.server";
+import { syncReviewsToShopify, syncImportHistoryToShopify, resetImportHistoryCleared } from "../services/reviewPersistence.server";
 
 import { canonicalizeShopDomain } from "../services/shopDomain.server";
 
@@ -347,6 +347,7 @@ export async function action({ request }: ActionFunctionArgs) {
     }
   }
 
+  resetImportHistoryCleared(shop);
   await syncReviewsToShopify(admin, shop);
   await syncImportHistoryToShopify(admin, shop);
 
