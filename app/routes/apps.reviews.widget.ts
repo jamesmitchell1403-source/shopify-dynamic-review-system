@@ -155,28 +155,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   let safeProductReviews = productReviews.filter((r) => r.isPublished);
 
-  // If no exact match, try matching partial handle keywords (e.g. "bundle", "demo")
-  if (safeProductReviews.length === 0 && cleanHandle) {
-    const handleParts = cleanHandle.toLowerCase().split(/[-_]+/).filter((p) => p.length > 2);
-    for (const part of handleParts) {
-      const partialMatches = await db.review.findMany({
-        where: {
-          AND: [
-            baseWhere,
-            { productHandle: { contains: part } },
-          ],
-        },
-        orderBy: { createdAt: "desc" },
-        take: 30,
-      }).catch(() => []);
-      const safePartial = partialMatches.filter((r) => r.isPublished);
-      if (safePartial.length > 0) {
-        safeProductReviews = safePartial;
-        break;
-      }
-    }
-  }
-
   let reviewsToReturn: any[] = [];
   let totalCount = 0;
   let averageRating = "0.0";

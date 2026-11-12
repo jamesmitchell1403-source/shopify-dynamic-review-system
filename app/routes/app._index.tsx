@@ -60,7 +60,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   // 4. Counts & Ratings
   const totalReviews = reviews.length;
   const publishedReviews = reviews.filter((r) => r.isPublished).length;
-  const pendingReviews = reviews.filter((r) => !r.isPublished).length;
+  const pendingReviews = reviews.filter((r) => !r.isPublished && !r.isAiGenerated).length;
   const aiGeneratedCount = reviews.filter((r) => r.isAiGenerated || (r.source || "").toUpperCase().includes("AI")).length;
   const importedCount = reviews.filter((r) =>
     ["IMPORTED_AMAZON", "IMPORTED_FLIPKART", "IMPORTED_ALIBABA", "AMAZON", "FLIPKART", "ALIBABA"].some((s) =>
@@ -69,7 +69,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   ).length;
 
   const totalRatingSum = reviews.reduce((sum, r) => sum + (r.rating || 5), 0);
-  const averageRating = totalReviews > 0 ? (totalRatingSum / totalReviews).toFixed(1) : "5.0";
+  const averageRating = totalReviews > 0 ? (totalRatingSum / totalReviews).toFixed(1) : "0.0";
 
   // 5. Star breakdown (5★ down to 1★)
   const starCounts = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
@@ -243,8 +243,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
       ? prev30Reviews.reduce((sum, r) => sum + (r.rating || 5), 0) / prev30Reviews.length
       : recentAvg;
   const ratingDiffVal = Number((recentAvg - prevAvg).toFixed(1));
-  const ratingDiffText = `${ratingDiffVal >= 0 ? "+" : ""}${ratingDiffVal.toFixed(1)} vs. previous 30 days`;
-  const isRatingPositive = ratingDiffVal >= 0;
+  const ratingDiffText = totalReviews === 0 ? "No reviews yet" : `${ratingDiffVal >= 0 ? "+" : ""}${ratingDiffVal.toFixed(1)} vs. previous 30 days`;
+  const isRatingPositive = totalReviews > 0 && ratingDiffVal >= 0;
 
   // 10. Dynamic 7-day sparklines
   const sparklineTotal: number[] = [];
@@ -1221,7 +1221,14 @@ export default function DynamicReviewDashboard() {
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: "8px", lineHeight: 1.1 }}>
               <span style={{ fontSize: "32px", fontWeight: "800", color: "#0f172a" }}>{data.averageRating}</span>
-              <span style={{ color: "#f59e0b", fontSize: "18px", letterSpacing: "1.5px" }}>★★★★★</span>
+              {data.totalReviews === 0 ? (
+                <span style={{ color: "#cbd5e1", fontSize: "18px", letterSpacing: "1.5px" }} title="No reviews yet">☆☆☆☆☆</span>
+              ) : (
+                <span style={{ color: "#f59e0b", fontSize: "18px", letterSpacing: "1.5px" }}>
+                  {"★".repeat(Math.min(5, Math.max(1, Math.round(Number(data.averageRating) || 5))))}
+                  {"☆".repeat(Math.max(0, 5 - Math.min(5, Math.max(1, Math.round(Number(data.averageRating) || 5)))))}
+                </span>
+              )}
             </div>
           </div>
 
@@ -1560,6 +1567,7 @@ export default function DynamicReviewDashboard() {
                     { key: "flipkart", label: `Flipkart (${data.sourceCounts.flipkart})` },
                     { key: "amazon", label: `Amazon (${data.sourceCounts.amazon})` },
                     { key: "ai_drafts", label: `AI Drafts (${data.sourceCounts.ai_drafts})` },
+                    { key: "store_orders", label: `Store / QR (${data.sourceCounts.store_orders})` },
                   ].map((tab) => {
                     const isActive = sourceFilter === tab.key;
                     return (

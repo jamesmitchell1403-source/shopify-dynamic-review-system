@@ -12,7 +12,7 @@
 import { json, type LoaderFunctionArgs } from "@remix-run/node";
 import db from "../db.server";
 
-const ADMIN_SECRET = process.env.ADMIN_CLEAR_SECRET || "revio-admin-clear-2024";
+const ADMIN_SECRET = process.env.ADMIN_CLEAR_SECRET;
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const url = new URL(request.url);
@@ -20,8 +20,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const secret = url.searchParams.get("secret");
   const action = url.searchParams.get("action") || "clear";
 
-  // Security check
-  if (secret !== ADMIN_SECRET) {
+  // Security check: Never permit unauthenticated or default-token access
+  if (!ADMIN_SECRET || !secret || secret !== ADMIN_SECRET) {
     return json({ error: "Unauthorized" }, { status: 403 });
   }
 
@@ -30,11 +30,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
       success: true,
       diag: (globalThis as any).__AI_GEN_DIAG__ || null,
       env: {
-        SHOPIFY_API_KEY: process.env.SHOPIFY_API_KEY || "NOT_SET",
-        SHOPIFY_API_KEY_2: process.env.SHOPIFY_API_KEY_2 || "NOT_SET",
-        SHOPIFY_API_SECRET_SET: Boolean(process.env.SHOPIFY_API_SECRET),
+        SHOPIFY_API_KEY_CONFIGURED: Boolean(process.env.SHOPIFY_API_KEY),
+        SHOPIFY_API_SECRET_CONFIGURED: Boolean(process.env.SHOPIFY_API_SECRET),
         SHOPIFY_APP_URL: process.env.SHOPIFY_APP_URL || "NOT_SET",
-        SCOPES: process.env.SCOPES || "NOT_SET",
+        SCOPES_CONFIGURED: Boolean(process.env.SCOPES),
       },
       serverTime: new Date().toISOString(),
     });

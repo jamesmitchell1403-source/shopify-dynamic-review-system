@@ -181,10 +181,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
     console.warn("Could not fetch themes:", err);
   }
 
-  // If no enabled theme found via asset check, prioritize theme with "practice" or "export" (draft theme from user's editor) or main
+  // Prioritize active live main theme, then fall back to first theme
   if (!enabledThemeId && themes.length > 0) {
-    const draftWithPractice = themes.find((t: any) => t.name?.toLowerCase().includes("practice") || t.name?.toLowerCase().includes("export"));
-    enabledThemeId = draftWithPractice ? draftWithPractice.id : (themes.find((t: any) => t.isMain)?.id || themes[0].id);
+    enabledThemeId = themes.find((t: any) => t.isMain)?.id || themes[0].id;
   }
 
   let finalShopName = (myshopifyDomain || shop || "My Store")
@@ -354,9 +353,11 @@ export default function WidgetSettingsPage() {
   const liveStorefrontUrl = selectedThemeId && selectedThemeId !== "draft-theme"
     ? `https://${myshopifyDomain || shop}/products/${activeProduct.handle}?preview_theme_id=${selectedThemeId}`
     : `https://${myshopifyDomain || shop}/products/${activeProduct.handle}`;
+  const previewPath = activeProduct?.handle ? `%2Fproducts%2F${activeProduct.handle}` : "";
+  const embedDeepLinkParams = `context=apps&activateAppId=390a550a-edb0-9249-8af0-d3b3fd00025c81dbd187%2Freview_widget${previewPath ? `&previewPath=${previewPath}` : ""}`;
   const themeEditorUrl = selectedThemeId && selectedThemeId !== "draft-theme"
-    ? `https://admin.shopify.com/store/${shopSubdomain}/themes/${selectedThemeId}/editor?previewPath=%2Fproducts%2F${activeProduct.handle}`
-    : `https://admin.shopify.com/store/${shopSubdomain}/themes/current/editor?previewPath=%2Fproducts%2F${activeProduct.handle}`;
+    ? `https://admin.shopify.com/store/${shopSubdomain}/themes/${selectedThemeId}/editor?${embedDeepLinkParams}`
+    : `https://admin.shopify.com/store/${shopSubdomain}/themes/current/editor?${embedDeepLinkParams}`;
 
   const [savedSuccess, setSavedSuccess] = useState<boolean>(false);
 

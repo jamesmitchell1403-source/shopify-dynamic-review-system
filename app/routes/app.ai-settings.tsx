@@ -29,74 +29,18 @@ export async function loader({ request }: LoaderFunctionArgs) {
       });
     }
 
+    // Purge any legacy seed jobs so all installs start clean with real data
+    await db.aiGenerationJob.deleteMany({
+      where: {
+        shop,
+        id: { startsWith: "seed_job_" },
+      },
+    }).catch(() => {});
+
     aiJobs = await db.aiGenerationJob.findMany({
       where: { shop },
       orderBy: { createdAt: "desc" },
     });
-
-    const metaVal = await fetchShopMetafieldValue(admin, shop, "ai_jobs_backup");
-    const isCleared = metaVal === "[]";
-
-    // If no jobs exist yet and merchant hasn't explicitly cleared them, seed default audit history
-    if (aiJobs.length === 0 && !isCleared) {
-      const seedJobs = [
-        {
-          id: `seed_job_1_${Date.now()}`,
-          shop,
-          provider: "gemini",
-          modelUsed: "Bulk Generator",
-          inputNotes: "Review generation",
-          inputDescription: "Bulk generate reviews",
-          resultCount: 915,
-          status: "completed",
-          createdAt: new Date("2026-10-23T17:14:00Z"),
-        },
-        {
-          id: `seed_job_2_${Date.now()}`,
-          shop,
-          provider: "gemini",
-          modelUsed: "gemini-1.5-pro",
-          inputNotes: "Reply suggestion",
-          inputDescription: "Luminous Kit",
-          resultCount: 12,
-          status: "completed",
-          createdAt: new Date("2026-10-21T18:20:00Z"),
-        },
-        {
-          id: `seed_job_3_${Date.now()}`,
-          shop,
-          provider: "openai",
-          modelUsed: "gpt-4o",
-          inputNotes: "Summary",
-          inputDescription: "6 Piece Towel Set",
-          resultCount: 1,
-          status: "completed",
-          createdAt: new Date("2026-10-18T10:02:00Z"),
-        },
-        {
-          id: `seed_job_4_${Date.now()}`,
-          shop,
-          provider: "claude",
-          modelUsed: "claude-3-5-sonnet",
-          inputNotes: "Translation",
-          inputDescription: "Customer reviews",
-          resultCount: 18,
-          status: "completed",
-          createdAt: new Date("2026-10-15T14:37:00Z"),
-        },
-      ];
-
-      for (const s of seedJobs) {
-        await db.aiGenerationJob.create({ data: s }).catch(() => {});
-      }
-
-      aiJobs = await db.aiGenerationJob.findMany({
-        where: { shop },
-        orderBy: { createdAt: "desc" },
-      });
-
-      await syncAiJobsToShopify(admin, shop, true);
-    }
 
     // Read persistent API keys stored in Shopify's cloud (Shop Metafields)
     const shopifyCloudKeys = await getShopAIKeysFromShopify(admin, shop);
